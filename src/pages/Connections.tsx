@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { clearConnectionLogs, getConnectionLogs, pingCluster } from "../lib/esView";
+import { pingCluster } from "../lib/esView";
 import type { AuthType, ConnectionProfile } from "../lib/types";
 import { useAppContext } from "../state/AppContext";
 
@@ -20,7 +20,6 @@ export default function Connections() {
   const [error, setError] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
 
   const resetForm = () => setForm(emptyForm);
 
@@ -85,8 +84,6 @@ export default function Connections() {
   const handleTest = async (id: string) => {
     setTestingId(id);
     setError("");
-    clearConnectionLogs(); // 清空之前的日志
-    setLogs([]);
     
     try {
       const connection = getConnectionById(id);
@@ -100,9 +97,6 @@ export default function Connections() {
       setError(`连接失败：${message}`);
     } finally {
       setTestingId(null);
-      // 获取并显示日志
-      const connectionLogs = getConnectionLogs();
-      setLogs(connectionLogs);
     }
   };
 
@@ -241,30 +235,7 @@ export default function Connections() {
         </div>
       </div>
 
-      {logs.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">连接测试日志</h3>
-            <button className="btn btn-sm btn-ghost" onClick={() => setLogs([])}>清空日志</button>
-          </div>
-          <div className="card-body">
-            <pre style={{
-              background: '#1e1e1e',
-              color: '#d4d4d4',
-              padding: '16px',
-              borderRadius: '6px',
-              fontSize: '13px',
-              lineHeight: '1.6',
-              maxHeight: '400px',
-              overflow: 'auto',
-              margin: 0,
-              fontFamily: 'Consolas, Monaco, "Courier New", monospace'
-            }}>
-              {logs.join('\n')}
-            </pre>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

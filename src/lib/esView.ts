@@ -120,15 +120,31 @@ export async function esRequest<T>(
 
   const normalizedBase = normalized.baseUrl.replace(/\/$/, "");
   const requestPath = `/${path.replace(/^\//, "")}`;
-  const url = `${normalizedBase}${requestPath}`;
+  
+  // 在浏览器中通过代理发送请求，在 Tauri 中直接发送
+  let url: string;
+  if (isTauriEnv) {
+    url = `${normalizedBase}${requestPath}`;
+    log("3. 构建请求 URL (Tauri直连)", url);
+  } else {
+    // 浏览器环境：通过 /es 代理，并通过 x-es-target 头指定真实地址
+    url = `/es${requestPath}`;
+    log("3. 构建请求 URL (浏览器代理)", url);
+  }
 
-  log("3. 构建请求 URL", url);
   log("4. 请求方法", options.method ?? "GET");
   log("4.1 运行环境", isTauriEnv ? "Tauri" : "Browser");
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json"
   };
+  
+  // 浏览器环境下，通过 x-es-target 头通知代理真实地址
+  if (!isTauriEnv) {
+    headers["x-es-target"] = normalizedBase;
+    log("5. 已添加代理目标头", normalizedBase);
+  }
+  
   const auth = buildAuthHeader(normalized);
   if (auth) {
     headers["Authorization"] = auth;

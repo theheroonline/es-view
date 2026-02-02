@@ -51,5 +51,12 @@ function esProxyPlugin(): Plugin {
 export default defineConfig({
   plugins: [react(), esProxyPlugin()],
   // Tauri 要求使用相对路径
-  base: "./"
+  base: "./",
+  server: {
+    host: "127.0.0.1",
+    port: 5173,
+    strictPort: false,
+    open: true,
+    cors: true
+  }
 });

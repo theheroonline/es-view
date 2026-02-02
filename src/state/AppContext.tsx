@@ -77,15 +77,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state, persist]);
 
   const addHistory = useCallback(async (title: string, sql: string) => {
+    const trimmedSql = sql.trim();
+    if (!trimmedSql) return; // 不记录空 SQL
+
+    // 规范化 SQL：移除末尾分号、压缩空白并转小写，用于去重比较
+    const normalize = (s: string) => s.replace(/\s*;+\s*$/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    const normalizedNew = normalize(trimmedSql);
+
     const item = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       title,
-      sql,
+      sql: trimmedSql,
       createdAt: new Date().toISOString()
     };
+
+    const HISTORY_LIMIT = 10;
+    // 去重：移除已有相同（规范化后）SQL 的历史项（保留最近一次）
+    const filtered = state.history.filter((h) => normalize(h.sql || '') !== normalizedNew);
     const nextState: LocalState = {
       ...state,
-      history: [item, ...state.history].slice(0, 50)
+      history: [item, ...filtered].slice(0, HISTORY_LIMIT)
     };
     await persist(nextState);
   }, [state, persist]);
