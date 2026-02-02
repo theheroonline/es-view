@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import FieldFilterButton, { type FieldFilterState } from "../components/FieldFilterButton";
 import { deleteDocument, extractFieldsFromMapping, getIndexMapping, searchIndex, updateDocument } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 
@@ -56,6 +57,10 @@ export default function DataBrowser() {
   const indexDropdownRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
+  // Field Filter State (shared component)
+  const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+
   // Close index dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -77,6 +82,8 @@ export default function DataBrowser() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+
 
   // Context Menu Handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, row: any, field?: string, value?: unknown) => {
@@ -437,30 +444,99 @@ export default function DataBrowser() {
   const totalRelation = totalInfo?.relation; // "eq" 或 "gte"
   const rows = result?.hits?.hits ?? [];
 
+  useEffect(() => {
+    if (selectedDocs.size === 0) return;
+    const validIds = new Set(rows.map((row: any) => row._id));
+    const next = new Set(Array.from(selectedDocs).filter((id) => validIds.has(id)));
+    if (next.size !== selectedDocs.size) {
+      setSelectedDocs(next);
+    }
+  }, [rows, selectedDocs]);
+
   // 从结果中提取所有字段用于表格显示
-  const allColumns = useMemo(() => {
+  const allAvailableColumns = useMemo(() => {
     if (rows.length === 0) return [];
     const colSet = new Set<string>();
     rows.forEach((row: any) => {
       Object.keys(row._source || {}).forEach((key) => colSet.add(key));
     });
-    return Array.from(colSet); // 显示所有字段
+    return Array.from(colSet);
   }, [rows]);
+
+  const filterCandidateFields = useMemo(() => {
+    // 优先使用 mapping 字段；若未加载 mapping，则回退到本页数据字段
+    return fields.length > 0 ? fields : allAvailableColumns;
+  }, [fields, allAvailableColumns]);
+
+  // 实际显示的字段：未启用过滤时显示全部；启用后显示选中的字段（按 mapping 顺序）
+  const allColumns = useMemo(() => {
+    if (!fieldFilter.enabled) return filterCandidateFields;
+    // 仅保留仍存在于候选列表中的字段，避免索引切换后出现无效字段
+    return fieldFilter.fields.filter((f) => filterCandidateFields.includes(f));
+  }, [fieldFilter.enabled, fieldFilter.fields, filterCandidateFields]);
+
+  const selectedRows = rows.filter((row: any) => selectedDocs.has(row._id));
+  const isAllRowsSelected = rows.length > 0 && selectedDocs.size === rows.length;
+
+  const toggleSelectAllRows = (checked: boolean) => {
+    if (checked) {
+      setSelectedDocs(new Set(rows.map((row: any) => row._id)));
+      return;
+    }
+    setSelectedDocs(new Set());
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedDocs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const copySelectedDocs = () => {
+    if (selectedRows.length === 0) return;
+    const payload = selectedRows.map((row: any) => ({
+      _id: row._id,
+      _index: row._index,
+      ...row._source
+    }));
+    navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+  };
+
+  const deleteSelectedDocs = async () => {
+    if (selectedRows.length === 0 || !activeConnection) return;
+    if (!confirm(`确定删除 ${selectedRows.length} 条选中文档？`)) return;
+    try {
+      setLoading(true);
+      for (const row of selectedRows) {
+        await deleteDocument(activeConnection, row._index, row._id);
+      }
+      setSelectedDocs(new Set());
+      await execute();
+    } catch (err) {
+      setError("删除失败：" + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const renderCellValue = (val: unknown, truncate = true) => {
     if (val === null || val === undefined) return <span className="muted">-</span>;
-    if (typeof val === "object") {
-      const str = JSON.stringify(val);
-      if (truncate && str.length > 60) {
-        return <span className="muted" title={str} style={{ cursor: 'help' }}>{str.substring(0, 60)}...</span>;
-      }
-      return <span title={str} style={{ cursor: 'help' }}>{str}</span>;
-    }
-    const str = String(val);
-    if (truncate && str.length > 60) {
-      return <span title={str} style={{ cursor: 'help' }}>{str.substring(0, 60)}...</span>;
-    }
-    return str;
+
+    const str = typeof val === "object" ? JSON.stringify(val) : String(val);
+    const shouldTruncate = truncate && str.length > 80;
+    const preview = shouldTruncate ? `${str.substring(0, 80)}...` : str;
+
+    return (
+      <span className="truncated-cell" title={str} data-truncated={shouldTruncate ? "true" : "false"}>
+        <span className="truncated-text">{preview}</span>
+      </span>
+    );
   };
 
   return (
@@ -686,7 +762,7 @@ export default function DataBrowser() {
       </div>
 
       {/* Pagination & Stats Toolbar */}
-      <div className="toolbar" style={{ margin: '0 0 16px 0', border: 'none', background: 'transparent', padding: 0 }}>
+      <div className="toolbar" style={{ margin: '0 0 16px 0', border: 'none', background: 'transparent', padding: 0, position: 'relative' }}>
         <div className="flex-gap items-center">
              <div className="flex-gap items-center" style={{ background: 'white', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <button 
@@ -766,15 +842,29 @@ export default function DataBrowser() {
              )}
              {error && <span className="text-danger" style={{ fontSize: '13px' }}>{error}</span>}
              {!error && !loading && <span className="muted" style={{ background: 'white', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>Total: <strong>{total}{totalRelation === 'gte' ? '+' : ''}</strong> hits</span>}
+             <FieldFilterButton
+               allFields={filterCandidateFields}
+               state={fieldFilter}
+               onChange={setFieldFilter}
+               align="right"
+               label="字段过滤"
+             />
         </div>
       </div>
 
       <div className="card">
         <div className="card-header">
           <h3 className="card-title">查询结果</h3>
-          <div className="flex-gap">
+          <div className="flex-gap" style={{ alignItems: 'center' }}>
+            <div className="flex-gap" style={{ gap: '4px' }}>
+              <button className="btn btn-sm btn-secondary" onClick={copySelectedDocs} disabled={selectedRows.length === 0}>复制选中</button>
+              <button className="btn btn-sm btn-secondary" onClick={deleteSelectedDocs} disabled={selectedRows.length === 0}>删除选中</button>
+              {/* <span className="muted" style={{ fontSize: '12px' }}>{selectedRows.length > 0 ? `已选 ${selectedRows.length} 条` : ''}</span> */}
+            </div>
+            <div className="flex-gap">
               <button className={`btn btn-sm ${viewMode === "table" ? "btn-primary" : "btn-secondary"}`} onClick={() => setViewMode("table")}>表格</button>
               <button className={`btn btn-sm ${viewMode === "json" ? "btn-primary" : "btn-secondary"}`} onClick={() => setViewMode("json")}>JSON</button>
+            </div>
           </div>
         </div>
           
@@ -790,6 +880,13 @@ export default function DataBrowser() {
                   <table className="table">
                   <thead>
                     <tr>
+                      <th style={{ width: '42px', textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={isAllRowsSelected} 
+                          onChange={(event) => toggleSelectAllRows(event.target.checked)}
+                        />
+                      </th>
                       <th style={{ width: '50px' }}></th>
                       <th style={{ width: '120px' }}>_id</th>
                       {allColumns.map((col) => (
@@ -805,6 +902,13 @@ export default function DataBrowser() {
                           onContextMenu={(e) => handleContextMenu(e, row)}
                           className={expandedRows.has(row._id) ? 'row-expanded' : ''}
                         >
+                          <td style={{ textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedDocs.has(row._id)}
+                              onChange={() => toggleSelectRow(row._id)}
+                            />
+                          </td>
                           <td style={{ textAlign: 'center' }}>
                             <button 
                               className="btn btn-ghost btn-icon" 
@@ -832,7 +936,7 @@ export default function DataBrowser() {
                         </tr>
                         {expandedRows.has(row._id) && (
                           <tr className="expanded-row">
-                            <td colSpan={allColumns.length + 3} style={{ background: '#f8fafc', padding: '12px 16px' }}>
+                            <td colSpan={allColumns.length + 4} style={{ background: '#f8fafc', padding: '12px 16px' }}>
                               <pre style={{ margin: 0, fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                                 {JSON.stringify(row._source, null, 2)}
                               </pre>
