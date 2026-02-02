@@ -4,6 +4,8 @@
 
 之前用的是大佬开源的es-client项目,后来那个功能太多了,就自己写个简单的用着
 
+<img width="1286" height="839" alt="image" src="https://github.com/user-attachments/assets/5bba5d32-cc5f-4821-acc2-8facbd229ab7" />
+
 
 ## 功能概览
 
@@ -16,7 +18,6 @@
 
 - Elasticsearch 7.1+（SQL 查询与 _search）
 
-- 验收：安装/卸载顺畅；说明完整
 
 ## 开发说明
 
