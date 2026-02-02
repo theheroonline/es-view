@@ -26,10 +26,6 @@ npm install
 npm run dev
 ```
 
-### 开发模式代理（解决 CORS）
-
-开发环境会自动通过 /es 走 Vite 代理，并根据请求头动态路由到不同的 ES 地址。无需在 ES 上开启 CORS。
-
 ## 打包说明（可选 Tauri）
 
 ```bash
