@@ -58,11 +58,11 @@ function AppLayout() {
               <NavLink to="/data" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
                 <span>📑</span> 数据浏览
               </NavLink>
-              <NavLink to="/indices" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
-                <span>🗂️</span> 索引管理
-              </NavLink>
               <NavLink to="/sql" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
                 <span>⌨️</span> 简易SQL操作
+              </NavLink>
+              <NavLink to="/indices" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+                <span>🗂️</span> 索引管理
               </NavLink>
               <NavLink to="/connections" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
                 <span>⚙️</span> 连接配置

@@ -32,6 +32,7 @@ export default function DataBrowser() {
   const [conditions, setConditions] = useState<ConditionItem[]>(() => [{ ...defaultCondition }]);
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
+  const [sizeInput, setSizeInput] = useState(String(10));
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -195,6 +196,23 @@ export default function DataBrowser() {
       execute();
     }
   }, [page, size, selectedIndex, activeConnection]);
+
+  // 同步 size -> sizeInput（当 size 被程序性更新时）
+  useEffect(() => {
+    setSizeInput(String(size));
+  }, [size]);
+
+  const commitSize = () => {
+    const parsed = Number.parseInt(sizeInput, 10);
+    const next = Number.isNaN(parsed) ? size : Math.max(1, parsed);
+    if (next !== size) {
+      setSize(next);
+      setPage(1); // 改变每页大小后回到第一页，避免越界
+    } else {
+      // 如果未变更但输入非法（如空），恢复显示
+      setSizeInput(String(size));
+    }
+  };
 
   const handleConditionChange = (idx: number, next: Partial<ConditionItem>) => {
     setConditions((prev) => prev.map((item, index) => (index === idx ? { ...item, ...next } : item)));
@@ -712,10 +730,10 @@ export default function DataBrowser() {
                   type="number" 
                   className="form-control"
                   style={{ width: '80px', padding: '4px 8px' }}
-                  value={size} 
-                  onChange={(event) => {
-                    setSize(Number(event.target.value));
-                  }} 
+                  value={sizeInput} 
+                  onChange={(event) => setSizeInput(event.target.value)} 
+                  onBlur={commitSize}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { commitSize(); (e.target as HTMLElement).blur(); } }}
                   min={1} 
                   disabled={loading}
                 />
