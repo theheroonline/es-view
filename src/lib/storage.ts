@@ -6,7 +6,8 @@ const CONFIG_FILE = "es-view.state.json";
 const defaultState: LocalState = {
   profiles: [],
   secrets: {},
-  history: []
+  history: [],
+  cachedIndicesByConnection: {}
 };
 
 function isTauri() {

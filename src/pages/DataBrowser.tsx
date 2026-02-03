@@ -34,6 +34,7 @@ export default function DataBrowser() {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
   const [sizeInput, setSizeInput] = useState(String(10));
+  const [pageInput, setPageInput] = useState(String(1));
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -209,6 +210,11 @@ export default function DataBrowser() {
     setSizeInput(String(size));
   }, [size]);
 
+  // 同步 page -> pageInput（帮助输入框保持一致）
+  useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
+
   const commitSize = () => {
     const parsed = Number.parseInt(sizeInput, 10);
     const next = Number.isNaN(parsed) ? size : Math.max(1, parsed);
@@ -218,6 +224,16 @@ export default function DataBrowser() {
     } else {
       // 如果未变更但输入非法（如空），恢复显示
       setSizeInput(String(size));
+    }
+  };
+
+  const commitPage = () => {
+    const parsed = Number.parseInt(pageInput.trim(), 10);
+    const next = Number.isNaN(parsed) ? page : Math.max(1, parsed);
+    if (next !== page) {
+      setPage(next);
+    } else {
+      setPageInput(String(page));
     }
   };
 
@@ -856,7 +872,7 @@ export default function DataBrowser() {
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
                     if (page > 1) {
-                      setPage(page - 1);
+                      setPage((prev) => Math.max(1, prev - 1));
                     }
                   }}
                   disabled={loading || page <= 1}
@@ -869,8 +885,10 @@ export default function DataBrowser() {
                   type="number" 
                   className="form-control"
                   style={{ width: '100px', padding: '4px 8px' }}
-                  value={page} 
-                  onChange={(event) => setPage(Number(event.target.value))} 
+                  value={pageInput}
+                  onChange={(event) => setPageInput(event.target.value)} 
+                  onBlur={commitPage}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { commitPage(); (e.target as HTMLElement).blur(); } }}
                   min={1} 
                   disabled={loading}
                 />
@@ -880,7 +898,7 @@ export default function DataBrowser() {
                 <button 
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
-                    setPage(page + 1);
+                    setPage((prev) => prev + 1);
                   }}
                   disabled={loading}
                   style={{ padding: '4px 12px' }}

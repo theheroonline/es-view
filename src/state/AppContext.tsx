@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { listIndices } from "../lib/esView";
 import { loadState, saveState } from "../lib/storage";
-import type { ConnectionProfile, EsConnection, LocalState } from "../lib/types";
+import type { ConnectionProfile, EsConnection, IndexMeta, LocalState } from "../lib/types";
 
 interface AppContextValue {
   state: LocalState;
@@ -13,6 +13,7 @@ interface AppContextValue {
   getActiveConnection: () => EsConnection | null;
   getConnectionById: (id: string) => EsConnection | null;
   indices: string[];
+  indicesMeta: IndexMeta[];
   refreshIndices: (connection?: EsConnection | null) => Promise<void>;
   selectedIndex: string | undefined;
   setSelectedIndex: (index: string | undefined) => Promise<void>;
@@ -21,17 +22,25 @@ interface AppContextValue {
 const defaultState: LocalState = {
   profiles: [],
   secrets: {},
-  history: []
+  history: [],
+  cachedIndicesByConnection: {}
 };
+
+const isSystemIndex = (name: string) => name.startsWith(".");
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LocalState>(defaultState);
   const [indices, setIndices] = useState<string[]>([]);
+  const [indicesMeta, setIndicesMeta] = useState<IndexMeta[]>([]);
+  const [stateLoaded, setStateLoaded] = useState(false);
 
   useEffect(() => {
-    loadState().then((loaded) => setState(loaded));
+    loadState().then((loaded) => {
+      setState(loaded);
+      setStateLoaded(true);
+    });
   }, []);
 
   const persist = useCallback(async (nextState: LocalState) => {
@@ -63,10 +72,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const profiles = state.profiles.filter((item) => item.id !== id);
     const secrets = { ...state.secrets };
     delete secrets[id];
+    const cachedIndicesByConnection = { ...(state.cachedIndicesByConnection ?? {}) };
+    delete cachedIndicesByConnection[id];
     const nextState: LocalState = {
       ...state,
       profiles,
       secrets,
+      cachedIndicesByConnection,
       lastConnectionId: state.lastConnectionId === id ? profiles[0]?.id : state.lastConnectionId
     };
     await persist(nextState);
@@ -135,27 +147,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const target = connection ?? getActiveConnection();
     if (!target) {
       setIndices([]);
+      setIndicesMeta([]);
       return;
     }
     try {
       const data = await listIndices(target);
-      const next = data.map((item) => item.index);
-      setIndices(next);
-      setState((prev) => {
-        if (prev.selectedIndex && !next.includes(prev.selectedIndex)) {
-          return { ...prev, selectedIndex: undefined };
-        }
-        return prev;
-      });
+      const mapped: IndexMeta[] = data
+        .map((item) => ({
+          index: item.index,
+          health: item.health,
+          docsCount: item["docs.count"] ?? (item as { docsCount?: string }).docsCount
+        }))
+        .filter((item) => !isSystemIndex(item.index));
+      const nextIndices = mapped.map((item) => item.index);
+
+      setIndices(nextIndices);
+      setIndicesMeta(mapped);
+
+      const cachedIndicesByConnection = {
+        ...(state.cachedIndicesByConnection ?? {}),
+        [target.id]: mapped
+      };
+      const nextState: LocalState = {
+        ...state,
+        cachedIndicesByConnection,
+        selectedIndex: state.selectedIndex && nextIndices.includes(state.selectedIndex) ? state.selectedIndex : undefined
+      };
+      await persist(nextState);
     } catch {
       setIndices([]);
+      setIndicesMeta([]);
     }
-  }, [getActiveConnection]);
+  }, [getActiveConnection, persist, state]);
+
+  const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
 
   useEffect(() => {
-    const active = getActiveConnection();
-    refreshIndices(active).catch(() => setIndices([]));
-  }, [getActiveConnection, refreshIndices]);
+    if (!stateLoaded) return;
+    if (!activeConnection) {
+      setIndices([]);
+      setIndicesMeta([]);
+      return;
+    }
+    const cached = state.cachedIndicesByConnection?.[activeConnection.id];
+    if (cached) {
+      setIndicesMeta(cached);
+      setIndices(cached.map((item) => item.index));
+      return;
+    }
+    refreshIndices(activeConnection).catch(() => {
+      setIndices([]);
+      setIndicesMeta([]);
+    });
+  }, [activeConnection, refreshIndices, state.cachedIndicesByConnection, stateLoaded]);
 
   const value = useMemo(() => ({
     state,
@@ -166,10 +210,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     getActiveConnection,
     getConnectionById,
     indices,
+    indicesMeta,
     refreshIndices,
     selectedIndex: state.selectedIndex,
     setSelectedIndex
-  }), [state, saveConnection, deleteConnection, setActiveConnection, addHistory, getActiveConnection, getConnectionById, indices, refreshIndices, setSelectedIndex]);
+  }), [state, saveConnection, deleteConnection, setActiveConnection, addHistory, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, setSelectedIndex]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

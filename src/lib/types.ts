@@ -19,6 +19,12 @@ export interface ConnectionProfile {
   verifyTls: boolean;
 }
 
+export interface IndexMeta {
+  index: string;
+  health?: string;
+  docsCount?: string;
+}
+
 export interface QueryHistoryItem {
   id: string;
   title: string;
@@ -32,4 +38,5 @@ export interface LocalState {
   history: QueryHistoryItem[];
   lastConnectionId?: string;
   selectedIndex?: string;
+  cachedIndicesByConnection?: Record<string, IndexMeta[]>;
 }

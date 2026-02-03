@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { createIndex, deleteIndex, getIndexInfo, listIndices, refreshIndex } from "../lib/esView";
+import { createIndex, deleteIndex, getIndexInfo, refreshIndex } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 
 export default function IndexManager() {
-  const { getActiveConnection, selectedIndex, setSelectedIndex, refreshIndices } = useAppContext();
+  const { getActiveConnection, selectedIndex, setSelectedIndex, refreshIndices, indicesMeta } = useAppContext();
   const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
-  const [indices, setIndices] = useState<Array<{ index: string; health: string; docsCount: string }>>([]);
   
   // Creation States
   const [showCreate, setShowCreate] = useState(false);
@@ -27,24 +26,11 @@ export default function IndexManager() {
   const loadIndices = async () => {
     if (!activeConnection) return;
     try {
-      const data = await listIndices(activeConnection);
-      const mapped = data.map((item: any) => ({
-        index: item.index,
-        health: item.health,
-        docsCount: item["docs.count"] ?? item.docsCount ?? "0"
-      }));
-      setIndices(mapped);
       await refreshIndices(activeConnection);
     } catch (e) {
       console.error(e);
-      setIndices([]);
     }
   };
-
-  useEffect(() => {
-    if (!activeConnection) return;
-    loadIndices().catch(() => setIndices([]));
-  }, [activeConnection]);
 
   // Load details when target changes
   useEffect(() => {
@@ -233,7 +219,7 @@ export default function IndexManager() {
                     </tr>
                   </thead>
                   <tbody>
-                    {indices.map((item) => (
+                    {indicesMeta.map((item) => (
                       <tr key={item.index} style={{ background: detailTarget === item.index && showDetailPanel ? '#f1f5f9' : undefined }}>
                         <td style={{ fontWeight: 500 }}>
                           {item.index} 
@@ -259,7 +245,7 @@ export default function IndexManager() {
                         </td>
                       </tr>
                     ))}
-                    {indices.length === 0 && (
+                    {indicesMeta.length === 0 && (
                       <tr>
                         <td colSpan={4} className="muted" style={{ textAlign: 'center', padding: '32px' }}>
                           {activeConnection ? "未找到索引" : "请先连接 Elasticsearch"}
