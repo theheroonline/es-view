@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FieldFilterButton, { type FieldFilterState } from "../components/FieldFilterButton";
-import { deleteDocument, extractFieldsFromMapping, getIndexMapping, searchIndex, updateDocument } from "../lib/esView";
+import { deleteDocument, extractFieldsFromMapping, getIndexMapping, refreshIndex, searchIndex, updateDocument } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 
 type ViewMode = "table" | "json";
@@ -253,10 +253,22 @@ export default function DataBrowser() {
       if (!activeConnection) return;
       if (!confirm(`确定删除文档 ${docId} ?`)) return;
       try {
+          setLoading(true);
+          setError("");
           await deleteDocument(activeConnection, docIndex, docId);
-          await execute(); 
+          await refreshIndex(activeConnection, docIndex);
+          setSelectedDocs((prev) => {
+            const next = new Set(prev);
+            next.delete(docId);
+            return next;
+          });
+          // 重新执行查询并等待完成
+          const response = await executeQuery();
+          setResult(response);
       } catch (e) {
-          setError("删除失败");
+          setError("删除失败：" + (e instanceof Error ? e.message : String(e)));
+      } finally {
+          setLoading(false);
       }
   };
 
@@ -266,15 +278,87 @@ export default function DataBrowser() {
       setShowEditModal(true);
   };
 
+  // 查询逻辑函数，不修改状态，直接返回结果
+  const executeQuery = async () => {
+    if (!activeConnection) {
+      throw new Error("请先设置当前连接");
+    }
+    if (!selectedIndex) {
+      throw new Error("请选择索引");
+    }
+    
+    const activeConditions = conditions.filter((item) => item.enabled && item.boolType !== "sort" && item.field && item.value);
+    const activeSorts = conditions.filter((item) => item.enabled && item.boolType === "sort" && item.field);
+    
+    let query: any = { match_all: {} };
+    const boolBuckets: Record<string, any[]> = { must: [], should: [], must_not: [] };
+    for (const item of activeConditions) {
+      let parsed: unknown;
+      if (item.operator === "range") {
+        try {
+          parsed = JSON.parse(item.value);
+        } catch {
+          throw new Error("范围查询请输入 JSON，例如 {\"gte\":10,\"lte\":20 }");
+        }
+      }
+      if (item.operator === "term") {
+        boolBuckets[item.boolType]?.push({ term: { [item.field]: item.value } });
+      } else if (item.operator === "match") {
+        boolBuckets[item.boolType]?.push({ match: { [item.field]: item.value } });
+      } else if (item.operator === "range") {
+        boolBuckets[item.boolType]?.push({ range: { [item.field]: parsed } });
+      }
+    }
+    const boolQuery: Record<string, any[]> = {};
+    for (const key of Object.keys(boolBuckets)) {
+      if (boolBuckets[key].length > 0) {
+        boolQuery[key] = boolBuckets[key];
+      }
+    }
+    if (Object.keys(boolQuery).length > 0) {
+      query = { bool: boolQuery };
+    }
+
+    const from = (page - 1) * size;
+    let sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
+    if (sortParams.length === 0) {
+      sortParams = [{ _id: { order: "asc" } }];
+    } else {
+      sortParams.push({ _id: { order: "asc" } });
+    }
+
+    // 简化版：直接使用普通分页返回结果
+    if (from + size <= 10000) {
+      const body: Record<string, unknown> = {
+        from,
+        size,
+        query,
+        sort: sortParams,
+        track_total_hits: true
+      };
+      return await searchIndex(activeConnection, selectedIndex, body);
+    }
+    
+    throw new Error("深度分页查询暂时不支持快速刷新");
+  };
+
   const handleUpdateDoc = async () => {
       if (!activeConnection || !editingDoc) return;
       try {
+          setLoading(true);
+          setError("");
           const body = JSON.parse(editJson);
           await updateDocument(activeConnection, editingDoc._index, editingDoc._id, body);
+          await refreshIndex(activeConnection, editingDoc._index);
           setShowEditModal(false);
-          await execute(); 
+          setEditingDoc(null);
+          // 重新执行查询并等待完成
+          const response = await executeQuery();
+          setResult(response);
       } catch (e) {
-          setError("更新失败: Please check JSON format"); 
+          setError("更新失败：" + (e instanceof Error ? e.message : "请检查JSON格式"));
+      } finally {
+          setLoading(false);
       }
   };
 
@@ -515,6 +599,9 @@ export default function DataBrowser() {
       setLoading(true);
       for (const row of selectedRows) {
         await deleteDocument(activeConnection, row._index, row._id);
+      }
+      if (selectedIndex) {
+        await refreshIndex(activeConnection, selectedIndex);
       }
       setSelectedDocs(new Set());
       await execute();
