@@ -4,7 +4,8 @@
 
 之前用的是大佬开源的es-client项目,后来那个功能太多了,就自己写个简单的用着
 
-<img width="1286" height="839" alt="image" src="https://github.com/user-attachments/assets/5bba5d32-cc5f-4821-acc2-8facbd229ab7" />
+<img width="1586" height="1069" alt="image" src="https://github.com/user-attachments/assets/56c63a4a-f958-40ea-bff3-18d6b2f50f93" />
+
 
 
 ## 功能概览
