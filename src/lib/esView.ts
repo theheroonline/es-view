@@ -190,6 +190,67 @@ export async function esRequest<T>(
   }
 }
 
+export async function esRequestRaw(
+  connection: EsConnection,
+  path: string,
+  options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+): Promise<{ status: number; ok: boolean; body: string }> {
+  log("=== ES 原始请求开始 ===");
+
+  const normalized = normalizeConnection(connection);
+  const normalizedBase = normalized.baseUrl.replace(/\/$/, "");
+  const requestPath = `/${path.replace(/^\//, "")}`;
+
+  let url: string;
+  if (isTauriEnv) {
+    url = `${normalizedBase}${requestPath}`;
+  } else {
+    url = `/es${requestPath}`;
+  }
+
+  const headers: Record<string, string> = {
+    ...(options.headers ?? {})
+  };
+
+  if (!isTauriEnv) {
+    headers["x-es-target"] = normalizedBase;
+  }
+
+  const auth = buildAuthHeader(normalized);
+  if (auth) {
+    headers["Authorization"] = auth;
+  }
+
+  let bodyStr: string | undefined;
+  if (options.body !== undefined) {
+    if (typeof options.body === "string") {
+      bodyStr = options.body;
+      if (!headers["Content-Type"]) {
+        headers["Content-Type"] = "text/plain";
+      }
+    } else {
+      bodyStr = JSON.stringify(options.body);
+      if (!headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+    }
+  }
+
+  try {
+    const res = isTauriEnv
+      ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr)
+      : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
+
+    log("=== ES 原始请求结束 ===");
+    return res;
+  } catch (error) {
+    log("!!! 原始请求异常 !!!");
+    log("错误信息", error instanceof Error ? error.message : String(error));
+    log("=== ES 原始请求异常结束 ===");
+    throw error;
+  }
+}
+
 export async function pingCluster(connection: EsConnection) {
   log(">>> 测试集群连接");
   return esRequest(connection, "/_cluster/health");

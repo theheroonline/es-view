@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import Connections from "./pages/Connections";
 import DataBrowser from "./pages/DataBrowser";
 import IndexManager from "./pages/IndexManager";
+import RestConsole from "./pages/RestConsole";
 import SqlQuery from "./pages/SqlQuery";
 import { AppProvider, useAppContext } from "./state/AppContext";
 
@@ -61,6 +62,9 @@ function AppLayout() {
               <NavLink to="/sql" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
                 <span>⌨️</span> 简易SQL操作
               </NavLink>
+              <NavLink to="/rest" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+                <span>🧩</span> 高级操作
+              </NavLink>
               <NavLink to="/indices" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
                 <span>🗂️</span> 索引管理
               </NavLink>
@@ -83,6 +87,7 @@ function AppLayout() {
           <Route path="/sql" element={<SqlQuery />} />
           <Route path="/data" element={<DataBrowser />} />
           <Route path="/indices" element={<IndexManager />} />
+          <Route path="/rest" element={<RestConsole />} />
         </Routes>
       </main>
     </div>
