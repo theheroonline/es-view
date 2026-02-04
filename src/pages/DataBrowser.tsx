@@ -1,7 +1,14 @@
+import { ConfigProvider, DatePicker } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import dayjs, { Dayjs } from "dayjs";
+import "dayjs/locale/zh-cn";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FieldFilterButton, { type FieldFilterState } from "../components/FieldFilterButton";
 import { deleteDocument, extractFieldsFromMapping, getIndexMapping, refreshIndex, searchIndex, updateDocument } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
+
+dayjs.locale("zh-cn");
+const { RangePicker } = DatePicker;
 
 type ViewMode = "table" | "json";
 type BoolType = "must" | "should" | "must_not" | "sort";
@@ -12,6 +19,7 @@ type ConditionItem = {
   boolType: BoolType;
   enabled: boolean;
   sortDirection?: "asc" | "desc"; // 当 boolType 为 sort 时使用
+  rangeValue?: [Dayjs | null, Dayjs | null] | null;
 };
 type SortDirection = "asc" | "desc";
 
@@ -61,6 +69,14 @@ export default function DataBrowser() {
   // Field Filter State (shared component)
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+
+  const presets = [
+    { label: '最近1小时', value: [dayjs().subtract(1, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: '最近24小时', value: [dayjs().subtract(24, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: '最近7天', value: [dayjs().subtract(7, 'day'), dayjs()] as [Dayjs, Dayjs] },
+    { label: '今天', value: [dayjs().startOf('day'), dayjs().endOf('day')] as [Dayjs, Dayjs] },
+    { label: '昨天', value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] as [Dayjs, Dayjs] },
+  ];
 
   // Close index dropdown when clicking outside
   useEffect(() => {
@@ -294,6 +310,8 @@ export default function DataBrowser() {
       setShowEditModal(true);
   };
 
+  const formatDateTime = (value: Dayjs | null) => (value ? value.format("YYYY-MM-DD HH:mm:ss") : "");
+
   // 查询逻辑函数，不修改状态，直接返回结果
   const executeQuery = async () => {
     if (!activeConnection) {
@@ -303,12 +321,21 @@ export default function DataBrowser() {
       throw new Error("请选择索引");
     }
     
-    const activeConditions = conditions.filter((item) => item.enabled && item.boolType !== "sort" && item.field && item.value);
+    const activeConditions = conditions.filter((item) => 
+      item.enabled && item.boolType !== "sort" && item.field && (item.value || (item.operator === 'time_range' && item.rangeValue && item.rangeValue[0] && item.rangeValue[1]))
+    );
     const activeSorts = conditions.filter((item) => item.enabled && item.boolType === "sort" && item.field);
     
     let query: any = { match_all: {} };
     const boolBuckets: Record<string, any[]> = { must: [], should: [], must_not: [] };
     for (const item of activeConditions) {
+      if (item.operator === "time_range" && item.rangeValue && item.rangeValue[0] && item.rangeValue[1]) {
+        const startStr = formatDateTime(item.rangeValue[0]);
+        const endStr = formatDateTime(item.rangeValue[1]);
+        boolBuckets[item.boolType]?.push({ range: { [item.field]: { gte: startStr, lte: endStr } } });
+        continue;
+      }
+      
       let parsed: unknown;
       if (item.operator === "range") {
         try {
@@ -321,7 +348,7 @@ export default function DataBrowser() {
         boolBuckets[item.boolType]?.push({ term: { [item.field]: item.value } });
       } else if (item.operator === "match") {
         boolBuckets[item.boolType]?.push({ match: { [item.field]: item.value } });
-      } else if (item.operator === "range") {
+      } else if (item.operator === "range" && parsed) {
         boolBuckets[item.boolType]?.push({ range: { [item.field]: parsed } });
       }
     }
@@ -396,12 +423,21 @@ export default function DataBrowser() {
     }
     
     // 分离查询条件和排序条件
-    const activeConditions = conditions.filter((item) => item.enabled && item.boolType !== "sort" && item.field && item.value);
+    const activeConditions = conditions.filter((item) => 
+      item.enabled && item.boolType !== "sort" && item.field && (item.value || (item.operator === 'time_range' && item.rangeValue && item.rangeValue[0] && item.rangeValue[1]))
+    );
     const activeSorts = conditions.filter((item) => item.enabled && item.boolType === "sort" && item.field);
     
     let query: any = { match_all: {} };
     const boolBuckets: Record<string, any[]> = { must: [], should: [], must_not: [] };
     for (const item of activeConditions) {
+      if (item.operator === "time_range" && item.rangeValue && item.rangeValue[0] && item.rangeValue[1]) {
+        const startStr = formatDateTime(item.rangeValue[0]);
+        const endStr = formatDateTime(item.rangeValue[1]);
+        boolBuckets[item.boolType]?.push({ range: { [item.field]: { gte: startStr, lte: endStr } } });
+        continue;
+      }
+
       let parsed: unknown;
       if (item.operator === "range") {
         try {
@@ -416,7 +452,7 @@ export default function DataBrowser() {
         boolBuckets[item.boolType]?.push({ term: { [item.field]: item.value } });
       } else if (item.operator === "match") {
         boolBuckets[item.boolType]?.push({ match: { [item.field]: item.value } });
-      } else if (item.operator === "range") {
+      } else if (item.operator === "range" && parsed) {
         boolBuckets[item.boolType]?.push({ range: { [item.field]: parsed } });
       }
     }
@@ -646,7 +682,7 @@ export default function DataBrowser() {
     <div className="page">
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '24px', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flex: 1 }}>
-          <h1 className="page-title" style={{ margin: 0 }}>数据浏览</h1>
+          <h4 className="card-title" style={{ margin: 0 }}>选择索引</h4>
           <div 
             ref={indexDropdownRef}
             style={{ 
@@ -833,7 +869,8 @@ export default function DataBrowser() {
                     >
                       <option value="term">等于 (term)</option>
                       <option value="match">包含 (match)</option>
-                      <option value="range">范围 (range)</option>
+                      <option value="range">范围 (JSON)</option>
+                      <option value="time_range">时间范围(选择器)</option>
                     </select>
                   )}
                 </div>
@@ -842,12 +879,25 @@ export default function DataBrowser() {
                 <div>
                   {item.boolType === "sort" ? (
                     <span className="form-control" style={{ background: '#f8fafc', color: '#94a3b8', cursor: 'not-allowed' }}>-</span>
+                  ) : item.operator === "time_range" ? (
+                    <ConfigProvider locale={zhCN}>
+                      <RangePicker
+                        showTime
+                        size="small"
+                        value={item.rangeValue}
+                        onChange={(dates) => handleConditionChange(idx, { rangeValue: dates })}
+                        presets={presets}
+                        style={{ width: '100%', height: '32px' }}
+                        placeholder={['开始', '结束']}
+                        disabled={!item.enabled}
+                      />
+                    </ConfigProvider>
                   ) : (
                     <input 
                       className="form-control"
                       value={item.value} 
                       onChange={(event) => handleConditionChange(idx, { value: event.target.value })} 
-                      placeholder="输入查询值..." 
+                      placeholder={item.operator === 'range' ? '例如 {"gte": 10}' : "输入查询值..."} 
                     />
                   )}
                 </div>
@@ -860,7 +910,6 @@ export default function DataBrowser() {
               </div>
             ))}
           </div>
-
         </div>
       </div>
 

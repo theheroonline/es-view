@@ -1,8 +1,15 @@
+import { ConfigProvider, DatePicker } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import dayjs, { Dayjs } from "dayjs";
+import "dayjs/locale/zh-cn";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import FieldFilterButton, { type FieldFilterState } from "../components/FieldFilterButton";
 import { extractFieldsFromMapping, getIndexMapping, sqlQuery } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 import SqlHistory from "./SqlHistory";
+
+dayjs.locale("zh-cn");
+const { RangePicker } = DatePicker;
 
 type SqlOperation = "select" | "insert" | "update" | "delete";
 
@@ -11,6 +18,7 @@ type WhereCondition = {
   operator: string;
   value: string;
   enabled: boolean;
+  rangeValue?: [Dayjs | null, Dayjs | null] | null;
 };
 
 export default function SqlQuery() {
@@ -31,6 +39,14 @@ export default function SqlQuery() {
 
   // Field Filter State (shared component)
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
+  
+  const presets = [
+    { label: '最近1小时', value: [dayjs().subtract(1, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: '最近24小时', value: [dayjs().subtract(24, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: '最近7天', value: [dayjs().subtract(7, 'day'), dayjs()] as [Dayjs, Dayjs] },
+    { label: '今天', value: [dayjs().startOf('day'), dayjs().endOf('day')] as [Dayjs, Dayjs] },
+    { label: '昨天', value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] as [Dayjs, Dayjs] },
+  ];
 
   // 获取索引字段
   useEffect(() => {
@@ -46,6 +62,8 @@ export default function SqlQuery() {
       .catch(() => setAvailableFields([]));
   }, [activeConnection, selectedIndex]);
 
+  const formatDateTime = (value: Dayjs | null) => (value ? value.format("YYYY-MM-DD HH:mm:ss") : "");
+
   // 生成 SQL
   useEffect(() => {
     const name = selectedIndex || "your_index";
@@ -53,21 +71,34 @@ export default function SqlQuery() {
     switch (operation) {
       case "select":
         const fieldsPart = !fieldFilter.enabled ? "*" : fieldFilter.fields.join(", ");
-        const enabledConditions = whereConditions.filter((c) => c.enabled && c.field && c.value);
-        const wherePart = enabledConditions.length > 0
-          ? ` WHERE ${enabledConditions.map((c) => {
-              switch (c.operator) {
-                case "=": return `${c.field} = '${c.value}'`;
-                case "!=": return `${c.field} != '${c.value}'`;
-                case ">": return `${c.field} > ${c.value}`;
-                case ">=": return `${c.field} >= ${c.value}`;
-                case "<": return `${c.field} < ${c.value}`;
-                case "<=": return `${c.field} <= ${c.value}`;
-                case "LIKE": return `${c.field} LIKE '%${c.value}%'`;
-                default: return `${c.field} = '${c.value}'`;
-              }
-            }).join(" AND ")}`
-          : "";
+        const enabledConditions = whereConditions.filter((c) => 
+          c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
+        );
+        
+        // 构建WHERE条件
+        let conditions: string[] = [];
+        
+        // 添加普通条件
+        conditions = enabledConditions.map((c) => {
+          if (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]) {
+            const startStr = formatDateTime(c.rangeValue[0]);
+            const endStr = formatDateTime(c.rangeValue[1]);
+            return `${c.field} >= '${startStr}' AND ${c.field} <= '${endStr}'`;
+          }
+          
+          switch (c.operator) {
+            case "=": return `${c.field} = '${c.value}'`;
+            case "!=": return `${c.field} != '${c.value}'`;
+            case ">": return `${c.field} > '${c.value}'`;
+            case ">=": return `${c.field} >= '${c.value}'`;
+            case "<": return `${c.field} < '${c.value}'`;
+            case "<=": return `${c.field} <= '${c.value}'`;
+            case "LIKE": return `${c.field} LIKE '%${c.value}%'`;
+            default: return `${c.field} = '${c.value}'`;
+          }
+        });
+        
+        const wherePart = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
         generated = `SELECT ${fieldsPart} FROM ${name}${wherePart} LIMIT ${limit}`;
         break;
       case "insert":
@@ -102,7 +133,7 @@ export default function SqlQuery() {
       let rows = response.rows ?? [];
       
       // 只显示选中的字段（启用过滤时）
-      if (fieldFilter.enabled && fieldFilter.fields.length > 0) {
+      if (fieldFilter.enabled) {
         const fieldIndices = fieldFilter.fields.map((field) => columns.indexOf(field));
         const validPairs = fieldIndices
           .map((idx, i) => ({ idx, name: fieldFilter.fields[i] }))
@@ -159,9 +190,20 @@ export default function SqlQuery() {
     });
   };
 
+  // Format ISO datetime strings to readable local format, otherwise fallback to plain rendering
+  const formatDateString = (input: string) => {
+    const isoPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+    if (!isoPattern.test(input)) return null;
+    const date = new Date(input);
+    if (Number.isNaN(date.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
   const renderSqlCellValue = (val: unknown) => {
     if (val === null || val === undefined) return <span className="muted">-</span>;
-    const str = typeof val === "object" ? JSON.stringify(val) : String(val);
+    const formatted = typeof val === "string" ? formatDateString(val) : null;
+    const str = formatted ?? (typeof val === "object" ? JSON.stringify(val) : String(val));
     const shouldTruncate = str.length > 80;
     const preview = shouldTruncate ? `${str.substring(0, 80)}...` : str;
     return (
@@ -176,7 +218,6 @@ export default function SqlQuery() {
   return (
     <>
       <div className="page">
-        <h1 className="page-title">SQL 操作</h1>
         <div className="card">
         <div className="card-header">
           <div>
@@ -249,10 +290,10 @@ export default function SqlQuery() {
               </div>
 
               <div style={{ 
-                background: '#f8fafc', 
-                borderRadius: '6px',
-                border: '1px solid #e2e8f0',
-                padding: '12px'
+                background: '#fbfbfd', 
+                borderRadius: '12px',
+                border: '1px solid rgba(0,0,0,0.05)',
+                padding: '16px'
               }}>
                 {whereConditions.map((cond, idx) => (
                   <div key={idx} style={{ 
@@ -294,14 +335,30 @@ export default function SqlQuery() {
                       <option value="<">&lt;</option>
                       <option value="<=">&lt;=</option>
                       <option value="LIKE">LIKE</option>
+                      <option value="RANGE">时间范围(选择器)</option>
                     </select>
-                    <input 
-                      className="form-control"
-                      value={cond.value} 
-                      onChange={(event) => handleConditionChange(idx, { value: event.target.value })} 
-                      placeholder="输入值..." 
-                      disabled={!cond.enabled}
-                    />
+                    {cond.operator === 'RANGE' ? (
+                      <ConfigProvider locale={zhCN}>
+                        <RangePicker
+                          showTime
+                          size="small"
+                          value={cond.rangeValue}
+                          onChange={(dates) => handleConditionChange(idx, { rangeValue: dates })}
+                          presets={presets}
+                          style={{ width: '100%', height: '32px' }}
+                          placeholder={['开始', '结束']}
+                          disabled={!cond.enabled}
+                        />
+                      </ConfigProvider>
+                    ) : (
+                      <input 
+                        className="form-control"
+                        value={cond.value} 
+                        onChange={(event) => handleConditionChange(idx, { value: event.target.value })} 
+                        placeholder="输入值..." 
+                        disabled={!cond.enabled}
+                      />
+                    )}
                     <button 
                       className="btn btn-sm btn-ghost text-danger" 
                       onClick={() => removeCondition(idx)}
@@ -324,7 +381,7 @@ export default function SqlQuery() {
             )}
             <div className="span-2">
               <label>生成的 SQL 预览</label>
-              <textarea className="form-control json-editor" style={{ height: '100px', background: '#f8fafc', color: '#0f172a' }} value={sql} onChange={(event) => setSql(event.target.value)} />
+              <textarea className="form-control json-editor" style={{ height: '100px', background: '#fbfbfd', color: '#1d1d1f' }} value={sql} onChange={(event) => setSql(event.target.value)} />
             </div>
           </div>
           <div className="toolbar">
@@ -401,9 +458,9 @@ export default function SqlQuery() {
           </div>
         )}
       </div>
-      </div>
 
       <SqlHistory />
+      </div>
     </>
   );
 }

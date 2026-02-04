@@ -56,6 +56,10 @@ export default function FieldFilterButton({
     onChange({ enabled: true, fields: uniq(allFields) });
   };
 
+  const clearAll = () => {
+    onChange({ enabled: true, fields: [] });
+  };
+
   const clearFilter = () => {
     onChange({ enabled: false, fields: [] });
   };
@@ -68,10 +72,7 @@ export default function FieldFilterButton({
       return;
     }
 
-    // 不允许过滤后“一个都不选”，否则体验会非常奇怪（表格/SQL 都会变得不可用）
     const next = state.fields.filter((f) => f !== field);
-    if (next.length === 0) return;
-
     onChange({ enabled: true, fields: next });
   };
 
@@ -81,8 +82,9 @@ export default function FieldFilterButton({
         className="btn btn-sm btn-secondary"
         onClick={() => setOpen((v) => !v)}
         style={{
-          background: state.enabled ? "#3b82f6" : undefined,
-          color: state.enabled ? "white" : undefined
+          background: state.enabled ? "#007aff" : undefined,
+          color: state.enabled ? "white" : undefined,
+          borderColor: state.enabled ? "#007aff" : undefined
         }}
       >
         🔍 {label} {selectedCount > 0 && `(${selectedCount})`}
@@ -94,23 +96,28 @@ export default function FieldFilterButton({
             position: "absolute",
             top: "100%",
             [align]: 0,
-            marginTop: "4px",
-            background: "white",
-            border: "1px solid #e2e8f0",
-            borderRadius: "8px",
-            boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+            marginTop: "8px",
+            background: "rgba(255, 255, 255, 0.98)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "none",
+            borderRadius: "12px",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)",
             minWidth: "300px",
             maxHeight: "420px",
             overflow: "auto",
             zIndex: 2000,
-            padding: "12px"
+            padding: "16px"
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-            <strong style={{ fontSize: "13px" }}>显示字段</strong>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <strong style={{ fontSize: "13px", color: "#1d1d1f" }}>显示字段</strong>
             <div style={{ display: "flex", gap: "6px" }}>
               <button className="btn btn-sm btn-ghost" onClick={setAll} style={{ fontSize: "11px", padding: "2px 8px" }}>
                 全选
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={clearAll} style={{ fontSize: "11px", padding: "2px 8px" }}>
+                清空
               </button>
               <button className="btn btn-sm btn-ghost" onClick={clearFilter} style={{ fontSize: "11px", padding: "2px 8px" }}>
                 清除过滤
@@ -118,12 +125,12 @@ export default function FieldFilterButton({
             </div>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#334155" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#1d1d1f", fontWeight: 500 }}>
               <input type="checkbox" checked={state.enabled} onChange={(e) => setEnabled(e.target.checked)} />
               启用过滤
             </label>
-            <span style={{ fontSize: "12px", color: "#64748b" }}>{allFields.length === 0 ? "暂无字段" : `共 ${allFields.length} 个字段`}</span>
+            <span style={{ fontSize: "12px", color: "#86868b" }}>{allFields.length === 0 ? "暂无字段" : `共 ${allFields.length} 个字段`}</span>
           </div>
 
           {allFields.map((field) => (
@@ -132,13 +139,15 @@ export default function FieldFilterButton({
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "6px 8px",
+                padding: "8px 10px",
                 cursor: state.enabled ? "pointer" : "not-allowed",
-                borderRadius: "4px",
+                borderRadius: "6px",
                 fontSize: "13px",
-                opacity: state.enabled ? 1 : 0.6
+                opacity: state.enabled ? 1 : 0.5,
+                color: "#1d1d1f",
+                transition: "background 0.1s ease"
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f7")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
               <input
@@ -146,14 +155,14 @@ export default function FieldFilterButton({
                 disabled={!state.enabled}
                 checked={effectiveSelected.includes(field)}
                 onChange={(e) => toggleField(field, e.target.checked)}
-                style={{ marginRight: "8px" }}
+                style={{ marginRight: "10px" }}
               />
               <span>{field}</span>
             </label>
           ))}
 
           {!state.enabled && (
-            <div style={{ marginTop: "8px", fontSize: "12px", color: "#64748b" }}>
+            <div style={{ marginTop: "12px", fontSize: "12px", color: "#86868b", padding: "0 4px" }}>
               当前未启用过滤（显示全部字段）。勾选“启用过滤”后可选择需要展示的字段。
             </div>
           )}

@@ -10,6 +10,7 @@ interface AppContextValue {
   deleteConnection: (id: string) => Promise<void>;
   setActiveConnection: (id: string) => Promise<void>;
   addHistory: (title: string, sql: string) => Promise<void>;
+  clearHistory: () => Promise<void>;
   getActiveConnection: () => EsConnection | null;
   getConnectionById: (id: string) => EsConnection | null;
   indices: string[];
@@ -113,6 +114,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await persist(nextState);
   }, [state, persist]);
 
+  const clearHistory = useCallback(async () => {
+    await persist({ ...state, history: [] });
+  }, [state, persist]);
+
   const getActiveConnection = useCallback((): EsConnection | null => {
     const id = state.lastConnectionId;
     if (!id) return null;
@@ -207,6 +212,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteConnection,
     setActiveConnection,
     addHistory,
+    clearHistory,
     getActiveConnection,
     getConnectionById,
     indices,

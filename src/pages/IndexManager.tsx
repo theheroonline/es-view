@@ -118,15 +118,6 @@ export default function IndexManager() {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <h1 className="page-title">索引管理</h1>
-        {activeConnection && (
-            <button className={`btn ${showCreate ? "btn-secondary" : "btn-primary"}`} onClick={() => setShowCreate(!showCreate)}>
-              {showCreate ? "取消创建" : "+ 创建索引"}
-            </button>
-        )}
-      </div>
-
       {/* Create Section */}
       {showCreate && (
         <div className="card anim-fade-in">
@@ -165,10 +156,13 @@ export default function IndexManager() {
       {showDeleteModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          background: 'rgba(0,0,0,0.2)', 
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          zIndex: 1000,
           display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
-          <div className="card anim-fade-in" style={{ width: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+          <div className="card anim-fade-in" style={{ width: '400px', boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)', border: 'none' }}>
              <div className="card-header">
                 <h3 className="card-title text-danger">删除索引确认</h3>
              </div>
@@ -206,6 +200,11 @@ export default function IndexManager() {
            <div className="card">
               <div className="card-header">
                   <h3 className="card-title">索引列表</h3>
+                  {activeConnection && (
+                      <button className={`btn btn-sm ${showCreate ? "btn-secondary" : "btn-primary"}`} onClick={() => setShowCreate(!showCreate)}>
+                        {showCreate ? "取消创建" : "+ 创建索引"}
+                      </button>
+                  )}
               </div>
               
               <div className="table-wrapper">
@@ -223,7 +222,7 @@ export default function IndexManager() {
                       <tr key={item.index} style={{ background: detailTarget === item.index && showDetailPanel ? '#f1f5f9' : undefined }}>
                         <td style={{ fontWeight: 500 }}>
                           {item.index} 
-                          {selectedIndex === item.index && <span style={{ marginLeft: '8px', fontSize: '11px', background: '#e0e7ff', color: '#4338ca', padding: '2px 6px', borderRadius: '4px' }}>当前</span>}
+                          {selectedIndex === item.index && <span style={{ marginLeft: '8px', fontSize: '11px', background: 'rgba(0, 122, 255, 0.1)', color: '#007aff', padding: '2px 6px', borderRadius: '4px' }}>当前</span>}
                         </td>
                         <td>
                            <span style={{ 
@@ -231,10 +230,10 @@ export default function IndexManager() {
                              width: '8px', 
                              height: '8px', 
                              borderRadius: '50%', 
-                             background: item.health === 'green' ? '#10b981' : item.health === 'yellow' ? '#f59e0b' : '#ef4444',
-                             marginRight: '6px'
+                             background: item.health === 'green' ? '#34c759' : item.health === 'yellow' ? '#ff9500' : '#ff3b30',
+                             marginRight: '8px'
                            }}></span>
-                           {item.health}
+                           <span style={{ textTransform: 'capitalize', fontSize: '12px', color: '#86868b' }}>{item.health}</span>
                         </td>
                         <td>{item.docsCount}</td>
                         <td className="table-actions" style={{ textAlign: 'right' }}>
@@ -262,20 +261,29 @@ export default function IndexManager() {
         <div className={`detail-pane ${showDetailPanel ? 'open' : ''}`}>
            <div className="detail-header">
               <h3 className="card-title">索引详情: {detailTarget}</h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowDetailPanel(false)}>×</button>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowDetailPanel(false)}>✕</button>
            </div>
            
            <div className="detail-content" style={{ padding: '0' }}>
-              {detailLoading && <div style={{ padding: '20px', color: '#64748b' }}>加载中...</div>}
+              {detailLoading && <div style={{ padding: '24px', color: '#86868b', fontSize: '13px' }}>加载中...</div>}
               {!detailLoading && detailData && (
-                 <pre style={{ margin: 0, padding: '16px', fontSize: '12px', fontFamily: 'monospace', overflow: 'auto' }}>
+                 <pre style={{ 
+                    margin: 0, 
+                    padding: '20px', 
+                    fontSize: '12px', 
+                    fontFamily: '"SF Mono", Menlo, monospace', 
+                    overflow: 'auto',
+                    background: '#fbfbfd',
+                    color: '#1d1d1f',
+                    lineHeight: '1.6'
+                 }}>
                     {JSON.stringify(detailData, null, 2)}
                  </pre>
               )}
            </div>
            
-           <div style={{ padding: '12px 20px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
-              <button className="btn btn-sm btn-secondary" onClick={() => handleRefresh(detailTarget)}>🔄 刷新状态</button>
+           <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(0,0,0,0.05)', background: '#fff' }}>
+              <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => handleRefresh(detailTarget)}>🔄 刷新状态</button>
            </div>
         </div>
       </div>

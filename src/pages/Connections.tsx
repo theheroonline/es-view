@@ -102,7 +102,6 @@ export default function Connections() {
 
   return (
     <div className="page">
-      <h1 className="page-title">连接配置</h1>
       <div className="card">
         <div className="card-header">
            <h3 className="card-title">新建 / 编辑连接</h3>
@@ -181,7 +180,7 @@ export default function Connections() {
             </div>
             <div className="toolbar" style={{ marginTop: '20px' }}>
               <div className="button-group">
-                <button className="btn btn-primary" onClick={handleSave}>保存连接</button>
+                <button className="btn btn-primary" onClick={handleSave}>保存连接</button>           
                 <button className="btn btn-secondary" onClick={resetForm}>清空表单</button>
               </div>
               {error && <span className={error.includes("成功") ? "text-success" : "text-danger"} style={{ marginLeft: '12px' }}>{error}</span>}
