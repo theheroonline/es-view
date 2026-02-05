@@ -240,19 +240,14 @@ export async function esRequestRaw(
     const res = isTauriEnv
       ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr)
       : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
-
-    log("=== ES 原始请求结束 ===");
     return res;
   } catch (error) {
-    log("!!! 原始请求异常 !!!");
     log("错误信息", error instanceof Error ? error.message : String(error));
-    log("=== ES 原始请求异常结束 ===");
     throw error;
   }
 }
 
 export async function pingCluster(connection: EsConnection) {
-  log(">>> 测试集群连接");
   return esRequest(connection, "/_cluster/health");
 }
 
@@ -262,7 +257,6 @@ export interface SqlResponse {
 }
 
 export async function sqlQuery(connection: EsConnection, query: string) {
-  log(">>> 执行 SQL 查询", query.substring(0, 100));
   return esRequest<SqlResponse>(connection, "/_sql?format=json", {
     method: "POST",
     body: { query }
@@ -276,12 +270,10 @@ export interface CatIndexItem {
 }
 
 export async function listIndices(connection: EsConnection) {
-  log(">>> 获取索引列表");
   return esRequest<CatIndexItem[]>(connection, "/_cat/indices?format=json");
 }
 
 export async function searchIndex(connection: EsConnection, index: string, body: unknown) {
-  log(">>> 搜索索引", index);
   return esRequest<any>(connection, `/${index}/_search`, { method: "POST", body });
 }
 

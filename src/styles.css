@@ -424,7 +424,46 @@ input:checked + .slider:before {
   color: #1d1d1f;
 }
 
+.rest-concurrency {
+  width: 70px;
+  padding: 4px 8px;
+  height: 28px;
+}
+
 .rest-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rest-template-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 10px;
+  background: #fbfbfd;
+}
+
+.rest-template-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.rest-template-select {
+  min-width: 180px;
+}
+
+.rest-template-input {
+  min-width: 160px;
+}
+
+.rest-template-actions {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -451,6 +490,17 @@ input:checked + .slider:before {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.rest-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rest-finish-time {
+  font-size: 11px;
+  color: #6e6e73;
 }
 
 .rest-status {
@@ -481,6 +531,72 @@ input:checked + .slider:before {
   line-height: 1.6;
   font-family: "SF Mono", Menlo, Consolas, monospace;
   color: #1d1d1f;
+}
+
+.rest-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rest-batch-item {
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.rest-batch-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: none;
+  background: #fbfbfd;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.rest-batch-title {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  color: #1d1d1f;
+  text-align: left;
+}
+
+.rest-batch-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rest-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.rest-progress-track {
+  flex: 1;
+  height: 8px;
+  background: #e5e5ea;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.rest-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #34c759, #007aff);
+  transition: width 0.2s ease;
+}
+
+.rest-progress-text {
+  font-size: 12px;
+  color: #1d1d1f;
+  min-width: 60px;
+  text-align: right;
 }
 
 .flex-gap { display: flex; gap: 12px; }
