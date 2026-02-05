@@ -61,6 +61,7 @@
     "sort": "排序",
     "must": "Must",
     "should": "Should",
+    "fieldFilter": "字段过滤",
     "actions": "操作",
     "pagination": "页码",
     "pageSize": "每页",
@@ -154,7 +155,7 @@
     "yesterday": "昨天"
   },
   "app": {
-    "switchLanguage": "🌐 {{language}}",
+    "switchLanguage": "{{language}}",
     "switchLanguageTitle": "切换为{{language}}"
   },
   "connections": {

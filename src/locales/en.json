@@ -154,7 +154,7 @@
     "yesterday": "Yesterday"
   },
   "app": {
-    "switchLanguage": "🌐 {{language}}",
+    "switchLanguage": "{{language}}",
     "switchLanguageTitle": "Switch to {{language}}"
   },
   "connections": {

@@ -1,35 +1,67 @@
-#  ES View(本地客户端)
+# ES View / ES View（本地客户端） 🚀
 
-本项目是本地使用的 Elasticsearch 客户端，聚焦 ES 访问与 UI 功能，兼容 ES 7.1+。支持数据浏览、简易SQL操作、索引管理、连接配置，并支持多连接管理。
+**简短说明（中文）**：本项目是一个轻量级的本地 Elasticsearch 客户端，专注于常用查询与索引管理界面，兼容 Elasticsearch 7.1+。
 
-之前用的是大佬开源的es-client项目,后来那个功能太多了,就自己写个简单的用着
+**Short description (English)**: A lightweight local Elasticsearch client focused on browsing, simple SQL querying, index management and multiple connection support. Compatible with Elasticsearch 7.1+.
 
-<img width="1586" height="1069" alt="image" src="https://github.com/user-attachments/assets/56c63a4a-f958-40ea-bff3-18d6b2f50f93" />
+<img width="1200" alt="screenshot" src="https://github.com/user-attachments/assets/56c63a4a-f958-40ea-bff3-18d6b2f50f93" />
 
+---
 
+## 功能 / Features ✅
 
-## 功能概览
+- 数据浏览 / Data Browser：条件过滤、分页、结果查看
+- 简易 SQL / Simple SQL：SQL 生成器、执行查询、历史记录
+- 高级操作 / Advanced: Restful风格操作,支持单个和批量操作
+- 索引管理 / Index Management：查看、创建、删除、刷新、索引详情
+- 连接配置 / Connections：多连接管理、连接测试、支持带凭据的 Base URL
 
-- 数据浏览：条件过滤、分页查询、结果查看
-- 简易SQL操作：SQL 生成器、查询执行、查询历史
-- 索引管理：索引列表、创建/删除/刷新、详情查看
-- 连接配置：多连接管理、连接测试、可直接使用带凭据的 Base URL
+## 兼容性 / Compatibility ⚠️
 
-## 兼容性
+- Elasticsearch 7.1+
 
-- Elasticsearch 7.1+（SQL 查询与 _search）
+## 本地化 / Localization 🌐
 
+- 已支持中英两种语言（使用 `react-i18next`），请查看 `locales/en.json` 与 `locales/zh.json`。
 
-## 开发说明
+## 快速开始 / Quick Start 💡
+
+1. 安装依赖 / Install dependencies
 
 ```bash
 npm install
+```
+
+2. 启动开发服务器 / Start dev server
+
+```bash
 npm run dev
 ```
 
-## 打包说明（可选 Tauri）
+3. 打包 / Build
 
 ```bash
-npm run tauri:dev
-npm run tauri:build
+npm run build
 ```
+
+4. 使用 Tauri 打包（可选） / Tauri (optional)
+
+```bash
+npm run tauri:dev    # 开发
+npm run tauri:build  # 发布
+```
+
+## 常用脚本 / Useful scripts 🔧
+
+- `npm run dev` — 开发启动 / Start dev server
+- `npm run build` — 构建生产包 / Build
+- `npm run build:tauri` — 构建用于 Tauri 的产物
+- `npm run tauri:dev` / `npm run tauri:build` — Tauri 开发 / 打包
+- `npm run preview` — 预览构建结果
+- `npm run lint` — 代码检查
+
+---
+
+
+**License**: 无
+
