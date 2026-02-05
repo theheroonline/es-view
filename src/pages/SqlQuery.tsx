@@ -1,14 +1,15 @@
 import { ConfigProvider, DatePicker } from "antd";
+import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import dayjs, { Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../components/FieldFilterButton";
 import { extractFieldsFromMapping, getIndexMapping, sqlQuery } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 import SqlHistory from "./SqlHistory";
 
-dayjs.locale("zh-cn");
 const { RangePicker } = DatePicker;
 
 type SqlOperation = "select" | "insert" | "update" | "delete";
@@ -22,6 +23,7 @@ type WhereCondition = {
 };
 
 export default function SqlQuery() {
+  const { t, i18n } = useTranslation();
   const { getActiveConnection, addHistory, indices, selectedIndex, setSelectedIndex } = useAppContext();
   const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
   const [operation, setOperation] = useState<SqlOperation>("select");
@@ -41,12 +43,16 @@ export default function SqlQuery() {
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
   
   const presets = [
-    { label: '最近1小时', value: [dayjs().subtract(1, 'hour'), dayjs()] as [Dayjs, Dayjs] },
-    { label: '最近24小时', value: [dayjs().subtract(24, 'hour'), dayjs()] as [Dayjs, Dayjs] },
-    { label: '最近7天', value: [dayjs().subtract(7, 'day'), dayjs()] as [Dayjs, Dayjs] },
-    { label: '今天', value: [dayjs().startOf('day'), dayjs().endOf('day')] as [Dayjs, Dayjs] },
-    { label: '昨天', value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] as [Dayjs, Dayjs] },
+    { label: t('presets.lastHour'), value: [dayjs().subtract(1, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: t('presets.last24Hours'), value: [dayjs().subtract(24, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: t('presets.last7Days'), value: [dayjs().subtract(7, 'day'), dayjs()] as [Dayjs, Dayjs] },
+    { label: t('presets.today'), value: [dayjs().startOf('day'), dayjs().endOf('day')] as [Dayjs, Dayjs] },
+    { label: t('presets.yesterday'), value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] as [Dayjs, Dayjs] },
   ];
+
+  useEffect(() => {
+    dayjs.locale(i18n.language === "zh" ? "zh-cn" : "en");
+  }, [i18n.language]);
 
   // 获取索引字段
   useEffect(() => {
@@ -120,18 +126,18 @@ export default function SqlQuery() {
     setError("");
     setResult(null);
     if (!activeConnection) {
-      setError("请先在连接配置中选择当前连接");
+      setError(t('sqlQuery.noConnectionSelected'));
       return;
     }
     if (operation !== "select") {
-      setError("ES SQL 仅支持查询，请使用数据浏览或索引管理完成写操作");
+      setError(t('sqlQuery.sqlOnlySupportsQuery'));
       return;
     }
     try {
       const response = await sqlQuery(activeConnection, sql);
       let columns = response.columns?.map((col: { name: string }) => col.name) ?? [];
       let rows = response.rows ?? [];
-      
+
       // 只显示选中的字段（启用过滤时）
       if (fieldFilter.enabled) {
         const fieldIndices = fieldFilter.fields.map((field) => columns.indexOf(field));
@@ -142,13 +148,13 @@ export default function SqlQuery() {
         columns = validPairs.map((p) => p.name);
         rows = rows.map((row) => validPairs.map((p) => row[p.idx]));
       }
-      
+
       setResult({ columns, rows });
       setTotalRows(rows.length);
-      await addHistory(`SQL: ${selectedIndex || "未选择"}`, sql);
+      await addHistory(selectedIndex ? `SQL: ${selectedIndex}` : t('sqlQuery.sqlHistory'), sql);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "查询失败";
-      setError(`查询失败：${message}`);
+      const message = err instanceof Error ? err.message : t('common.error');
+      setError(`${t('sqlQuery.sqlError')} ${message}`);
       console.error("SQL 查询错误:", err);
     }
   };
@@ -221,37 +227,66 @@ export default function SqlQuery() {
         <div className="card">
         <div className="card-header">
           <div>
-            <h3 className="card-title">SQL 生成器</h3>
-            <p className="muted">按条件自动生成 SQL，并使用当前环境与索引执行。</p>
+            <h3 className="card-title">{t('sqlQuery.sqlBuilder')}</h3>
+            <p className="muted">{t('sqlQuery.sqlBuilderDesc')}</p>
           </div>
           <div className="button-group">
             <button className="btn btn-primary" onClick={execute}>
-              <span>▶</span> 执行查询
+              <span>▶</span> {t('sqlQuery.executeQuery')}
             </button>
           </div>
         </div>
         <div className="card-body">
           <div className="form-grid">
             <div>
-              <label>操作类型</label>
+              <label>{t('sqlQuery.operationType')}</label>
               <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)}>
-                <option value="select">查询 (SELECT)</option>
-                <option value="insert">新增 (INSERT)</option>
-                <option value="update">更新 (UPDATE)</option>
-                <option value="delete">删除 (DELETE)</option>
+                <option value="select">{t('sqlQuery.select')}</option>
+                <option value="insert">{t('sqlQuery.insert')}</option>
+                <option value="update">{t('sqlQuery.update')}</option>
+                <option value="delete">{t('sqlQuery.delete')}</option>
               </select>
             </div>
             <div>
-              <label>索引</label>
-              <select className="form-control" value={selectedIndex ?? ""} onChange={(event) => setSelectedIndex(event.target.value || undefined)}>
-                <option value="">请选择索引...</option>
-                {indices
-                  .filter((item) => !item.startsWith('.'))
-                  .sort()
-                  .map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-              </select>
+              <label>{t('sqlQuery.selectIndex')}</label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <select 
+                  className="form-control" 
+                  value={selectedIndex ?? ""} 
+                  onChange={(event) => setSelectedIndex(event.target.value || undefined)}
+                  style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
+                >
+                  <option value="">{t('sqlQuery.selectIndexPlaceholder')}</option>
+                  {indices
+                    .filter((item) => !item.startsWith('.'))
+                    .sort()
+                    .map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                </select>
+                {selectedIndex && (
+                  <button
+                    onClick={() => setSelectedIndex(undefined)}
+                    className="btn-clear"
+                    style={{
+                      position: 'absolute',
+                      right: '24px',
+                      background: 'none',
+                      border: 'none',
+                      color: '#86868b',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title={t('common.clear')}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -262,11 +297,11 @@ export default function SqlQuery() {
             <div style={{ marginTop: '16px' }}>
               <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ margin: 0 }}>查询结果数量限制</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
-                    value={limit} 
+                  <label style={{ margin: 0 }}>{t('sqlQuery.resultLimit')}</label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={limit}
                     onChange={handleLimitChange}
                     style={{ width: '120px' }}
                     min="1"
@@ -278,14 +313,14 @@ export default function SqlQuery() {
                   state={fieldFilter}
                   onChange={setFieldFilter}
                   align="left"
-                  label="字段过滤"
+                  label={t('sqlQuery.fieldFilter')}
                 />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label style={{ fontWeight: 600, margin: 0 }}>WHERE 条件</label>
+                <label style={{ fontWeight: 600, margin: 0 }}>{t('sqlQuery.whereCondition')}</label>
                 <button className="btn btn-sm btn-secondary" onClick={addCondition}>
-                  <span>+</span> 添加条件
+                  <span>+</span> {t('sqlQuery.addCondition')}
                 </button>
               </div>
 
@@ -311,20 +346,20 @@ export default function SqlQuery() {
                       />
                       <span className="slider"></span>
                     </label>
-                    <select 
+                    <select
                       className="form-control"
-                      value={cond.field} 
+                      value={cond.field}
                       onChange={(event) => handleConditionChange(idx, { field: event.target.value })}
                       disabled={!cond.enabled}
                     >
-                      <option value="">选择字段</option>
+                      <option value="">{t('sqlQuery.selectField')}</option>
                       {availableFields.map((f) => (
                         <option key={f} value={f}>{f}</option>
                       ))}
                     </select>
-                    <select 
+                    <select
                       className="form-control"
-                      value={cond.operator} 
+                      value={cond.operator}
                       onChange={(event) => handleConditionChange(idx, { operator: event.target.value })}
                       disabled={!cond.enabled}
                     >
@@ -335,10 +370,10 @@ export default function SqlQuery() {
                       <option value="<">&lt;</option>
                       <option value="<=">&lt;=</option>
                       <option value="LIKE">LIKE</option>
-                      <option value="RANGE">时间范围(选择器)</option>
+                      <option value="RANGE">{t('sqlQuery.timeRange')}</option>
                     </select>
                     {cond.operator === 'RANGE' ? (
-                      <ConfigProvider locale={zhCN}>
+                      <ConfigProvider locale={i18n.language === "zh" ? zhCN : enUS}>
                         <RangePicker
                           showTime
                           size="small"
@@ -346,25 +381,25 @@ export default function SqlQuery() {
                           onChange={(dates) => handleConditionChange(idx, { rangeValue: dates })}
                           presets={presets}
                           style={{ width: '100%', height: '32px' }}
-                          placeholder={['开始', '结束']}
+                          placeholder={[t('sqlQuery.startTime'), t('sqlQuery.endTime')]}
                           disabled={!cond.enabled}
                         />
                       </ConfigProvider>
                     ) : (
-                      <input 
+                      <input
                         className="form-control"
-                        value={cond.value} 
-                        onChange={(event) => handleConditionChange(idx, { value: event.target.value })} 
-                        placeholder="输入值..." 
+                        value={cond.value}
+                        onChange={(event) => handleConditionChange(idx, { value: event.target.value })}
+                        placeholder={t('sqlQuery.enterValue')}
                         disabled={!cond.enabled}
                       />
                     )}
-                    <button 
-                      className="btn btn-sm btn-ghost text-danger" 
+                    <button
+                      className="btn btn-sm btn-ghost text-danger"
                       onClick={() => removeCondition(idx)}
-                      title="删除条件"
+                      title={t('sqlQuery.deleteCondition')}
                     >
-                      删除
+                      {t('common.delete')}
                     </button>
                   </div>
                 ))}
@@ -375,30 +410,32 @@ export default function SqlQuery() {
           <div className="form-grid" style={{ marginTop: '16px' }}>
             {operation !== "select" && (
               <div className="span-2">
-                <label>SET / VALUES (JSON Payload)</label>
+                <label>{t('sqlQuery.setValues')}</label>
                 <textarea className="form-control json-editor" style={{ height: '100px' }} value={payload} onChange={(event) => setPayload(event.target.value)} />
               </div>
             )}
             <div className="span-2">
-              <label>生成的 SQL 预览</label>
+              <label>{t('sqlQuery.generatedSql')}</label>
               <textarea className="form-control json-editor" style={{ height: '100px', background: '#fbfbfd', color: '#1d1d1f' }} value={sql} onChange={(event) => setSql(event.target.value)} />
             </div>
           </div>
           <div className="toolbar">
              {error && <span className="text-danger">{error}</span>}
-             {!error && <span className="muted">ES 7.1+ SQL 支持查询，写操作推荐使用索引管理或 REST API。</span>}
+             {!error && <span className="muted">{t('sqlQuery.sqlNote')}</span>}
           </div>
         </div>
       </div>
 
       <div className="card">
         <div className="card-header">
-          <h3 className="card-title">查询结果 {result && `(显示 ${totalRows} 行)`}</h3>
+          <h3 className="card-title">
+            {t('sqlQuery.queryResult', { count: result ? totalRows : 0 })}
+          </h3>
         </div>
 
         {!result && (
           <div className="card-body">
-            <p className="muted" style={{ textAlign: 'center' }}>暂无结果，请执行查询。</p>
+            <p className="muted" style={{ textAlign: 'center' }}>{t('sqlQuery.noResults')}</p>
           </div>
         )}
 

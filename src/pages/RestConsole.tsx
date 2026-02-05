@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { esRequestRaw } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 
@@ -33,6 +34,7 @@ type ScriptTemplate = {
 };
 
 export default function RestConsole() {
+  const { t } = useTranslation();
   const { getActiveConnection } = useAppContext();
   const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
 
@@ -136,7 +138,7 @@ export default function RestConsole() {
   const formatBatchText = (text: string) => {
     const commands = parseBatchCommands(text);
     if (commands.length === 0) {
-      throw new Error("未检测到请求命令，请以 'METHOD /path' 开头");
+      throw new Error(t('restConsole.noCommandDetected'));
     }
     return commands
       .map((cmd) => {
@@ -162,7 +164,7 @@ export default function RestConsole() {
       const formatted = formatJson(requestBody.trim() || "{}");
       setRequestBody(formatted);
     } catch (err) {
-      setError(`请求体 JSON 格式错误：${err instanceof Error ? err.message : "无法解析"}`);
+      setError(`${t("restConsole.invalidJsonFormat")}${err instanceof Error ? err.message : t("restConsole.parseFailed")}`);
     }
   };
 
@@ -173,7 +175,7 @@ export default function RestConsole() {
       const formatted = formatJson(response.body);
       setResponse((prev) => ({ ...prev, body: formatted }));
     } catch (err) {
-      setError(`响应不是有效 JSON：${err instanceof Error ? err.message : "无法解析"}`);
+      setError(`${t("restConsole.invalidResponseJson")}${err instanceof Error ? err.message : t("restConsole.parseFailed")}`);
     }
   };
 
@@ -185,16 +187,16 @@ export default function RestConsole() {
   const handleSaveTemplate = () => {
     const content = batchMode ? batchText.trim() : "";
     if (!batchMode) {
-      setError("仅支持批量模式保存模板");
+      setError(t("restConsole.onlyBatchMode"));
       return;
     }
     if (!content) {
-      setError("模板内容不能为空");
+      setError(t("restConsole.emptyTemplate"));
       return;
     }
     const name = templateName.trim();
     if (!name) {
-      setError("请输入模板名称");
+      setError(t("restConsole.templateNameRequired"));
       return;
     }
     const now = Date.now();
@@ -228,7 +230,7 @@ export default function RestConsole() {
     if (!selectedTemplateId) return;
     const target = templates.find((t) => t.id === selectedTemplateId);
     if (!target) return;
-    if (!window.confirm(`确定删除模板 “${target.name}” 吗？`)) return;
+    if (!window.confirm(t("restConsole.deleteTemplateConfirm", { name: target.name }))) return;
     const next = templates.filter((t) => t.id !== selectedTemplateId);
     persistTemplates(next);
     setSelectedTemplateId("");
@@ -262,7 +264,7 @@ export default function RestConsole() {
     setBatchTotal(0);
 
     if (!activeConnection) {
-      setError("请先在连接配置中选择当前连接");
+      setError(t("restConsole.noConnectionSelected"));
       setLoading(false);
       return;
     }
@@ -270,7 +272,7 @@ export default function RestConsole() {
     if (batchMode) {
       const commands = parseBatchCommands(batchText);
       if (commands.length === 0) {
-        setError("未检测到请求命令，请以 'METHOD /path' 开头");
+        setError(t("restConsole.noCommandDetected"));
         setLoading(false);
         return;
       }
@@ -300,7 +302,7 @@ export default function RestConsole() {
               ok: false,
               timeMs: 0,
               body: "",
-              error: "缺少请求路径"
+              error: t("restConsole.missingPath")
             };
             if (stopOnError) {
               stopped = true;
@@ -322,7 +324,7 @@ export default function RestConsole() {
                 ok: false,
                 timeMs: 0,
                 body: "",
-                error: `请求体 JSON 格式错误：${err instanceof Error ? err.message : "无法解析"}`
+                error: `${t("restConsole.invalidJsonFormat")}${err instanceof Error ? err.message : t("restConsole.parseFailed")}`
               };
               if (stopOnError) {
                 stopped = true;
@@ -409,7 +411,7 @@ export default function RestConsole() {
 
     const normalizedPath = normalizePath(path);
     if (!normalizedPath) {
-      setError("请输入请求路径，例如 /_search");
+      setError(t("restConsole.enterPath"));
       setLoading(false);
       return;
     }
@@ -420,7 +422,7 @@ export default function RestConsole() {
       try {
         body = JSON.parse(bodyTrim);
       } catch (err) {
-        setError(`请求体 JSON 格式错误：${err instanceof Error ? err.message : "无法解析"}`);
+        setError(`${t("restConsole.invalidJsonFormat")}${err instanceof Error ? err.message : t("restConsole.parseFailed")}`);
         setLoading(false);
         return;
       }
@@ -451,7 +453,7 @@ export default function RestConsole() {
         finishedAt: Date.now()
       });
     } catch (err) {
-      setError(`请求失败：${err instanceof Error ? err.message : String(err)}`);
+      setError(`${t("restConsole.requestFailed")}${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setResponse((prev) => (prev.finishedAt ? prev : { ...prev, finishedAt: Date.now() }));
       setLoading(false);
@@ -463,12 +465,12 @@ export default function RestConsole() {
       <div className="card">
         <div className="card-header">
           <div>
-            <h3 className="card-title">REST Console</h3>
-            <p className="muted" style={{ margin: 0 }}>使用 RESTful 风格执行 ES 高级操作。</p>
+            <h3 className="card-title">{t("restConsole.title")}</h3>
+            <p className="muted" style={{ margin: 0 }}>{t("restConsole.description")}</p>
           </div>
           <div className="button-group">
             <button className="btn btn-primary" onClick={handleExecute} disabled={loading}>
-              {loading ? "执行中..." : "执行"}
+              {loading ? t("restConsole.executing") : t("restConsole.execute")}
             </button>
           </div>
         </div>
@@ -485,22 +487,22 @@ export default function RestConsole() {
                   className="form-control rest-path"
                   value={path}
                   onChange={(e) => setPath(e.target.value)}
-                  placeholder="例如 /_search"
+                  placeholder={t("restConsole.pathPlaceholder")}
                 />
               </>
             )}
             <label className="rest-pretty-toggle">
               <input type="checkbox" checked={pretty} onChange={(e) => setPretty(e.target.checked)} />
-              美化返回
+              {t("restConsole.formatResponse")}
             </label>
             <label className="rest-pretty-toggle">
               <input type="checkbox" checked={batchMode} onChange={(e) => setBatchMode(e.target.checked)} />
-              批量模式
+              {t("restConsole.batchMode")}
             </label>
             {batchMode && (
               <>
                 <label className="rest-pretty-toggle">
-                  并发
+                  {t("restConsole.concurrency")}
                   <input
                     type="number"
                     min={1}
@@ -512,10 +514,10 @@ export default function RestConsole() {
                 </label>
                 <label className="rest-pretty-toggle">
                   <input type="checkbox" checked={stopOnError} onChange={(e) => setStopOnError(e.target.checked)} />
-                  失败即停止
+                  {t("restConsole.stopOnFailure")}
                 </label>
                 <label className="rest-pretty-toggle">
-                  重试
+                  {t("restConsole.retry")}
                   <input
                     type="number"
                     min={0}
@@ -526,7 +528,7 @@ export default function RestConsole() {
                   />
                 </label>
                 <label className="rest-pretty-toggle">
-                  间隔(ms)
+                  {t("restConsole.retryInterval")}
                   <input
                     type="number"
                     min={0}
@@ -548,13 +550,15 @@ export default function RestConsole() {
                     }
                   }}
                 >
-                  {batchResults.length > 0 && batchResults.every((r) => batchExpanded.has(r.index)) ? "全部折叠" : "全部展开"}
+                  {batchResults.length > 0 && batchResults.every((r) => batchExpanded.has(r.index))
+                    ? t("restConsole.collapseAll")
+                    : t("restConsole.expandAll")}
                 </button>
               </>
             )}
             <div className="rest-toolbar-actions">
-              <button className="btn btn-sm btn-secondary" onClick={handleFormatRequest}>格式化请求</button>
-              <button className="btn btn-sm btn-ghost" onClick={handleFormatResponse}>格式化结果</button>
+              <button className="btn btn-sm btn-secondary" onClick={handleFormatRequest}>{t("restConsole.formatRequest")}</button>
+              <button className="btn btn-sm btn-ghost" onClick={handleFormatResponse}>{t("restConsole.formatResult")}</button>
               <button
                 className="btn btn-sm btn-ghost"
                 onClick={() => {
@@ -565,7 +569,7 @@ export default function RestConsole() {
                   }
                 }}
               >
-                清空请求
+                {t("restConsole.clearRequest")}
               </button>
             </div>
           </div>
@@ -578,7 +582,7 @@ export default function RestConsole() {
                   value={selectedTemplateId}
                   onChange={(e) => handleLoadTemplate(e.target.value)}
                 >
-                  <option value="">选择模板...</option>
+                  <option value="">{t("restConsole.selectTemplate")}</option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -587,12 +591,12 @@ export default function RestConsole() {
                   className="form-control rest-template-input"
                   value={templateName}
                   onChange={(e) => setTemplateName(e.target.value)}
-                  placeholder="模板名称"
+                  placeholder={t("restConsole.templateName")}
                 />
               </div>
               <div className="rest-template-actions">
-                <button className="btn btn-sm btn-secondary" onClick={handleSaveTemplate}>保存模板</button>
-                <button className="btn btn-sm btn-ghost text-danger" onClick={handleDeleteTemplate} disabled={!selectedTemplateId}>删除模板</button>
+                <button className="btn btn-sm btn-secondary" onClick={handleSaveTemplate}>{t("restConsole.saveTemplate")}</button>
+                <button className="btn btn-sm btn-ghost text-danger" onClick={handleDeleteTemplate} disabled={!selectedTemplateId}>{t("restConsole.deleteTemplate")}</button>
               </div>
             </div>
           )}
@@ -602,30 +606,30 @@ export default function RestConsole() {
           <div className="rest-console">
             <div className="rest-panel">
               <div className="rest-panel-header">
-                {batchMode ? "批量请求" : "请求体 (JSON)"}
+                {batchMode ? t("restConsole.batchRequest") : t("restConsole.requestBody")}
               </div>
               {batchMode ? (
                 <textarea
                   className="json-editor rest-editor"
                   value={batchText}
                   onChange={(e) => setBatchText(e.target.value)}
-                  placeholder={`GET /_cluster/health\n\nPOST /_search\n{\n  "query": {\n    "match_all": {}\n  }\n}`}
+                  placeholder={t("restConsole.batchPlaceholder")}
                 />
               ) : (
                 <textarea
                   className="json-editor rest-editor"
                   value={requestBody}
                   onChange={(e) => setRequestBody(e.target.value)}
-                  placeholder={`{\n  "query": {\n    "match_all": {}\n  }\n}`}
+                  placeholder={t("restConsole.requestPlaceholder")}
                 />
               )}
             </div>
             <div className="rest-panel">
               <div className="rest-panel-header">
-                <span>响应结果</span>
+                <span>{t("restConsole.responseResult")}</span>
                 <div className="rest-panel-actions">
                   {!batchMode && response.finishedAt !== null && (
-                    <span className="rest-finish-time">完成时间 · {formatFinishedAt(response.finishedAt)}</span>
+                    <span className="rest-finish-time">{t("restConsole.completedTime")}{formatFinishedAt(response.finishedAt)}</span>
                   )}
                   {!batchMode && (
                     <>
@@ -634,7 +638,7 @@ export default function RestConsole() {
                         onClick={() => copyText(response.body || "")}
                         disabled={!response.body}
                       >
-                        复制
+                        {t("restConsole.copy")}
                       </button>
                       <button
                         className="btn btn-sm btn-ghost"
@@ -646,7 +650,7 @@ export default function RestConsole() {
                         }
                         disabled={!response.body}
                       >
-                        下载
+                        {t("restConsole.download")}
                       </button>
                     </>
                   )}
@@ -657,7 +661,7 @@ export default function RestConsole() {
                   )}
                   {response.status === null && !response.body && response.timeMs !== null && batchResults.length > 0 && (
                     <span className="rest-status ok">
-                      批量完成 · {response.timeMs ?? 0}ms
+                      {t("restConsole.batchCompleted")}{response.timeMs ?? 0}ms
                     </span>
                   )}
                 </div>
@@ -677,12 +681,12 @@ export default function RestConsole() {
               )}
               {batchMode ? (
                 <div className="rest-batch-list">
-                  {batchResults.length === 0 && <div className="muted">(暂无响应)</div>}
+                  {batchResults.length === 0 && <div className="muted">{t("restConsole.noResponse")}</div>}
                   {batchResults.map((item) => {
                     const expanded = batchExpanded.has(item.index);
                     const title = `#${item.index + 1} ${item.method} ${item.path}`;
-                    const statusText = item.status !== null ? `${item.status}` : "ERROR";
-                    const content = item.error ? `ERROR: ${item.error}` : item.body || "(空响应)";
+                    const statusText = item.status !== null ? `${item.status}` : t("common.error");
+                    const content = item.error ? `${t("common.error")}: ${item.error}` : item.body || t("restConsole.noResponse");
                     return (
                       <div key={`${item.index}-${item.method}-${item.path}`} className="rest-batch-item">
                         <button
@@ -708,7 +712,7 @@ export default function RestConsole() {
                                 copyText(content);
                               }}
                             >
-                              复制
+                              {t("restConsole.copy")}
                             </button>
                             <button
                               className="btn btn-sm btn-ghost"
@@ -717,7 +721,7 @@ export default function RestConsole() {
                                 downloadText(`rest-result-${item.index + 1}.txt`, content);
                               }}
                             >
-                              下载
+                              {t("restConsole.download")}
                             </button>
                             <span className={`rest-status ${item.ok ? "ok" : "fail"}`}>
                               {statusText} · {item.timeMs}ms
@@ -734,7 +738,7 @@ export default function RestConsole() {
                   })}
                 </div>
               ) : (
-                <pre className="rest-response">{response.body || "(暂无响应)"}</pre>
+                <pre className="rest-response">{response.body || t("restConsole.noResponse")}</pre>
               )}
             </div>
           </div>

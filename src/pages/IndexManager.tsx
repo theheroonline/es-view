@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { createIndex, deleteIndex, getIndexInfo, refreshIndex } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 
 export default function IndexManager() {
+  const { t } = useTranslation();
   const { getActiveConnection, selectedIndex, setSelectedIndex, refreshIndices, indicesMeta } = useAppContext();
   const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
   
@@ -53,7 +55,7 @@ export default function IndexManager() {
     setError("");
     if (!activeConnection) return;
     if (!createName) {
-      setError("请输入索引名称");
+      setError(t('indexManager.indexNameRequired'));
       return;
     }
     try {
@@ -62,9 +64,9 @@ export default function IndexManager() {
       await loadIndices();
       setCreateName("");
       setCreateBody("{}");
-      setShowCreate(false); 
+      setShowCreate(false);
     } catch {
-      setError("创建失败，请检查 JSON 格式");
+      setError(t('indexManager.createFailed'));
     }
   };
 
@@ -77,7 +79,7 @@ export default function IndexManager() {
   const confirmDelete = async () => {
     if (!activeConnection || !deleteTarget) return;
     if (deleteConfirmInput !== deleteTarget) return;
-    
+
     setError("");
     try {
       await deleteIndex(activeConnection, deleteTarget);
@@ -91,7 +93,7 @@ export default function IndexManager() {
       }
       setShowDeleteModal(false);
     } catch {
-      setError("删除失败");
+      setError(t('indexManager.deleteFailed'));
     }
   };
 
@@ -101,7 +103,7 @@ export default function IndexManager() {
       await refreshIndex(activeConnection, index);
       await loadIndices(); // reload to get new counts
     } catch {
-      setError("刷新失败");
+      setError(t('indexManager.refreshFailed'));
     }
   };
 
@@ -122,29 +124,29 @@ export default function IndexManager() {
       {showCreate && (
         <div className="card anim-fade-in">
           <div className="card-header">
-            <h3 className="card-title">新建索引</h3>
+            <h3 className="card-title">{t('indexManager.newIndex')}</h3>
           </div>
           <div className="card-body">
             <div className="form-grid" style={{ maxWidth: '800px' }}>
               <div>
-                <label>索引名称</label>
-                <input 
+                <label>{t('indexManager.indexName')}</label>
+                <input
                   className="form-control"
-                  value={createName} 
-                  onChange={(event) => setCreateName(event.target.value)} 
-                  placeholder="例如: logs-2024"
+                  value={createName}
+                  onChange={(event) => setCreateName(event.target.value)}
+                  placeholder={t('indexManager.namePlaceholder')}
                 />
               </div>
               <div className="span-2">
-                <label>配置 (Mappings/Settings JSON)</label>
-                <textarea 
+                <label>{t('indexManager.configuration')}</label>
+                <textarea
                   className="json-editor"
-                  value={createBody} 
-                  onChange={(event) => setCreateBody(event.target.value)} 
+                  value={createBody}
+                  onChange={(event) => setCreateBody(event.target.value)}
                 />
               </div>
               <div className="span-2">
-                 <button className="btn btn-primary" onClick={handleCreate}>确认创建</button>
+                 <button className="btn btn-primary" onClick={handleCreate}>{t('indexManager.confirmCreate')}</button>
               </div>
             </div>
             {error && <p className="text-danger" style={{ marginTop: '12px' }}>{error}</p>}
@@ -156,7 +158,7 @@ export default function IndexManager() {
       {showDeleteModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.2)', 
+          background: 'rgba(0,0,0,0.2)',
           backdropFilter: 'blur(4px)',
           WebkitBackdropFilter: 'blur(4px)',
           zIndex: 1000,
@@ -164,29 +166,29 @@ export default function IndexManager() {
         }}>
           <div className="card anim-fade-in" style={{ width: '400px', boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)', border: 'none' }}>
              <div className="card-header">
-                <h3 className="card-title text-danger">删除索引确认</h3>
+                <h3 className="card-title text-danger">{t('indexManager.deleteConfirm')}</h3>
              </div>
              <div className="card-body">
-                <p>正在删除索引 <strong>{deleteTarget}</strong></p>
+                <p>{t('indexManager.deleting')} <strong>{deleteTarget}</strong></p>
                 <p className="text-secondary" style={{ fontSize: '13px', marginBottom: '16px' }}>
-                   此操作不可恢复。请输入索引名称以确认删除。
+                   {t('indexManager.deleteWarning')}
                 </p>
-                <input 
-                   className="form-control" 
+                <input
+                   className="form-control"
                    value={deleteConfirmInput}
                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
                    placeholder={deleteTarget}
                    style={{ marginBottom: '16px' }}
                 />
                 <div className="flex-gap justify-end">
-                   <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>取消</button>
-                   <button 
-                     className="btn btn-primary" 
+                   <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>{t('common.cancel')}</button>
+                   <button
+                     className="btn btn-primary"
                      style={{ background: '#ef4444', borderColor: '#ef4444' }}
                      disabled={deleteConfirmInput !== deleteTarget}
                      onClick={confirmDelete}
                    >
-                     确认删除
+                     {t('indexManager.confirmDelete')}
                    </button>
                 </div>
              </div>
@@ -199,37 +201,37 @@ export default function IndexManager() {
         <div className="master-pane">
            <div className="card">
               <div className="card-header">
-                  <h3 className="card-title">索引列表</h3>
+                  <h3 className="card-title">{t('indexManager.title')}</h3>
                   {activeConnection && (
                       <button className={`btn btn-sm ${showCreate ? "btn-secondary" : "btn-primary"}`} onClick={() => setShowCreate(!showCreate)}>
-                        {showCreate ? "取消创建" : "+ 创建索引"}
+                        {showCreate ? t('indexManager.cancelCreate') : t('indexManager.createIndex')}
                       </button>
                   )}
               </div>
-              
+
               <div className="table-wrapper">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>索引名称</th>
-                      <th style={{ width: '100px' }}>健康</th>
-                      <th style={{ width: '100px' }}>文档数</th>
-                      <th style={{ width: '220px', textAlign: 'right' }}>操作</th>
+                      <th>{t('indexManager.title')}</th>
+                      <th style={{ width: '100px' }}>{t('indexManager.health')}</th>
+                      <th style={{ width: '100px' }}>{t('indexManager.docsCount')}</th>
+                      <th style={{ width: '220px', textAlign: 'right' }}>{t('indexManager.operations')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {indicesMeta.map((item) => (
                       <tr key={item.index} style={{ background: detailTarget === item.index && showDetailPanel ? '#f1f5f9' : undefined }}>
                         <td style={{ fontWeight: 500 }}>
-                          {item.index} 
-                          {selectedIndex === item.index && <span style={{ marginLeft: '8px', fontSize: '11px', background: 'rgba(0, 122, 255, 0.1)', color: '#007aff', padding: '2px 6px', borderRadius: '4px' }}>当前</span>}
+                          {item.index}
+                          {selectedIndex === item.index && <span style={{ marginLeft: '8px', fontSize: '11px', background: 'rgba(0, 122, 255, 0.1)', color: '#007aff', padding: '2px 6px', borderRadius: '4px' }}>{t('indexManager.title')}</span>}
                         </td>
                         <td>
-                           <span style={{ 
-                             display: 'inline-block', 
-                             width: '8px', 
-                             height: '8px', 
-                             borderRadius: '50%', 
+                           <span style={{
+                             display: 'inline-block',
+                             width: '8px',
+                             height: '8px',
+                             borderRadius: '50%',
                              background: item.health === 'green' ? '#34c759' : item.health === 'yellow' ? '#ff9500' : '#ff3b30',
                              marginRight: '8px'
                            }}></span>
@@ -238,8 +240,8 @@ export default function IndexManager() {
                         <td>{item.docsCount}</td>
                         <td className="table-actions" style={{ textAlign: 'right' }}>
                           <div className="flex-gap justify-end" style={{ gap: '4px' }}>
-                             <button className="btn btn-sm btn-ghost" onClick={() => openDetail(item.index)} title="查看详情">详情</button>
-                             <button className="btn btn-sm btn-ghost text-danger" onClick={() => openDeleteModal(item.index)} title="删除索引">删除</button>
+                             <button className="btn btn-sm btn-ghost" onClick={() => openDetail(item.index)} title={t('indexManager.details')}>{t('indexManager.details')}</button>
+                             <button className="btn btn-sm btn-ghost text-danger" onClick={() => openDeleteModal(item.index)} title={t('common.delete')}>{t('common.delete')}</button>
                           </div>
                         </td>
                       </tr>
@@ -247,7 +249,7 @@ export default function IndexManager() {
                     {indicesMeta.length === 0 && (
                       <tr>
                         <td colSpan={4} className="muted" style={{ textAlign: 'center', padding: '32px' }}>
-                          {activeConnection ? "未找到索引" : "请先连接 Elasticsearch"}
+                          {activeConnection ? t('indexManager.noIndices') : t('indexManager.notConnected')}
                         </td>
                       </tr>
                     )}
@@ -260,18 +262,18 @@ export default function IndexManager() {
         {/* Right Detail Panel */}
         <div className={`detail-pane ${showDetailPanel ? 'open' : ''}`}>
            <div className="detail-header">
-              <h3 className="card-title">索引详情: {detailTarget}</h3>
+              <h3 className="card-title">{t('indexManager.indexDetails')}: {detailTarget}</h3>
               <button className="btn btn-ghost btn-icon" onClick={() => setShowDetailPanel(false)}>✕</button>
            </div>
-           
+
            <div className="detail-content" style={{ padding: '0' }}>
-              {detailLoading && <div style={{ padding: '24px', color: '#86868b', fontSize: '13px' }}>加载中...</div>}
+              {detailLoading && <div style={{ padding: '24px', color: '#86868b', fontSize: '13px' }}>{t('common.loading')}</div>}
               {!detailLoading && detailData && (
-                 <pre style={{ 
-                    margin: 0, 
-                    padding: '20px', 
-                    fontSize: '12px', 
-                    fontFamily: '"SF Mono", Menlo, monospace', 
+                 <pre style={{
+                    margin: 0,
+                    padding: '20px',
+                    fontSize: '12px',
+                    fontFamily: '"SF Mono", Menlo, monospace',
                     overflow: 'auto',
                     background: '#fbfbfd',
                     color: '#1d1d1f',
@@ -281,9 +283,9 @@ export default function IndexManager() {
                  </pre>
               )}
            </div>
-           
+
            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(0,0,0,0.05)', background: '#fff' }}>
-              <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => handleRefresh(detailTarget)}>🔄 刷新状态</button>
+              <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => handleRefresh(detailTarget)}>{t('indexManager.refreshStatus')}</button>
            </div>
         </div>
       </div>

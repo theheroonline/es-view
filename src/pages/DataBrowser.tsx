@@ -1,13 +1,14 @@
 import { ConfigProvider, DatePicker } from "antd";
+import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import dayjs, { Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../components/FieldFilterButton";
 import { deleteDocument, extractFieldsFromMapping, getIndexMapping, refreshIndex, searchIndex, updateDocument } from "../lib/esView";
 import { useAppContext } from "../state/AppContext";
 
-dayjs.locale("zh-cn");
 const { RangePicker } = DatePicker;
 
 type ViewMode = "table" | "json";
@@ -34,6 +35,7 @@ type ContextMenuState = {
 };
 
 export default function DataBrowser() {
+  const { t, i18n } = useTranslation();
   const { getActiveConnection, selectedIndex, setSelectedIndex, indices } = useAppContext();
   const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
   const [fields, setFields] = useState<string[]>([]);
@@ -71,12 +73,16 @@ export default function DataBrowser() {
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
 
   const presets = [
-    { label: '最近1小时', value: [dayjs().subtract(1, 'hour'), dayjs()] as [Dayjs, Dayjs] },
-    { label: '最近24小时', value: [dayjs().subtract(24, 'hour'), dayjs()] as [Dayjs, Dayjs] },
-    { label: '最近7天', value: [dayjs().subtract(7, 'day'), dayjs()] as [Dayjs, Dayjs] },
-    { label: '今天', value: [dayjs().startOf('day'), dayjs().endOf('day')] as [Dayjs, Dayjs] },
-    { label: '昨天', value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] as [Dayjs, Dayjs] },
+    { label: t('presets.lastHour'), value: [dayjs().subtract(1, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: t('presets.last24Hours'), value: [dayjs().subtract(24, 'hour'), dayjs()] as [Dayjs, Dayjs] },
+    { label: t('presets.last7Days'), value: [dayjs().subtract(7, 'day'), dayjs()] as [Dayjs, Dayjs] },
+    { label: t('presets.today'), value: [dayjs().startOf('day'), dayjs().endOf('day')] as [Dayjs, Dayjs] },
+    { label: t('presets.yesterday'), value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] as [Dayjs, Dayjs] },
   ];
+
+  useEffect(() => {
+    dayjs.locale(i18n.language === "zh" ? "zh-cn" : "en");
+  }, [i18n.language]);
 
   // Close index dropdown when clicking outside
   useEffect(() => {
@@ -283,7 +289,7 @@ export default function DataBrowser() {
 
   const handleDeleteDoc = async (docIndex: string, docId: string) => {
       if (!activeConnection) return;
-      if (!confirm(`确定删除文档 ${docId} ?`)) return;
+      if (!confirm(t('dataBrowser.deleteConfirm', { docId }))) return;
       try {
           setLoading(true);
           setError("");
@@ -298,7 +304,7 @@ export default function DataBrowser() {
           const response = await executeQuery();
           setResult(response);
       } catch (e) {
-          setError("删除失败：" + (e instanceof Error ? e.message : String(e)));
+          setError(t('dataBrowser.deleteFailed') + (e instanceof Error ? e.message : String(e)));
       } finally {
           setLoading(false);
       }
@@ -315,17 +321,17 @@ export default function DataBrowser() {
   // 查询逻辑函数，不修改状态，直接返回结果
   const executeQuery = async () => {
     if (!activeConnection) {
-      throw new Error("请先设置当前连接");
+      throw new Error(t('dataBrowser.pleaseSetConnection'));
     }
     if (!selectedIndex) {
-      throw new Error("请选择索引");
+      throw new Error(t('dataBrowser.pleaseSelectIndex'));
     }
-    
-    const activeConditions = conditions.filter((item) => 
+
+    const activeConditions = conditions.filter((item) =>
       item.enabled && item.boolType !== "sort" && item.field && (item.value || (item.operator === 'time_range' && item.rangeValue && item.rangeValue[0] && item.rangeValue[1]))
     );
     const activeSorts = conditions.filter((item) => item.enabled && item.boolType === "sort" && item.field);
-    
+
     let query: any = { match_all: {} };
     const boolBuckets: Record<string, any[]> = { must: [], should: [], must_not: [] };
     for (const item of activeConditions) {
@@ -335,13 +341,13 @@ export default function DataBrowser() {
         boolBuckets[item.boolType]?.push({ range: { [item.field]: { gte: startStr, lte: endStr } } });
         continue;
       }
-      
+
       let parsed: unknown;
       if (item.operator === "range") {
         try {
           parsed = JSON.parse(item.value);
         } catch {
-          throw new Error("范围查询请输入 JSON，例如 {\"gte\":10,\"lte\":20 }");
+          throw new Error(t('dataBrowser.rangeError'));
         }
       }
       if (item.operator === "term") {
@@ -381,8 +387,8 @@ export default function DataBrowser() {
       };
       return await searchIndex(activeConnection, selectedIndex, body);
     }
-    
-    throw new Error("深度分页查询暂时不支持快速刷新");
+
+    throw new Error(t('dataBrowser.deepPagingNotSupported'));
   };
 
   const handleUpdateDoc = async () => {
@@ -399,7 +405,7 @@ export default function DataBrowser() {
           const response = await executeQuery();
           setResult(response);
       } catch (e) {
-          setError("更新失败：" + (e instanceof Error ? e.message : "请检查JSON格式"));
+          setError(t('dataBrowser.updateFailed') + (e instanceof Error ? e.message : t('dataBrowser.checkJsonFormat')));
       } finally {
           setLoading(false);
       }
@@ -410,24 +416,24 @@ export default function DataBrowser() {
     setResult(null);
     setLoading(true);
     setLoadingMessage("");
-    
+
     if (!activeConnection) {
-      setError("请先设置当前连接");
+      setError(t('dataBrowser.pleaseSetConnection'));
       setLoading(false);
       return;
     }
     if (!selectedIndex) {
-      setError("请选择索引");
+      setError(t('dataBrowser.pleaseSelectIndex'));
       setLoading(false);
       return;
     }
-    
+
     // 分离查询条件和排序条件
-    const activeConditions = conditions.filter((item) => 
+    const activeConditions = conditions.filter((item) =>
       item.enabled && item.boolType !== "sort" && item.field && (item.value || (item.operator === 'time_range' && item.rangeValue && item.rangeValue[0] && item.rangeValue[1]))
     );
     const activeSorts = conditions.filter((item) => item.enabled && item.boolType === "sort" && item.field);
-    
+
     let query: any = { match_all: {} };
     const boolBuckets: Record<string, any[]> = { must: [], should: [], must_not: [] };
     for (const item of activeConditions) {
@@ -443,7 +449,7 @@ export default function DataBrowser() {
         try {
           parsed = JSON.parse(item.value);
         } catch {
-          setError("范围查询请输入 JSON，例如 {\"gte\":10,\"lte\":20 }");
+          setError(t('dataBrowser.rangeError'));
           setLoading(false);
           return;
         }
@@ -467,7 +473,7 @@ export default function DataBrowser() {
     }
 
     const from = (page - 1) * size;
-    
+
     // 构建排序参数，从activeSorts中获取
     let sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
     if (sortParams.length === 0) {
@@ -491,14 +497,14 @@ export default function DataBrowser() {
         setResult(data);
       } else {
         // 超过 10000，使用 search_after 深度分页
-        setLoadingMessage(`正在查询第 ${page} 页数据（深度分页模式，请稍候...）`);
-        
+        setLoadingMessage(t('dataBrowser.queryingPage', { page }));
+
         // 计算需要跳过多少批次
         const batchSize = 1000; // 每批获取 1000 条
         const targetFrom = from;
         let currentPosition = 0;
         let searchAfter: any[] | undefined = undefined;
-        
+
         // 先快速跳到目标位置附近
         while (currentPosition + batchSize < targetFrom) {
           const skipBody: Record<string, unknown> = {
@@ -511,26 +517,26 @@ export default function DataBrowser() {
           if (searchAfter) {
             skipBody.search_after = searchAfter;
           }
-          
-          setLoadingMessage(`正在跳过前 ${currentPosition + batchSize} 条数据...`);
+
+          setLoadingMessage(t('dataBrowser.skippingData', { count: currentPosition + batchSize }));
           const skipResult = await searchIndex(activeConnection, selectedIndex, skipBody);
           const hits = skipResult?.hits?.hits ?? [];
-          
+
           if (hits.length === 0) {
             // 没有更多数据
             break;
           }
-          
+
           // 获取最后一条的排序值
           searchAfter = hits[hits.length - 1]?.sort;
           currentPosition += hits.length;
-          
+
           if (hits.length < batchSize) {
             // 数据不够，说明已经到末尾
             break;
           }
         }
-        
+
         // 跳过剩余的记录
         const remaining = targetFrom - currentPosition;
         if (remaining > 0 && searchAfter) {
@@ -542,18 +548,18 @@ export default function DataBrowser() {
             _source: false
           };
           skipBody.search_after = searchAfter;
-          
-          setLoadingMessage(`正在定位到第 ${targetFrom} 条...`);
+
+          setLoadingMessage(t('dataBrowser.locatingData', { position: targetFrom }));
           const skipResult = await searchIndex(activeConnection, selectedIndex, skipBody);
           const hits = skipResult?.hits?.hits ?? [];
-          
+
           if (hits.length > 0) {
             searchAfter = hits[hits.length - 1]?.sort;
           }
         }
-        
+
         // 获取目标页数据
-        setLoadingMessage(`正在获取第 ${page} 页数据...`);
+        setLoadingMessage(t('dataBrowser.fetchingPage', { page }));
         const finalBody: Record<string, unknown> = {
           size,
           query,
@@ -563,12 +569,12 @@ export default function DataBrowser() {
         if (searchAfter) {
           finalBody.search_after = searchAfter;
         }
-        
+
         const data = await searchIndex(activeConnection, selectedIndex, finalBody);
         setResult(data);
       }
     } catch (err) {
-      setError("查询失败：" + (err instanceof Error ? err.message : String(err)));
+      setError(t('dataBrowser.queryFailed') + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading(false);
       setLoadingMessage("");
@@ -646,7 +652,7 @@ export default function DataBrowser() {
 
   const deleteSelectedDocs = async () => {
     if (selectedRows.length === 0 || !activeConnection) return;
-    if (!confirm(`确定删除 ${selectedRows.length} 条选中文档？`)) return;
+    if (!confirm(t('dataBrowser.deleteMultiple', { count: selectedRows.length }))) return;
     try {
       setLoading(true);
       for (const row of selectedRows) {
@@ -658,7 +664,7 @@ export default function DataBrowser() {
       setSelectedDocs(new Set());
       await execute();
     } catch (err) {
-      setError("删除失败：" + (err instanceof Error ? err.message : String(err)));
+      setError(t('dataBrowser.deleteFailed') + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading(false);
     }
@@ -679,10 +685,11 @@ export default function DataBrowser() {
   };
 
   return (
-    <div className="page">
+    <ConfigProvider locale={i18n.language === 'zh' ? zhCN : enUS}>
+      <div className="page">
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '24px', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flex: 1 }}>
-          <h4 className="card-title" style={{ margin: 0 }}>选择索引</h4>
+          <h4 className="card-title" style={{ margin: 0 }}>{t('dataBrowser.selectIndex')}</h4>
           <div 
             ref={indexDropdownRef}
             style={{ 
@@ -690,32 +697,65 @@ export default function DataBrowser() {
               minWidth: '300px'
             }}
           >
-            <button
-              onClick={() => setShowIndexDropdown(!showIndexDropdown)}
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '8px',
-                background: 'white',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: selectedIndex ? '2px solid #3b82f6' : '2px solid #e2e8f0',
-                width: '100%',
-                fontSize: '14px',
-                fontWeight: selectedIndex ? '600' : '400',
-                color: selectedIndex ? '#1e293b' : '#94a3b8',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-            >
-              <span style={{ fontSize: '18px' }}>📑</span>
-              <span style={{ flex: 1, textAlign: 'left' }}>
-                {selectedIndex || '选择索引...'}
-              </span>
-              <span style={{ fontSize: '12px' }}>
-                {showIndexDropdown ? '▲' : '▼'}
-              </span>
-            </button>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <button
+                onClick={() => setShowIndexDropdown(!showIndexDropdown)}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px',
+                  background: 'white',
+                  padding: '10px 12px',
+                  paddingRight: selectedIndex ? '36px' : '32px',
+                  borderRadius: '8px',
+                  border: selectedIndex ? '2px solid #3b82f6' : '2px solid #e2e8f0',
+                  width: '100%',
+                  fontSize: '14px',
+                  fontWeight: selectedIndex ? '600' : '400',
+                  color: selectedIndex ? '#1e293b' : '#94a3b8',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textAlign: 'left'
+                }}
+              >
+                <span style={{ fontSize: '18px' }}>📑</span>
+                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selectedIndex || t('dataBrowser.selectIndexPlaceholder')}
+                </span>
+                <span style={{ fontSize: '12px', opacity: 0.5 }}>
+                  {showIndexDropdown ? '▲' : '▼'}
+                </span>
+              </button>
+
+              {selectedIndex && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleIndexChange("");
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '32px',
+                    background: '#f1f5f9',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '18px',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '10px',
+                    color: '#64748b',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    zIndex: 2
+                  }}
+                  title={t('common.clear')}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
 
             {showIndexDropdown && (
               <div
@@ -736,7 +776,7 @@ export default function DataBrowser() {
               >
                 {indices.length === 0 ? (
                   <div style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '13px' }}>
-                    暂无索引
+                    {t('dataBrowser.noIndices')}
                   </div>
                 ) : (
                   indices
@@ -789,13 +829,13 @@ export default function DataBrowser() {
 
       <div className="card">
         <div className="card-header">
-          <h3 className="card-title">查询条件</h3>
+          <h3 className="card-title">{t('dataBrowser.queryCondition')}</h3>
           <div className="flex-gap">
             <button className="btn btn-primary btn-sm" onClick={execute} disabled={loading}>
-              <span>{loading ? '⏳' : '🔍'}</span> {loading ? '查询中...' : '查询'}
+              <span>{loading ? '⏳' : '🔍'}</span> {loading ? t('dataBrowser.querying') : t('dataBrowser.query')}
             </button>
             <button className="btn btn-secondary btn-sm" onClick={() => addCondition()} disabled={loading}>
-              <span>+</span> 添加
+              <span>+</span> {t('dataBrowser.addCondition')}
             </button>
           </div>
         </div>
@@ -804,11 +844,11 @@ export default function DataBrowser() {
           {/* Condition Builder */}
           <div>
             <div className="query-builder-header-row">
-              <div className="col-header">类型</div>
-              <div className="col-header">字段</div>
-              <div className="col-header">操作符/方向</div>
-              <div className="col-header">值</div>
-              <div className="col-header">操作</div>
+              <div className="col-header">{t('dataBrowser.type')}</div>
+              <div className="col-header">{t('dataBrowser.field')}</div>
+              <div className="col-header">{t('dataBrowser.operator')}</div>
+              <div className="col-header">{t('dataBrowser.value')}</div>
+              <div className="col-header">{t('dataBrowser.operation')}</div>
             </div>
 
             {conditions.map((item, idx) => (
@@ -823,27 +863,27 @@ export default function DataBrowser() {
                     />
                     <span className="slider"></span>
                   </label>
-                  <select 
-                    className="form-control" 
+                  <select
+                    className="form-control"
                     style={{ width: '70px', padding: '2px 6px', fontSize: '12px', height: '28px' }}
-                    value={item.boolType} 
+                    value={item.boolType}
                     onChange={(event) => handleConditionChange(idx, { boolType: event.target.value as BoolType })}
                   >
-                    <option value="must">Must</option>
-                    <option value="should">Should</option>
-                    <option value="must_not">Not</option>
-                    <option value="sort">排序</option>
+                    <option value="must">{t('dataBrowser.must')}</option>
+                    <option value="should">{t('dataBrowser.should')}</option>
+                    <option value="must_not">{t('dataBrowser.mustNot')}</option>
+                    <option value="sort">{t('dataBrowser.sort')}</option>
                   </select>
                 </div>
 
                 {/* Field */}
                 <div>
-                  <select 
+                  <select
                     className="form-control"
-                    value={item.field} 
+                    value={item.field}
                     onChange={(event) => handleConditionChange(idx, { field: event.target.value })}
                   >
-                    <option value="">选择字段</option>
+                    <option value="">{t('dataBrowser.selectField')}</option>
                     {fields.map((f) => (
                       <option key={f} value={f}>{f}</option>
                     ))}
@@ -853,24 +893,24 @@ export default function DataBrowser() {
                 {/* Operator / Sort Direction */}
                 <div>
                   {item.boolType === "sort" ? (
-                    <select 
+                    <select
                       className="form-control"
-                      value={item.sortDirection || "asc"} 
+                      value={item.sortDirection || "asc"}
                       onChange={(event) => handleConditionChange(idx, { sortDirection: event.target.value as SortDirection })}
                     >
-                      <option value="asc">升序 ↑</option>
-                      <option value="desc">降序 ↓</option>
+                      <option value="asc">{t('dataBrowser.ascending')}</option>
+                      <option value="desc">{t('dataBrowser.descending')}</option>
                     </select>
                   ) : (
-                    <select 
+                    <select
                       className="form-control"
-                      value={item.operator} 
+                      value={item.operator}
                       onChange={(event) => handleConditionChange(idx, { operator: event.target.value })}
                     >
-                      <option value="term">等于 (term)</option>
-                      <option value="match">包含 (match)</option>
-                      <option value="range">范围 (JSON)</option>
-                      <option value="time_range">时间范围(选择器)</option>
+                      <option value="term">{t('dataBrowser.equal')}</option>
+                      <option value="match">{t('dataBrowser.contain')}</option>
+                      <option value="range">{t('dataBrowser.range')}</option>
+                      <option value="time_range">{t('dataBrowser.timeRange')}</option>
                     </select>
                   )}
                 </div>
@@ -880,7 +920,7 @@ export default function DataBrowser() {
                   {item.boolType === "sort" ? (
                     <span className="form-control" style={{ background: '#f8fafc', color: '#94a3b8', cursor: 'not-allowed' }}>-</span>
                   ) : item.operator === "time_range" ? (
-                    <ConfigProvider locale={zhCN}>
+                    <ConfigProvider locale={i18n.language === "zh" ? zhCN : enUS}>
                       <RangePicker
                         showTime
                         size="small"
@@ -888,24 +928,24 @@ export default function DataBrowser() {
                         onChange={(dates) => handleConditionChange(idx, { rangeValue: dates })}
                         presets={presets}
                         style={{ width: '100%', height: '32px' }}
-                        placeholder={['开始', '结束']}
+                        placeholder={[t('dataBrowser.startTime'), t('dataBrowser.endTime')]}
                         disabled={!item.enabled}
                       />
                     </ConfigProvider>
                   ) : (
-                    <input 
+                    <input
                       className="form-control"
-                      value={item.value} 
-                      onChange={(event) => handleConditionChange(idx, { value: event.target.value })} 
-                      placeholder={item.operator === 'range' ? '例如 {"gte": 10}' : "输入查询值..."} 
+                      value={item.value}
+                      onChange={(event) => handleConditionChange(idx, { value: event.target.value })}
+                      placeholder={item.operator === 'range' ? t('dataBrowser.rangeExample') : t('dataBrowser.placeholder')}
                     />
                   )}
                 </div>
 
                 {/* Actions */}
                 <div className="flex-gap justify-end">
-                   <button className="btn btn-ghost btn-icon" onClick={() => addCondition(idx)} title="添加行">+</button>
-                   <button className="btn btn-ghost btn-icon text-danger" onClick={() => removeCondition(idx)} title="删除行">−</button>
+                   <button className="btn btn-ghost btn-icon" onClick={() => addCondition(idx)} title={t('dataBrowser.addRow')}>+</button>
+                   <button className="btn btn-ghost btn-icon text-danger" onClick={() => removeCondition(idx)} title={t('dataBrowser.deleteRow')}>−</button>
                 </div>
               </div>
             ))}
@@ -917,7 +957,7 @@ export default function DataBrowser() {
       <div className="toolbar" style={{ margin: '0 0 16px 0', border: 'none', background: 'transparent', padding: 0, position: 'relative' }}>
         <div className="flex-gap items-center">
              <div className="flex-gap items-center" style={{ background: 'white', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <button 
+                <button
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
                     if (page > 1) {
@@ -927,24 +967,24 @@ export default function DataBrowser() {
                   disabled={loading || page <= 1}
                   style={{ padding: '4px 12px' }}
                 >
-                  ← 上一页
+                  {t('dataBrowser.previousPage')}
                 </button>
-                <label style={{ margin: 0, fontSize: '12px' }}>页码</label>
-                <input 
-                  type="number" 
+                <label style={{ margin: 0, fontSize: '12px' }}>{t('dataBrowser.pagination')}</label>
+                <input
+                  type="number"
                   className="form-control"
                   style={{ width: '100px', padding: '4px 8px' }}
                   value={pageInput}
-                  onChange={(event) => setPageInput(event.target.value)} 
+                  onChange={(event) => setPageInput(event.target.value)}
                   onBlur={commitPage}
                   onKeyDown={(e) => { if (e.key === 'Enter') { commitPage(); (e.target as HTMLElement).blur(); } }}
-                  min={1} 
+                  min={1}
                   disabled={loading}
                 />
                 <span style={{ fontSize: '12px', color: '#64748b' }}>
-                  / {Math.ceil(total / size) || 1}页
+                  / {Math.ceil(total / size) || 1} {t('dataBrowser.of')}
                 </span>
-                <button 
+                <button
                   className="btn btn-secondary btn-sm"
                   onClick={() => {
                     setPage((prev) => prev + 1);
@@ -952,79 +992,79 @@ export default function DataBrowser() {
                   disabled={loading}
                   style={{ padding: '4px 12px' }}
                 >
-                  下一页 →
+                  {t('dataBrowser.nextPage')}
                 </button>
                 <span style={{ color: '#cbd5e1' }}>|</span>
-                <label style={{ margin: 0, fontSize: '12px' }}>每页</label>
-                <input 
-                  type="number" 
+                <label style={{ margin: 0, fontSize: '12px' }}>{t('dataBrowser.pageSize')}</label>
+                <input
+                  type="number"
                   className="form-control"
                   style={{ width: '80px', padding: '4px 8px' }}
-                  value={sizeInput} 
-                  onChange={(event) => setSizeInput(event.target.value)} 
+                  value={sizeInput}
+                  onChange={(event) => setSizeInput(event.target.value)}
                   onBlur={commitSize}
                   onKeyDown={(e) => { if (e.key === 'Enter') { commitSize(); (e.target as HTMLElement).blur(); } }}
-                  min={1} 
+                  min={1}
                   disabled={loading}
                 />
                 {(page - 1) * size >= 10000 && (
-                  <span style={{ 
-                    fontSize: '11px', 
-                    color: '#f59e0b', 
-                    background: '#fef3c7', 
-                    padding: '2px 6px', 
+                  <span style={{
+                    fontSize: '11px',
+                    color: '#f59e0b',
+                    background: '#fef3c7',
+                    padding: '2px 6px',
                     borderRadius: '4px',
                     marginLeft: '8px'
                   }}>
-                    ⚠️ 深度分页
+                    ⚠️ {t('dataBrowser.deepPaging')}
                   </span>
                 )}
              </div>
         </div>
         <div className="flex-gap items-center">
              {loading && (
-               <span style={{ 
-                 fontSize: '13px', 
+               <span style={{
+                 fontSize: '13px',
                  color: '#3b82f6',
                  background: '#eff6ff',
                  padding: '6px 12px',
                  borderRadius: '8px',
                  border: '1px solid #bfdbfe'
                }}>
-                 ⏳ {loadingMessage || '查询中...'}
+                 ⏳ {loadingMessage || t('dataBrowser.querying')}
                </span>
              )}
              {error && <span className="text-danger" style={{ fontSize: '13px' }}>{error}</span>}
-             {!error && !loading && <span className="muted" style={{ background: 'white', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>Total: <strong>{total}{totalRelation === 'gte' ? '+' : ''}</strong> hits</span>}
+             {!error && !loading && <span className="muted" style={{ background: 'white', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>{t('dataBrowser.total')}: <strong>{total}{totalRelation === 'gte' ? '+' : ''}</strong> {t('dataBrowser.hits')}</span>}
              <FieldFilterButton
                allFields={filterCandidateFields}
                state={fieldFilter}
                onChange={setFieldFilter}
                align="right"
-               label="字段过滤"
+               label={t('dataBrowser.fieldFilter')}
              />
         </div>
       </div>
 
       <div className="card">
         <div className="card-header">
-          <h3 className="card-title">查询结果</h3>
+          <h3 className="card-title">{t('dataBrowser.queryResult')}</h3>
           <div className="flex-gap" style={{ alignItems: 'center' }}>
             <div className="flex-gap" style={{ gap: '4px' }}>
-              <button className="btn btn-sm btn-secondary" onClick={copySelectedDocs} disabled={selectedRows.length === 0}>复制选中</button>
-              <button className="btn btn-sm btn-secondary" onClick={deleteSelectedDocs} disabled={selectedRows.length === 0}>删除选中</button>
+              <button className="btn btn-sm btn-secondary" onClick={copySelectedDocs} disabled={selectedRows.length === 0}>{t('dataBrowser.copySelected')}</button>
+              <button className="btn btn-sm btn-secondary" onClick={deleteSelectedDocs} disabled={selectedRows.length === 0}>{t('dataBrowser.deleteSelected')}</button>
               {/* <span className="muted" style={{ fontSize: '12px' }}>{selectedRows.length > 0 ? `已选 ${selectedRows.length} 条` : ''}</span> */}
             </div>
             <div className="flex-gap">
-              <button className={`btn btn-sm ${viewMode === "table" ? "btn-primary" : "btn-secondary"}`} onClick={() => setViewMode("table")}>表格</button>
-              <button className={`btn btn-sm ${viewMode === "json" ? "btn-primary" : "btn-secondary"}`} onClick={() => setViewMode("json")}>JSON</button>
+              <button className={`btn btn-sm ${viewMode === "table" ? "btn-primary" : "btn-secondary"}`} onClick={() => setViewMode("table")}>{t('dataBrowser.table')}</button>
+              <button className={`btn btn-sm ${viewMode === "json" ? "btn-primary" : "btn-secondary"}`} onClick={() => setViewMode("json")}>{t('dataBrowser.json')}</button>
             </div>
           </div>
         </div>
           
         {rows.length === 0 ? (
           <div className="card-body">
-            <p className="muted" style={{ textAlign: 'center', margin: '20px 0' }}>暂无数据</p>
+            <p className="muted" style={{ textAlign: 'center', margin: '20px 0' }}>{t('common.noData')}</p>
           </div>
         ) : (
           <div>
@@ -1046,7 +1086,7 @@ export default function DataBrowser() {
                       {allColumns.map((col) => (
                         <th key={col}>{col}</th>
                       ))}
-                      <th style={{ width: '140px', textAlign: 'right' }}>操作</th>
+                      <th style={{ width: '140px', textAlign: 'right' }}>{t('dataBrowser.operation')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1083,8 +1123,8 @@ export default function DataBrowser() {
                           ))}
                           <td className="table-actions" style={{ textAlign: 'right' }}>
                             <div className="flex-gap justify-end" style={{ gap: '4px' }}>
-                               <button className="btn btn-sm btn-ghost" onClick={() => openEdit(row)}>编辑</button>
-                               <button className="btn btn-sm btn-ghost text-danger" onClick={() => handleDeleteDoc(row._index, row._id)}>删除</button>
+                               <button className="btn btn-sm btn-ghost" onClick={() => openEdit(row)}>{t('common.edit')}</button>
+                               <button className="btn btn-sm btn-ghost text-danger" onClick={() => handleDeleteDoc(row._index, row._id)}>{t('common.delete')}</button>
                             </div>
                           </td>
                         </tr>
@@ -1107,23 +1147,23 @@ export default function DataBrowser() {
 
             {viewMode === "json" && (
               <div>
-                <div style={{ 
-                  padding: '12px 16px', 
-                  background: '#eff6ff', 
-                  border: '1px solid #bfdbfe', 
+                <div style={{
+                  padding: '12px 16px',
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
                   borderRadius: '8px',
                   marginBottom: '12px',
                   fontSize: '13px',
                   color: '#1e40af'
                 }}>
-                  💡 提示：JSON 视图展示完整的文档数据
+                  💡 {t('dataBrowser.jsonViewTip')}
                 </div>
                 <div className="table-wrapper">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th style={{ width: '120px' }}>ID</th>
-                      <th>Source JSON</th>
+                      <th style={{ width: '120px' }}>{t('dataBrowser.id')}</th>
+                      <th>{t('dataBrowser.sourceJson')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1153,22 +1193,22 @@ export default function DataBrowser() {
         }}>
           <div className="card anim-fade-in" style={{ width: '600px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
              <div className="card-header">
-                <h3 className="card-title">编辑文档: {editingDoc._id}</h3>
+                <h3 className="card-title">{t('dataBrowser.editDocument', { id: editingDoc._id })}</h3>
              </div>
              <div className="card-body" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ marginBottom: '12px' }}>
-                   <label style={{ fontSize: '12px', color: '#64748b' }}>Index: {editingDoc._index}</label>
+                   <label style={{ fontSize: '12px', color: '#64748b' }}>{t('dataBrowser.index')}: {editingDoc._index}</label>
                 </div>
-                <textarea 
-                   className="json-editor" 
+                <textarea
+                   className="json-editor"
                    style={{ flex: 1, minHeight: '300px' }}
                    value={editJson}
                    onChange={(e) => setEditJson(e.target.value)}
                 />
                 {error && <p className="text-danger" style={{ marginTop: '8px' }}>{error}</p>}
                 <div className="flex-gap justify-end" style={{ marginTop: '16px' }}>
-                   <button className="btn btn-secondary" onClick={() => setShowEditModal(false)}>取消</button>
-                   <button className="btn btn-primary" onClick={handleUpdateDoc}>保存修改</button>
+                   <button className="btn btn-secondary" onClick={() => setShowEditModal(false)}>{t('common.cancel')}</button>
+                   <button className="btn btn-primary" onClick={handleUpdateDoc}>{t('common.save')}</button>
                 </div>
              </div>
           </div>
@@ -1195,59 +1235,59 @@ export default function DataBrowser() {
           }}
         >
           {/* Copy Options */}
-          <div 
-            className="context-menu-item" 
+          <div
+            className="context-menu-item"
             onClick={copyValue}
             style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <span>📋</span> 复制
+            <span>📋</span> {t('dataBrowser.copyValue')}
           </div>
-          <div 
-            className="context-menu-item" 
+          <div
+            className="context-menu-item"
             onClick={copyRow}
             style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <span>📋</span> 复制当前行
+            <span>📋</span> {t('dataBrowser.copyRow')}
           </div>
 
           <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 0' }} />
 
           {/* Edit & Delete */}
-          <div 
-            className="context-menu-item" 
+          <div
+            className="context-menu-item"
             onClick={() => { openEdit(contextMenu.row); closeContextMenu(); }}
             style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <span>✏️</span> 编辑
+            <span>✏️</span> {t('common.edit')}
           </div>
-          <div 
-            className="context-menu-item" 
+          <div
+            className="context-menu-item"
             onClick={() => { handleDeleteDoc(contextMenu.row._index, contextMenu.row._id); closeContextMenu(); }}
             style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = '#fef2f2')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <span>🗑️</span> 删除
+            <span>🗑️</span> {t('common.delete')}
           </div>
 
           <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 0' }} />
 
           {/* Expand/Collapse */}
-          <div 
-            className="context-menu-item" 
+          <div
+            className="context-menu-item"
             onClick={() => toggleRowExpand(contextMenu.row._id)}
             style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <span>{expandedRows.has(contextMenu.row?._id) ? '🔼' : '🔽'}</span> 
-            {expandedRows.has(contextMenu.row?._id) ? '收起当前行' : '展开当前行'}
+            <span>{expandedRows.has(contextMenu.row?._id) ? '🔼' : '🔽'}</span>
+            {expandedRows.has(contextMenu.row?._id) ? t('dataBrowser.collapseRow') : t('dataBrowser.expandRow')}
           </div>
 
           {/* Query Conditions - Only show when a field is selected */}
@@ -1255,77 +1295,77 @@ export default function DataBrowser() {
             <>
               <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 0' }} />
               
-              <div 
+              <div
                 className="context-menu-item context-menu-submenu"
                 style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span>✅</span> must</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><span>✅</span> {t('dataBrowser.must')}</span>
                 <span>▶</span>
                 <div className="context-submenu" style={{
                   position: 'absolute', left: '100%', top: 0, background: 'white',
                   border: '1px solid #e2e8f0', borderRadius: '8px', minWidth: '120px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', display: 'none', padding: '4px 0'
                 }}>
-                  <div 
+                  <div
                     onClick={() => addConditionFromContext('must')}
                     style={{ padding: '8px 12px', cursor: 'pointer' }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    添加条件
+                    {t('dataBrowser.addCondition')}
                   </div>
                 </div>
               </div>
-              <div 
+              <div
                 className="context-menu-item"
                 onClick={() => addConditionFromContext('must')}
                 style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '24px' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <span>✅</span> 添加 must 条件
+                <span>✅</span> {t('dataBrowser.addMustCondition')}
               </div>
-              <div 
+              <div
                 className="context-menu-item"
                 onClick={() => addConditionFromContext('should')}
                 style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '24px' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <span>🔶</span> 添加 should 条件
+                <span>🔶</span> {t('dataBrowser.addShouldCondition')}
               </div>
-              <div 
+              <div
                 className="context-menu-item"
                 onClick={() => addConditionFromContext('must_not')}
                 style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '24px' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <span>❌</span> 添加 must_not 条件
+                <span>❌</span> {t('dataBrowser.addMustNotCondition')}
               </div>
 
               <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 0' }} />
 
               {/* Sort Options */}
-              <div 
+              <div
                 className="context-menu-item"
                 onClick={() => addSortFromContext('asc')}
                 style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '24px' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <span>⬆️</span> 升序排序
+                <span>⬆️</span> {t('dataBrowser.sortAscending')}
               </div>
-              <div 
+              <div
                 className="context-menu-item"
                 onClick={() => addSortFromContext('desc')}
                 style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '24px' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <span>⬇️</span> 降序排序
+                <span>⬇️</span> {t('dataBrowser.sortDescending')}
               </div>
             </>
           )}
@@ -1333,5 +1373,6 @@ export default function DataBrowser() {
       )}
 
     </div>
+    </ConfigProvider>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export type FieldFilterState = {
   enabled: boolean;
@@ -22,10 +23,12 @@ export default function FieldFilterButton({
   state,
   onChange,
   align = "right",
-  label = "字段过滤"
+  label
 }: Props) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const displayLabel = label || t('fieldFilter.label');
 
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
@@ -87,7 +90,7 @@ export default function FieldFilterButton({
           borderColor: state.enabled ? "#007aff" : undefined
         }}
       >
-        🔍 {label} {selectedCount > 0 && `(${selectedCount})`}
+        🔍 {displayLabel} {selectedCount > 0 && `(${selectedCount})`}
       </button>
 
       {open && (
@@ -111,16 +114,16 @@ export default function FieldFilterButton({
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <strong style={{ fontSize: "13px", color: "#1d1d1f" }}>显示字段</strong>
+            <strong style={{ fontSize: "13px", color: "#1d1d1f" }}>{t('fieldFilter.displayFields')}</strong>
             <div style={{ display: "flex", gap: "6px" }}>
               <button className="btn btn-sm btn-ghost" onClick={setAll} style={{ fontSize: "11px", padding: "2px 8px" }}>
-                全选
+                {t('common.selectAll')}
               </button>
               <button className="btn btn-sm btn-ghost" onClick={clearAll} style={{ fontSize: "11px", padding: "2px 8px" }}>
-                清空
+                {t('common.clearAll')}
               </button>
               <button className="btn btn-sm btn-ghost" onClick={clearFilter} style={{ fontSize: "11px", padding: "2px 8px" }}>
-                清除过滤
+                {t('fieldFilter.clearFilter')}
               </button>
             </div>
           </div>
@@ -128,9 +131,9 @@ export default function FieldFilterButton({
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#1d1d1f", fontWeight: 500 }}>
               <input type="checkbox" checked={state.enabled} onChange={(e) => setEnabled(e.target.checked)} />
-              启用过滤
+              {t('fieldFilter.enableFilter')}
             </label>
-            <span style={{ fontSize: "12px", color: "#86868b" }}>{allFields.length === 0 ? "暂无字段" : `共 ${allFields.length} 个字段`}</span>
+            <span style={{ fontSize: "12px", color: "#86868b" }}>{allFields.length === 0 ? t('fieldFilter.noFields') : t('fieldFilter.totalFields', { count: allFields.length })}</span>
           </div>
 
           {allFields.map((field) => (
@@ -163,7 +166,7 @@ export default function FieldFilterButton({
 
           {!state.enabled && (
             <div style={{ marginTop: "12px", fontSize: "12px", color: "#86868b", padding: "0 4px" }}>
-              当前未启用过滤（显示全部字段）。勾选“启用过滤”后可选择需要展示的字段。
+              {t('fieldFilter.tip')}
             </div>
           )}
         </div>
