@@ -1,0 +1,23 @@
+{
+  "name": "multi-database-browsing",
+  "outputType": "desktop",
+  "frontend": {
+    "dir": ".",
+    "build": "npm run build",
+    "install": "npm install",
+    "dev": "npm run dev"
+  },
+  "build": {
+    "nsis": {
+      "onlyOnRelease": false
+    }
+  },
+  "author": {
+    "name": "Multi-Database Team"
+  },
+  "info": {
+    "productName": "Multi-Database Browsing",
+    "productVersion": "0.1.0",
+    "copyright": ""
+  }
+}

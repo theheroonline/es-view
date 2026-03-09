@@ -16,7 +16,7 @@ export interface RedisConnection {
 export interface RedisDatabaseInfo {
   index: number;
   label: string;
-  keyCount?: number;
+  keyCount?: number | null;
   isDefault: boolean;
 }
 

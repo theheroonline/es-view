@@ -1,4 +1,4 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { invoke, isWails, waitForWails } from "../../../lib/wailsapi";
 import { logError } from "../../../lib/errorLog";
 import type {
     RedisCommandResult,
@@ -10,31 +10,38 @@ import type {
     RedisUpdateTtlRequest,
 } from "../types";
 
-const isTauriEnv = isTauri();
+async function requireWails() {
+  // Wait for Wails to initialize
+  await waitForWails();
 
-function requireTauri() {
-  if (!isTauriEnv) {
-    const error = new Error("Redis operations require desktop mode (Tauri)");
-    logError(error, {
-      source: "redisClient.requireTauri",
-      message: "Redis operation requested outside desktop mode"
-    });
-    throw error;
+  // Add extra wait and retry for robustness - try up to 20 times with 200ms between retries
+  for (let i = 0; i < 20; i++) {
+    if (isWails()) {
+      return;
+    }
+    // Wait 200ms and retry
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
+
+  // If still not available, throw detailed error
+  throw new Error(
+    `Redis operations require desktop mode (Wails). ` +
+    `window.go: ${typeof window.go}, ` +
+    `window.go.main: ${typeof window.go?.main}, ` +
+    `window.go.main.App: ${typeof window.go?.main?.App}`
+  );
 }
 
 export async function redisConnect(connection: RedisConnection): Promise<void> {
-  requireTauri();
+  await requireWails();
   try {
     await invoke("redis_connect", {
-      request: {
-        connectionId: connection.id,
-        host: connection.host,
-        port: connection.port,
-        database: connection.database,
-        username: connection.username || undefined,
-        password: connection.password || undefined,
-      },
+      connectionId: connection.id,
+      host: connection.host,
+      port: connection.port,
+      database: connection.database,
+      username: connection.username || undefined,
+      password: connection.password || undefined,
     });
   } catch (error) {
     logError(error, {
@@ -46,7 +53,7 @@ export async function redisConnect(connection: RedisConnection): Promise<void> {
 }
 
 export async function redisDisconnect(connectionId: string): Promise<void> {
-  requireTauri();
+  await requireWails();
   try {
     await invoke("redis_disconnect", { connectionId });
   } catch (error) {
@@ -59,7 +66,7 @@ export async function redisDisconnect(connectionId: string): Promise<void> {
 }
 
 export async function redisListDatabases(connectionId: string): Promise<RedisDatabaseInfo[]> {
-  requireTauri();
+  await requireWails();
   try {
     return await invoke<RedisDatabaseInfo[]>("redis_list_databases", { connectionId });
   } catch (error) {
@@ -78,16 +85,14 @@ export async function redisScanKeys(
   cursor = "0",
   count = 50,
 ): Promise<RedisScanResult> {
-  requireTauri();
+  await requireWails();
   try {
     return await invoke<RedisScanResult>("redis_scan_keys", {
-      request: {
-        connectionId,
-        database,
-        pattern,
-        cursor,
-        count,
-      },
+      connectionId,
+      database,
+      pattern,
+      cursor,
+      count,
     });
   } catch (error) {
     logError(error, {
@@ -104,14 +109,12 @@ export async function redisGetKeyDetail(
   database: number,
   key: string,
 ): Promise<RedisKeyDetail> {
-  requireTauri();
+  await requireWails();
   try {
     return await invoke<RedisKeyDetail>("redis_get_key_detail", {
-      request: {
-        connectionId,
-        database,
-        key,
-      },
+      connectionId,
+      database,
+      key,
     });
   } catch (error) {
     logError(error, {
@@ -129,15 +132,13 @@ export async function redisExecute(
   command: string,
   args: string[],
 ): Promise<RedisCommandResult> {
-  requireTauri();
+  await requireWails();
   try {
     return await invoke<RedisCommandResult>("redis_execute", {
-      request: {
-        connectionId,
-        database,
-        command,
-        args,
-      },
+      connectionId,
+      database,
+      command,
+      args,
     });
   } catch (error) {
     logError(error, {
@@ -154,19 +155,17 @@ export async function redisSetKey(
   database: number,
   request: RedisSetKeyRequest,
 ): Promise<void> {
-  requireTauri();
+  await requireWails();
   try {
     await invoke("redis_set_key", {
-      request: {
-        connectionId,
-        database,
-        key: request.key,
-        originalKey: request.originalKey,
-        keyType: request.keyType,
-        ttlMs: request.ttlMs,
-        value: request.value,
-        overwrite: request.overwrite,
-      },
+      connectionId,
+      database,
+      key: request.key,
+      originalKey: request.originalKey,
+      keyType: request.keyType,
+      ttlMs: request.ttlMs,
+      value: request.value,
+      overwrite: request.overwrite,
     });
   } catch (error) {
     logError(error, {
@@ -183,14 +182,12 @@ export async function redisDeleteKey(
   database: number,
   key: string,
 ): Promise<void> {
-  requireTauri();
+  await requireWails();
   try {
     await invoke("redis_delete_key", {
-      request: {
-        connectionId,
-        database,
-        key,
-      },
+      connectionId,
+      database,
+      key,
     });
   } catch (error) {
     logError(error, {
@@ -207,14 +204,12 @@ export async function redisDeleteKeys(
   database: number,
   keys: string[],
 ): Promise<number> {
-  requireTauri();
+  await requireWails();
   try {
     return await invoke<number>("redis_delete_keys", {
-      request: {
-        connectionId,
-        database,
-        keys,
-      },
+      connectionId,
+      database,
+      keys,
     });
   } catch (error) {
     logError(error, {
@@ -231,15 +226,13 @@ export async function redisUpdateKeyTtl(
   database: number,
   request: RedisUpdateTtlRequest,
 ): Promise<void> {
-  requireTauri();
+  await requireWails();
   try {
     await invoke("redis_update_key_ttl", {
-      request: {
-        connectionId,
-        database,
-        key: request.key,
-        ttlMs: request.ttlMs,
-      },
+      connectionId,
+      database,
+      key: request.key,
+      ttl: request.ttlMs,
     });
   } catch (error) {
     logError(error, {

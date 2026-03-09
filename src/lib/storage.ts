@@ -1,8 +1,8 @@
+import { invoke, isWails } from "./wailsapi";
 import { logError } from "./errorLog";
 import type { LocalState } from "./types";
 
 const STORAGE_KEY = "multi-database-browsing.state";
-const CONFIG_FILE = "multi-database-browsing.state.json";
 
 const defaultState: LocalState = {
   profiles: [],
@@ -10,31 +10,24 @@ const defaultState: LocalState = {
   history: []
 };
 
-function isTauri() {
-  return Boolean((window as unknown as { __TAURI__?: unknown }).__TAURI__);
-}
-
-async function getConfigPath() {
-  if (!isTauri()) return null;
-  const { appConfigDir } = await import("@tauri-apps/api/path");
-  const { mkdir, exists } = await import("@tauri-apps/plugin-fs");
-  const dir = await appConfigDir();
-  if (!(await exists(dir))) {
-    await mkdir(dir, { recursive: true });
-  }
-  return `${dir}${CONFIG_FILE}`;
-}
-
 export async function loadState(): Promise<LocalState> {
   try {
-    const path = await getConfigPath();
     let raw: string | null = null;
-    if (path) {
-      const { exists, readTextFile } = await import("@tauri-apps/plugin-fs");
-      if (await exists(path)) {
-        raw = await readTextFile(path);
+
+    // Try to load from Wails backend first
+    if (isWails()) {
+      try {
+        raw = await invoke<string>("load_state");
+      } catch (error) {
+        logError(error, {
+          source: "storage.loadState",
+          message: "Failed to load state from backend, falling back to localStorage"
+        });
+        // Fall back to localStorage
+        raw = localStorage.getItem(STORAGE_KEY);
       }
     } else {
+      // Web environment - use localStorage only
       raw = localStorage.getItem(STORAGE_KEY);
     }
 
@@ -56,14 +49,24 @@ export async function loadState(): Promise<LocalState> {
 
 export async function saveState(state: LocalState) {
   try {
-    const path = await getConfigPath();
     const payload = JSON.stringify(state, null, 2);
-    if (path) {
-      const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-      await writeTextFile(path, payload);
-    } else {
-      localStorage.setItem(STORAGE_KEY, payload);
+
+    // Try to save via Wails backend first
+    if (isWails()) {
+      try {
+        await invoke("save_state", { data: payload });
+        return;
+      } catch (error) {
+        logError(error, {
+          source: "storage.saveState",
+          message: "Failed to save state to backend, falling back to localStorage"
+        });
+        // Fall back to localStorage
+      }
     }
+
+    // Web environment or backend failed - use localStorage
+    localStorage.setItem(STORAGE_KEY, payload);
   } catch (error) {
     logError(error, {
       source: "storage.saveState",

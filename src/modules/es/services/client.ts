@@ -1,8 +1,6 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { invoke, isWails } from "../../../lib/wailsapi";
 import { logError } from "../../../lib/errorLog";
 import type { EsConnection } from "../types";
-
-const isTauriEnv = isTauri();
 
 interface HttpResponse {
   status: number;
@@ -81,9 +79,7 @@ async function tauriHttpRequest(
   verifyTls = true,
   auth?: { authType: string; username?: string; password?: string; apiKey?: string }
 ): Promise<{ status: number; ok: boolean; body: string }> {
-  return await invoke<HttpResponse>("http_request", {
-    request: { url, method, headers, body, verifyTls, auth }
-  });
+  return await invoke<HttpResponse>("http_request", { url, method, headers, body, verifyTls, auth });
 }
 
 async function browserHttpRequest(
@@ -110,7 +106,7 @@ export async function esRequest<T>(
     }
     const requestPath = `/${path.replace(/^\//, "")}`;
 
-    const url = isTauriEnv
+    const url = isWails()
       ? `${normalizedBase}${requestPath}`
       : `/es${requestPath}`;
 
@@ -118,16 +114,16 @@ export async function esRequest<T>(
       "Content-Type": "application/json"
     };
 
-    if (!isTauriEnv) {
+    if (!isWails()) {
       headers["x-es-target"] = normalizedBase;
     }
 
     const auth = buildAuthHeader(normalized);
-    if (auth && !isTauriEnv) {
+    if (auth && !isWails()) {
       headers["Authorization"] = auth;
     }
 
-    const tauriAuth = isTauriEnv ? {
+    const tauriAuth = isWails() ? {
       authType: normalized.authType,
       username: normalized.username,
       password: normalized.password,
@@ -136,7 +132,7 @@ export async function esRequest<T>(
 
     const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
 
-    const res = isTauriEnv
+    const res = isWails()
       ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, tauriAuth)
       : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
 
@@ -172,7 +168,7 @@ export async function esRequestRaw(
     const requestPath = `/${path.replace(/^\//, "")}`;
 
     let url: string;
-    if (isTauriEnv) {
+    if (isWails()) {
       url = `${normalizedBase}${requestPath}`;
     } else {
       url = `/es${requestPath}`;
@@ -182,16 +178,16 @@ export async function esRequestRaw(
       ...(options.headers ?? {})
     };
 
-    if (!isTauriEnv) {
+    if (!isWails()) {
       headers["x-es-target"] = normalizedBase;
     }
 
     const auth = buildAuthHeader(normalized);
-    if (auth && !isTauriEnv) {
+    if (auth && !isWails()) {
       headers["Authorization"] = auth;
     }
 
-    const tauriAuth = isTauriEnv ? {
+    const tauriAuth = isWails() ? {
       authType: normalized.authType,
       username: normalized.username,
       password: normalized.password,
@@ -213,7 +209,7 @@ export async function esRequestRaw(
       }
     }
 
-    return isTauriEnv
+    return isWails()
       ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, tauriAuth)
       : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
   } catch (error) {

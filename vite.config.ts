@@ -62,8 +62,22 @@ function esProxyPlugin(): Plugin {
   };
 }
 
+function wailsIpcPlugin(): Plugin {
+  return {
+    name: "wails-ipc",
+    transformIndexHtml(html: string) {
+      // Inject Wails IPC script EARLY in the head, before any other scripts
+      // This ensures window.wails.Call is available before React loads
+      return html.replace(
+        /<head>/,
+        '<head>\n    <script src="/wails/ipc.js"></script>'
+      );
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), esProxyPlugin()],
+  plugins: [react(), esProxyPlugin(), wailsIpcPlugin()],
   // Tauri 要求使用相对路径
   base: "./",
   server: {

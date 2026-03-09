@@ -1,4 +1,4 @@
-# Logs
+# Node.js / npm
 logs
 *.log
 npm-debug.log*
@@ -6,16 +6,41 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
 node_modules
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Frontend build
 dist
+frontend
 dist-ssr
 *.local
 .github
 
-# Editor directories and files
-.vscode/*
+# Go / Wails
+vendor/
+build/
+frontend/wailsjs/
+*.exe
+*.exe~
+*.dll
+*.so
+*.so.*
+*.dylib
+*.test
+*.out
+*.prof
+
+# Go IDE
+.idea/
+.vscode/
 !.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# IDE directories and files
 .idea
 .DS_Store
 *.suo
@@ -23,4 +48,29 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Target directories
 */target/*
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+/build/
+/dist/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+.cache/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Application specific
+*.state.json
+.claude/
