@@ -357,6 +357,11 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.redis-browser-panel > .card-header:first-child {
+  flex-shrink: 0;
 }
 
 .redis-toolbar {
@@ -364,6 +369,7 @@ body {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+  flex-shrink: 0;
 }
 
 .redis-toolbar-actions {
@@ -371,6 +377,7 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .redis-scan-count-select {
@@ -380,6 +387,7 @@ body {
 .redis-batch-hint {
   margin-bottom: 12px;
   padding: 0 4px;
+  flex-shrink: 0;
 }
 
 .redis-selection-bar {
@@ -388,6 +396,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 0 4px 12px;
+  flex-shrink: 0;
 }
 
 .redis-checkbox-label {
@@ -402,6 +411,13 @@ body {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.04);
+}
+
+.redis-browser-panel > .redis-toolbar-actions:last-of-type {
+  flex-shrink: 0;
+  margin-top: 12px;
 }
 
 .redis-row-active {

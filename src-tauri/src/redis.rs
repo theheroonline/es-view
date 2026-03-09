@@ -158,21 +158,35 @@ fn normalize_ttl(ttl_ms: i64) -> Option<i64> {
     }
 }
 
-fn pair_strings_to_object(values: Vec<String>) -> JsonValue {
+fn bytes_to_string(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes).unwrap_or_else(|e| {
+        // Use lossy conversion for invalid UTF-8
+        String::from_utf8_lossy(e.as_bytes()).into_owned()
+    })
+}
+
+fn pair_bytes_to_object(values: Vec<Vec<u8>>) -> JsonValue {
     let mut map = serde_json::Map::new();
     let mut iter = values.into_iter();
 
-    while let Some(key) = iter.next() {
-        let value = iter.next().unwrap_or_default();
+    while let Some(key_bytes) = iter.next() {
+        let value_bytes = iter.next().unwrap_or_default();
+        let key = bytes_to_string(key_bytes);
+        let value = bytes_to_string(value_bytes);
         map.insert(key, JsonValue::String(value));
     }
 
     JsonValue::Object(map)
 }
 
-fn pair_strings_to_zset(values: Vec<String>) -> JsonValue {
+fn bytes_array_to_strings(values: Vec<Vec<u8>>) -> Vec<String> {
+    values.into_iter().map(bytes_to_string).collect()
+}
+
+fn pair_bytes_to_zset(values: Vec<Vec<u8>>) -> JsonValue {
+    let strings = bytes_array_to_strings(values);
     let mut items = Vec::new();
-    let mut iter = values.into_iter();
+    let mut iter = strings.into_iter();
 
     while let Some(member) = iter.next() {
         let score = iter
@@ -625,50 +639,52 @@ pub async fn redis_get_key_detail(
 
     let (value, truncated, unsupported) = match key_type.as_str() {
         "string" => {
-            let value: Option<String> = redis::cmd("GET")
+            let value: Option<Vec<u8>> = redis::cmd("GET")
                 .arg(&request.key)
                 .query_async(&mut connection)
                 .await
                 .map_err(|error| format!("Failed to read Redis string key: {}", error))?;
             (
-                value.map(JsonValue::String).unwrap_or(JsonValue::Null),
+                value.map(|bytes| JsonValue::String(bytes_to_string(bytes))).unwrap_or(JsonValue::Null),
                 false,
                 false,
             )
         }
         "hash" => {
-            let values: Vec<String> = redis::cmd("HGETALL")
+            let values: Vec<Vec<u8>> = redis::cmd("HGETALL")
                 .arg(&request.key)
                 .query_async(&mut connection)
                 .await
                 .map_err(|error| format!("Failed to read Redis hash key: {}", error))?;
-            (pair_strings_to_object(values), false, false)
+            (pair_bytes_to_object(values), false, false)
         }
         "list" => {
-            let values: Vec<String> = redis::cmd("LRANGE")
+            let values: Vec<Vec<u8>> = redis::cmd("LRANGE")
                 .arg(&request.key)
                 .arg(0)
                 .arg(499)
                 .query_async(&mut connection)
                 .await
                 .map_err(|error| format!("Failed to read Redis list key: {}", error))?;
-            let total = size.unwrap_or(values.len() as u64);
+            let strings = bytes_array_to_strings(values);
+            let total = size.unwrap_or(strings.len() as u64);
             (
-                JsonValue::Array(values.into_iter().map(JsonValue::String).collect()),
+                JsonValue::Array(strings.into_iter().map(JsonValue::String).collect()),
                 total > 500,
                 false,
             )
         }
         "set" => {
-            let values: Vec<String> = redis::cmd("SMEMBERS")
+            let values: Vec<Vec<u8>> = redis::cmd("SMEMBERS")
                 .arg(&request.key)
                 .query_async(&mut connection)
                 .await
                 .map_err(|error| format!("Failed to read Redis set key: {}", error))?;
-            (JsonValue::Array(values.into_iter().map(JsonValue::String).collect()), false, false)
+            let strings = bytes_array_to_strings(values);
+            (JsonValue::Array(strings.into_iter().map(JsonValue::String).collect()), false, false)
         }
         "zset" => {
-            let values: Vec<String> = redis::cmd("ZRANGE")
+            let values: Vec<Vec<u8>> = redis::cmd("ZRANGE")
                 .arg(&request.key)
                 .arg(0)
                 .arg(499)
@@ -677,7 +693,7 @@ pub async fn redis_get_key_detail(
                 .await
                 .map_err(|error| format!("Failed to read Redis sorted set key: {}", error))?;
             let total = size.unwrap_or((values.len() / 2) as u64);
-            (pair_strings_to_zset(values), total > 500, false)
+            (pair_bytes_to_zset(values), total > 500, false)
         }
         _ => (JsonValue::Null, false, true),
     };

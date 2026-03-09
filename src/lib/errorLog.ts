@@ -153,10 +153,18 @@ export function logError(error: unknown, options: LogErrorOptions) {
   return entry;
 }
 
+let globalLoggersRegistered = false;
+
 export function registerGlobalErrorLoggers() {
   if (typeof window === "undefined") {
     return () => undefined;
   }
+
+  // Prevent registering listeners multiple times (e.g., in React StrictMode)
+  if (globalLoggersRegistered) {
+    return () => undefined;
+  }
+  globalLoggersRegistered = true;
 
   const handleWindowError = (event: ErrorEvent) => {
     logError(event.error ?? event.message, {
