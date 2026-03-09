@@ -1,0 +1,27 @@
+[package]
+name = "multi-database-browsing"
+version = "0.1.0"
+description = "Local Elasticsearch client"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+mysql_async = "0.34"
+redis = { version = "0.27", features = ["tokio-comp"] }
+urlencoding = "2.1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
