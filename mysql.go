@@ -190,7 +190,14 @@ func (a *App) MysqlListTables(connectionID string, database string) ([]string, e
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '%s' ORDER BY TABLE_NAME", database))
+	// First, switch to the specified database
+	if database != "" {
+		if _, err := db.Exec(fmt.Sprintf("USE `%s`", database)); err != nil {
+			return nil, fmt.Errorf("failed to select database: %w", err)
+		}
+	}
+
+	rows, err := db.Query("SHOW TABLES")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
@@ -218,7 +225,14 @@ func (a *App) MysqlDescribeTable(connectionID string, database string, tableName
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	rows, err := db.Query(fmt.Sprintf("DESCRIBE `%s`.`%s`", database, tableName))
+	// First, switch to the specified database if provided
+	if database != "" {
+		if _, err := db.Exec(fmt.Sprintf("USE `%s`", database)); err != nil {
+			return nil, fmt.Errorf("failed to select database: %w", err)
+		}
+	}
+
+	rows, err := db.Query(fmt.Sprintf("DESCRIBE `%s`", tableName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
