@@ -89,6 +89,7 @@ body {
   grid-template-columns: 280px 1fr;
   flex: 1;
   min-height: 0;
+  transition: grid-template-columns 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .mdb-sidebar {
@@ -98,6 +99,7 @@ body {
   border-right: 1px solid #cdd2da;
   background: #f5f6f8;
   padding: 10px 8px 8px;
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .mdb-sidebar-body {
