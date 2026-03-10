@@ -138,6 +138,7 @@ export default function MysqlTableManager() {
   const [editError, setEditError] = useState("");
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [sortModalOpen, setSortModalOpen] = useState(false);
+  const [columnMenuOpen, setColumnMenuOpen] = useState(false);
   const [filterDraftTree, setFilterDraftTree] = useState<FilterGroupDraft | null>(null);
   const [sortDraft, setSortDraft] = useState<{ column: string; direction: "asc" | "desc" }>({
     column: "",
@@ -1487,7 +1488,7 @@ export default function MysqlTableManager() {
               )}
             </span>
           </div>
-          <div style={{ display: "flex", gap: "8px", marginLeft: "auto" }}>
+          <div style={{ display: "flex", gap: "8px", marginLeft: "auto", position: "relative" }}>
             <button
               className="btn btn-sm btn-ghost"
               onClick={() => {
@@ -1509,6 +1510,12 @@ export default function MysqlTableManager() {
             >
               {t("mysql.tableManager.sortData")}
             </button>
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => setColumnMenuOpen(!columnMenuOpen)}
+            >
+              {t("mysql.tableManager.displayColumns")}
+            </button>
             {selectedCells.length > 0 && (
               <button className="btn btn-sm btn-ghost" onClick={() => openBatchEditModal(selectedCells)}>
                 {t("mysql.tableManager.batchEditSelectedCells")}
@@ -1521,6 +1528,70 @@ export default function MysqlTableManager() {
             >
               {dataState.loading ? t("common.loading") : t("common.refresh")}
             </button>
+
+            {/* Column selection dropdown menu */}
+            {columnMenuOpen && dataState.columns.length > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: "4px",
+                  background: "white",
+                  border: "1px solid #d1d1d6",
+                  borderRadius: "8px",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                  zIndex: 100,
+                  minWidth: "220px",
+                  maxHeight: "400px",
+                  overflow: "auto"
+                }}
+              >
+                <div style={{ padding: "8px" }}>
+                  <div style={{ display: "flex", gap: "6px", marginBottom: "8px", flexWrap: "wrap", borderBottom: "1px solid #f0f0f0", paddingBottom: "8px" }}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={handleSelectAllVisibleColumns}
+                      style={{ fontSize: "12px" }}
+                    >
+                      {t("common.selectAll")}
+                    </button>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => activeOpenedTable && updateOpenedTableVisibleColumns(activeOpenedTable.database, activeOpenedTable.table, dataState.columns)}
+                      style={{ fontSize: "12px" }}
+                    >
+                      {t("common.close")}
+                    </button>
+                  </div>
+                  {dataState.columns.map((column) => {
+                    const checked = visibleDataColumns.includes(column);
+                    return (
+                      <label
+                        key={column}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "6px 8px",
+                          cursor: "pointer",
+                          borderRadius: "4px",
+                          fontSize: "13px",
+                          backgroundColor: checked ? "#eff6ff" : "transparent"
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => handleVisibleColumnToggle(column, event.target.checked)}
+                          style={{ marginRight: "8px" }}
+                        />
+                        {column}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1559,28 +1630,6 @@ export default function MysqlTableManager() {
           </div>
         )}
 
-        {dataState.columns.length > 0 && activeOpenedTable && (
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid #eef1f4", background: "#fbfdff", display: "grid", gap: "8px", flexShrink: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-              <strong style={{ fontSize: "13px" }}>{t("mysql.tableManager.displayColumns")}</strong>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <button className="btn btn-sm btn-ghost" onClick={handleSelectAllVisibleColumns}>{t("common.selectAll")}</button>
-                <button className="btn btn-sm btn-ghost" onClick={() => updateOpenedTableVisibleColumns(activeOpenedTable.database, activeOpenedTable.table, dataState.columns)}>{t("common.close")}</button>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {dataState.columns.map((column) => {
-                const checked = visibleDataColumns.includes(column);
-                return (
-                  <label key={column} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: "999px", background: checked ? "#eff6ff" : "#fff", fontSize: "12px", cursor: "pointer" }}>
-                    <input type="checkbox" checked={checked} onChange={(event) => handleVisibleColumnToggle(column, event.target.checked)} />
-                    <span>{column}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Data table */}
         <div style={{ flex: 1, overflow: "auto" }}>
@@ -1784,15 +1833,9 @@ export default function MysqlTableManager() {
       <>
         <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h3 className="card-title">
-              {selectedTableInfo?.database ?? activeOpenedTable.database}.{selectedTableInfo?.table ?? activeOpenedTable.table}
-              {selectedTableInfo?.rowCount !== undefined && (
-                <span className="muted" style={{ fontWeight: 400, fontSize: "13px", marginLeft: "8px" }}>
-                  ({selectedTableInfo.rowCount} {t("mysql.data.rowCount")})
-                </span>
-              )}
+            <h3 className="card-title" style={{ margin: 0 }}>
+              {selectedTableInfo?.database ?? activeOpenedTable.database}.{selectedTableInfo?.table ?? activeOpenedTable.table}({selectedTableInfo?.rowCount ?? 0} {t("mysql.data.rowCount")})
             </h3>
-            <p className="muted" style={{ margin: "4px 0 0" }}>{t("mysql.tableManager.tableOpenedHint")}</p>
           </div>
         </div>
 

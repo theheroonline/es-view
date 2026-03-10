@@ -158,6 +158,7 @@ export async function invoke<T = any>(
     log(`Calling window.go.main.App["${methodName}"](...)`);
     // Extract parameters based on method type
     const params = extractSimpleParam(methodName, args);
+    log(`Extracted params for ${methodName}:`, params);
 
     // Handle methods with multiple parameters (spread as arguments)
     const result = Array.isArray(params)

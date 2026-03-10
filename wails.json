@@ -19,5 +19,8 @@
     "productName": "Multi-Database Browsing",
     "productVersion": "0.1.0",
     "copyright": ""
+  },
+  "debug": {
+    "openInspectorOnStartup": true
   }
 }

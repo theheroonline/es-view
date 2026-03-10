@@ -810,28 +810,10 @@ function AppLayout() {
         <div className="mdb-topbar-left">
           <div className="mdb-brand" style={{ visibility: "hidden", width: 0, margin: 0, padding: 0 }}>{t("sidebar.brand")}</div>
         </div>
-        <div className="mdb-topbar-right">
-          <span className="mdb-conn-tip">
-            {activeConnectionId ? state.profiles.find((item) => item.id === activeConnectionId)?.name : t("sidebar.connectionPlaceholder")}
-          </span>
-          {isSidebarCollapsed && (
-            <button
-              className="btn btn-sm"
-              onClick={toggleLanguage}
-              title={t("app.switchLanguageTitle", {
-                language: i18n.language === "zh" ? t("common.english") : t("common.chinese")
-              })}
-            >
-              {t("app.switchLanguage", {
-                language: i18n.language === "zh" ? t("common.english") : t("common.chinese")
-              })}
-            </button>
-          )}
-        </div>
       </header>
 
       <div className="mdb-main" style={{ gridTemplateColumns: isSidebarCollapsed ? "0 1fr" : "280px 1fr" }}>
-        <aside className="mdb-sidebar" style={{ display: isSidebarCollapsed ? "none" : "flex" }}>
+        <aside className="mdb-sidebar" style={{ display: isSidebarCollapsed ? "none" : "flex", position: "relative" }}>
           <div className="mdb-sidebar-body">
             <div className="mdb-sidebar-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>{t("sidebar.connection")}</span>
@@ -846,17 +828,27 @@ function AppLayout() {
                 >
                   {i18n.language === "zh" ? "EN" : "中"}
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost"
-                  onClick={() => setIsSidebarCollapsed(true)}
-                  title="Hide sidebar"
-                  style={{ padding: "2px 6px", minWidth: "28px" }}
-                >
-                  ◀
-                </button>
               </div>
             </div>
+
+          {/* Hidden collapse button positioned at middle-right of sidebar */}
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => setIsSidebarCollapsed(true)}
+            title="Hide sidebar"
+            style={{
+              position: "absolute",
+              right: "-12px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              padding: "4px 6px",
+              minWidth: "24px",
+              zIndex: 10
+            }}
+          >
+            ◀
+          </button>
 
           {/* Elasticsearch connections */}
           <div className="mdb-tree-group">
@@ -1098,7 +1090,7 @@ function AppLayout() {
 
         <main className="mdb-workspace">
           {isSidebarCollapsed && (
-            <div style={{ position: "fixed", left: "12px", top: "70px", zIndex: 100 }}>
+            <div style={{ position: "fixed", left: "12px", top: "12px", zIndex: 100 }}>
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
