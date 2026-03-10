@@ -1600,7 +1600,6 @@ export default function MysqlTableManager() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                 <strong style={{ fontSize: "13px" }}>{t("mysql.tableManager.filterPanelTitle")}</strong>
-                <span className="muted" style={{ fontSize: "12px" }}>{t("mysql.tableManager.filterTreeHint")}</span>
               </div>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <button className="btn btn-sm btn-ghost" onClick={() => setFilterPanelOpen(false)}>{t("common.close")}</button>
@@ -1616,8 +1615,6 @@ export default function MysqlTableManager() {
           <div style={{ padding: "8px 16px", borderBottom: "1px solid #eef1f4", background: "#f8fbff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", flexShrink: 0 }}>
             <span style={{ fontSize: "12px", color: "#4b5563" }}>
               {t("mysql.tableManager.selectedCellsSummary", { count: selectedCells.length })}
-              {" · "}
-              {t("mysql.tableManager.selectionHint")}
             </span>
             <button className="btn btn-sm btn-ghost" onClick={() => setSelectedCells([])}>{t("mysql.tableManager.clearSelection")}</button>
           </div>
@@ -1780,10 +1777,6 @@ export default function MysqlTableManager() {
           </div>
         </div>
 
-        <div style={{ padding: "12px 16px 0", fontSize: "12px", color: "#6b7280" }}>
-          {t("mysql.tableManager.selectTableDataHint")}
-        </div>
-
         <div style={{ flex: 1, overflow: "auto", padding: "16px" }}>
           {tables.length > 0 ? (
             <div className="mysql-table-grid">
@@ -1824,7 +1817,7 @@ export default function MysqlTableManager() {
     if (!activeOpenedTable) {
       return (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span className="muted">{t("mysql.tableManager.selectTableDataHint")}</span>
+          <span className="muted">请选择表</span>
         </div>
       );
     }

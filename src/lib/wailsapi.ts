@@ -80,6 +80,14 @@ const SINGLE_STRING_PARAM_METHODS: Record<string, string> = {
 };
 
 /**
+ * Methods that pass an object as a single parameter (not decomposed)
+ * Maps the command name to the parameter name or true if entire args is passed
+ */
+const OBJECT_PARAM_METHODS: Record<string, boolean> = {
+  "http_request": true,  // Pass the entire args object as HttpRequestParams
+};
+
+/**
  * Convert snake_case to PascalCase
  * e.g., "redis_connect" -> "RedisConnect"
  */
@@ -97,6 +105,11 @@ function snakeToPascalCase(str: string): string {
 function extractSimpleParam(methodName: string, args?: Record<string, any> | any): any {
   if (!args) {
     return undefined;
+  }
+
+  // Methods that should pass the entire object as a parameter
+  if (OBJECT_PARAM_METHODS[methodName]) {
+    return args;
   }
 
   // Methods with multiple string params - extract in correct order

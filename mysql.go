@@ -117,6 +117,11 @@ func (a *App) MysqlQuery(connectionID string, query string) (MysqlQueryResult, e
 		return MysqlQueryResult{}, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
+	// Set character set to ensure proper encoding
+	if _, err := db.Exec("SET NAMES utf8mb4"); err != nil {
+		return MysqlQueryResult{}, fmt.Errorf("failed to set character set: %w", err)
+	}
+
 	rows, err := db.Query(query)
 	if err != nil {
 		return MysqlQueryResult{}, fmt.Errorf("query failed: %w", err)
@@ -144,6 +149,13 @@ func (a *App) MysqlQuery(connectionID string, query string) (MysqlQueryResult, e
 		err := rows.Scan(valuePtrs...)
 		if err != nil {
 			return MysqlQueryResult{}, fmt.Errorf("scan failed: %w", err)
+		}
+
+		// Convert byte slices to strings for proper UTF-8 handling
+		for i, val := range values {
+			if bytes, ok := val.([]byte); ok {
+				values[i] = string(bytes)
+			}
 		}
 
 		result.Rows = append(result.Rows, values)

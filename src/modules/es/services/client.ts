@@ -2,12 +2,6 @@ import { invoke, isWails } from "../../../lib/wailsapi";
 import { logError } from "../../../lib/errorLog";
 import type { EsConnection } from "../types";
 
-interface HttpResponse {
-  status: number;
-  ok: boolean;
-  body: string;
-}
-
 function extractCredentials(baseUrl: string) {
   try {
     const url = new URL(baseUrl);
@@ -79,7 +73,9 @@ async function tauriHttpRequest(
   verifyTls = true,
   auth?: { authType: string; username?: string; password?: string; apiKey?: string }
 ): Promise<{ status: number; ok: boolean; body: string }> {
-  return await invoke<HttpResponse>("http_request", { url, method, headers, body, verifyTls, auth });
+  const responseStr = await invoke<string>("http_request", { url, method, headers, body, verifyTls, auth });
+  const response = JSON.parse(responseStr);
+  return { status: response.status, ok: response.ok, body: response.body };
 }
 
 async function browserHttpRequest(

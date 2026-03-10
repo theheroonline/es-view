@@ -608,26 +608,6 @@ export default function MysqlSqlQuery() {
     );
   };
 
-  const handleResultColumnToggle = (resultId: string, column: string, checked: boolean, allColumns: string[]) => {
-    setResultVisibleColumns((prev) => {
-      const currentColumns = getVisibleColumns(allColumns, prev[resultId]);
-      const nextColumns = checked
-        ? [...currentColumns, column]
-        : currentColumns.filter((item) => item !== column);
-      return {
-        ...prev,
-        [resultId]: nextColumns.length > 0 ? nextColumns : allColumns
-      };
-    });
-  };
-
-  const handleSelectAllResultColumns = (resultId: string, allColumns: string[]) => {
-    setResultVisibleColumns((prev) => ({
-      ...prev,
-      [resultId]: allColumns
-    }));
-  };
-
   const handleCloseResult = (resultId: string) => {
     setResults((prev) => {
       const nextResults = prev.filter((item) => item.id !== resultId);
@@ -712,9 +692,9 @@ export default function MysqlSqlQuery() {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={{ position: "relative" }}>
       {/* SQL Editor */}
-      <div className="card" style={{ marginBottom: "12px" }}>
+      <div className="card" style={{ flex: "0 0 auto", marginBottom: 0, display: "flex", flexDirection: "column", minHeight: "200px", overflow: "visible", position: "relative", zIndex: 1 }}>
         <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3 className="card-title">
             {t("mysql.query.title")}
@@ -738,7 +718,7 @@ export default function MysqlSqlQuery() {
             </button>
           </div>
         </div>
-        <div style={{ padding: "12px 16px", position: "relative", display: "grid", gap: "12px" }}>
+        <div style={{ padding: "12px 16px", position: "relative", display: "grid", gap: "12px", flex: "0 0 auto" }}>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 320px) minmax(200px, 260px) auto", gap: "12px", alignItems: "center" }}>
             <div>
               <label style={{ display: "block", fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>{t("mysql.query.connection")}</label>
@@ -770,12 +750,9 @@ export default function MysqlSqlQuery() {
                 )}
               </select>
             </div>
-            <div className="muted" style={{ fontSize: "12px", alignSelf: "end", paddingBottom: "8px" }}>
-              {metaLoading ? t("common.loading") : t("mysql.query.selectorHint")}
-            </div>
           </div>
 
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", flex: "1 1 auto", minHeight: "120px", display: "flex", flexDirection: "column", resize: "vertical", overflow: "visible", zIndex: 0 }}>
             <textarea
               ref={textareaRef}
               className="json-editor"
@@ -814,7 +791,7 @@ export default function MysqlSqlQuery() {
               }}
               onFocus={(e) => updateAutocomplete(e.currentTarget.value, e.currentTarget.selectionStart)}
               onKeyDown={handleKeyDown}
-              placeholder="SELECT * FROM table_name LIMIT 100;\nUPDATE table_name SET status = 'done' WHERE id = 1;\n\n-- Ctrl+Enter 执行选中内容，Ctrl+Shift+Enter 执行全部"
+              placeholder="SELECT * FROM table_name LIMIT 100;"
               spellCheck={false}
             />
             {autocompleteOpen && autocompleteItems.length > 0 && (
@@ -824,7 +801,7 @@ export default function MysqlSqlQuery() {
                   position: "absolute",
                   left: "0",
                   top: "calc(100% + 6px)",
-                  zIndex: 20,
+                  zIndex: 9999,
                   background: "#fff",
                   border: "1px solid #d1d5db",
                   borderRadius: "8px",
@@ -890,20 +867,6 @@ export default function MysqlSqlQuery() {
               </div>
             )}
           </div>
-          <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-            {t("mysql.query.shortcutHint")}
-          </div>
-          {selectedText && (
-            <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-              {t("mysql.query.selectionReady", { count: splitSqlStatements(selectedText).length })}
-            </div>
-          )}
-          <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-            {t("mysql.query.autocompleteHint")}
-          </div>
-          <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-            {t("mysql.query.contextAutocompleteHint")}
-          </div>
         </div>
       </div>
 
@@ -916,7 +879,7 @@ export default function MysqlSqlQuery() {
 
       {/* Results */}
       {results.length > 0 && (
-        <div className="card">
+        <div className="card" style={{ flex: "1 1 auto", minHeight: "200px", display: "flex", flexDirection: "column", marginBottom: 0 }}>
           {results.length > 1 && (
             <div style={{ display: "flex", gap: "0", borderBottom: "1px solid #e5e7eb", overflowX: "auto", padding: "0 16px" }}>
               {results.map((item, index) => (
@@ -991,33 +954,10 @@ export default function MysqlSqlQuery() {
                   </div>
                 ) : resultSet?.isResultSet ? (
                   <>
-                    <div style={{ padding: "0 16px 12px", display: "grid", gap: "8px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                        <strong style={{ fontSize: "13px" }}>{t("mysql.query.displayColumns")}</strong>
-                        <button className="btn btn-sm btn-ghost" onClick={() => handleSelectAllResultColumns(activeResult.id, resultSet.columns)}>
-                          {t("common.selectAll")}
-                        </button>
-                      </div>
-                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                        {resultSet.columns.map((column) => {
-                          const checked = visibleColumns.includes(column);
-                          return (
-                            <label key={column} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: "999px", background: checked ? "#eff6ff" : "#fff", fontSize: "12px", cursor: "pointer" }}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(event) => handleResultColumnToggle(activeResult.id, column, event.target.checked, resultSet.columns)}
-                              />
-                              <span>{column}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div style={{ padding: "0 16px 16px" }}>
-                      <div style={{ maxHeight: "360px", overflow: "auto", display: "grid", gap: "10px" }}>
+                    <div style={{ padding: "0 16px 16px", flex: 1, overflow: "auto", minHeight: 0 }}>
+                      <div style={{ display: "grid", gap: "10px" }}>
                         {resultSet.rows.length > 0 ? resultSet.rows.map((row, rowIndex) => {
-                          const rowObject = Object.fromEntries(visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]]));
+                          const rowObject = Object.fromEntries(resultSet.columns.map((column) => [column, row[resultSet.columns.indexOf(column)]]));
                           return (
                             <div key={rowIndex} style={{ border: "1px solid #e5e7eb", borderRadius: "10px", background: "#f8fafc", padding: "12px" }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", gap: "8px" }}>
@@ -1027,7 +967,7 @@ export default function MysqlSqlQuery() {
                                 </button>
                               </div>
                               <div style={{ display: "grid", gap: "8px" }}>
-                                {visibleColumns.map((column) => {
+                                {resultSet.columns.map((column) => {
                                   const value = row[resultSet.columns.indexOf(column)];
                                   return (
                                     <div key={column} style={{ display: "grid", gridTemplateColumns: "minmax(140px, 220px) 1fr", gap: "12px", alignItems: "start" }}>

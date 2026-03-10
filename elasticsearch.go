@@ -2,33 +2,71 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
 )
 
+// HttpRequestParams represents parameters for HTTP requests
+type HttpRequestParams struct {
+	URL       string            `json:"url"`
+	Method    string            `json:"method"`
+	Headers   map[string]string `json:"headers"`
+	Body      string            `json:"body"`
+	VerifyTls bool              `json:"verifyTls"`
+	Auth      *AuthConfig       `json:"auth"`
+}
+
+// AuthConfig represents authentication configuration
+type AuthConfig struct {
+	AuthType string `json:"authType"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	ApiKey   string `json:"apiKey"`
+}
+
 // HttpRequest handles HTTP requests to Elasticsearch or other services
-// @param method - HTTP method (GET, POST, PUT, DELETE, etc.)
-// @param url - Full URL to send request to
-// @param body - Request body (JSON string, can be empty for GET requests)
-// @return response body as string, error if any
-func (a *App) HttpRequest(method string, url string, body string) (string, error) {
+func (a *App) HttpRequest(params HttpRequestParams) (string, error) {
 	client := &http.Client{}
 
 	var req *http.Request
 	var err error
 
 	var bodyReader io.Reader
-	if body != "" {
-		bodyReader = bytes.NewReader([]byte(body))
+	if params.Body != "" {
+		bodyReader = bytes.NewReader([]byte(params.Body))
 	}
 
-	req, err = http.NewRequest(method, url, bodyReader)
+	req, err = http.NewRequest(params.Method, params.URL, bodyReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
+	// Set default headers
 	req.Header.Set("Content-Type", "application/json")
+
+	// Apply custom headers
+	if params.Headers != nil {
+		for key, value := range params.Headers {
+			req.Header.Set(key, value)
+		}
+	}
+
+	// Apply authentication
+	if params.Auth != nil {
+		switch params.Auth.AuthType {
+		case "basic":
+			if params.Auth.Username != "" && params.Auth.Password != "" {
+				token := base64.StdEncoding.EncodeToString([]byte(params.Auth.Username + ":" + params.Auth.Password))
+				req.Header.Set("Authorization", "Basic "+token)
+			}
+		case "apiKey":
+			if params.Auth.ApiKey != "" {
+				req.Header.Set("Authorization", "ApiKey "+params.Auth.ApiKey)
+			}
+		}
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -41,5 +79,6 @@ func (a *App) HttpRequest(method string, url string, body string) (string, error
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return string(respBody), nil
+	// Return JSON response with status code
+	return fmt.Sprintf(`{"status":%d,"ok":%v,"body":%s}`, resp.StatusCode, resp.StatusCode >= 200 && resp.StatusCode < 300, string(respBody)), nil
 }
