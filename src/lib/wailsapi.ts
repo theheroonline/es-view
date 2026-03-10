@@ -76,7 +76,6 @@ const SINGLE_STRING_PARAM_METHODS: Record<string, string> = {
   "MysqlDisconnect": "connectionId",
   "MysqlPing": "connectionId",
   "MysqlListDatabases": "connectionId",
-  "MysqlListTables": "connectionId",  // Frontend passes {connectionId, database} but backend only needs connectionId
   "SaveState": "data",
 };
 
@@ -106,9 +105,12 @@ function extractSimpleParam(methodName: string, args?: Record<string, any> | any
     return [args.connectionId, args.sql];
   }
   if (methodName === "MysqlDescribeTable" && typeof args === "object") {
-    // MysqlDescribeTable(connectionID string, tableName string)
-    // Frontend passes connectionId, database, table - we need connectionId and table
-    return [args.connectionId, args.table];
+    // MysqlDescribeTable(connectionID string, database string, tableName string)
+    return [args.connectionId, args.database, args.table];
+  }
+  if (methodName === "MysqlListTables" && typeof args === "object") {
+    // MysqlListTables(connectionID string, database string)
+    return [args.connectionId, args.database];
   }
 
   // Single parameter methods - extract the value from the object
