@@ -181,7 +181,7 @@ func (a *App) MysqlListDatabases(connectionID string) ([]string, error) {
 }
 
 // MysqlListTables returns list of tables in database
-func (a *App) MysqlListTables(connectionID string) ([]string, error) {
+func (a *App) MysqlListTables(connectionID string, database string) ([]string, error) {
 	a.mysqlConnManager.mu.RLock()
 	db, exists := a.mysqlConnManager.connections[connectionID]
 	a.mysqlConnManager.mu.RUnlock()
@@ -190,7 +190,7 @@ func (a *App) MysqlListTables(connectionID string) ([]string, error) {
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	rows, err := db.Query("SHOW TABLES")
+	rows, err := db.Query(fmt.Sprintf("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '%s' ORDER BY TABLE_NAME", database))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
@@ -209,7 +209,7 @@ func (a *App) MysqlListTables(connectionID string) ([]string, error) {
 }
 
 // MysqlDescribeTable returns table structure
-func (a *App) MysqlDescribeTable(connectionID string, tableName string) ([]MysqlColumnMeta, error) {
+func (a *App) MysqlDescribeTable(connectionID string, database string, tableName string) ([]MysqlColumnMeta, error) {
 	a.mysqlConnManager.mu.RLock()
 	db, exists := a.mysqlConnManager.connections[connectionID]
 	a.mysqlConnManager.mu.RUnlock()
@@ -218,7 +218,7 @@ func (a *App) MysqlDescribeTable(connectionID string, tableName string) ([]Mysql
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	rows, err := db.Query(fmt.Sprintf("DESCRIBE %s", tableName))
+	rows, err := db.Query(fmt.Sprintf("DESCRIBE `%s`.`%s`", database, tableName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
