@@ -230,8 +230,8 @@
     "sqlOnlySupportsQuery": "ES SQL only supports queries. Use Data Browser or Index Manager for write operations",
     "sqlHistory": "SQL: Not selected",
     "sqlError": "SQL query error:",
-    "sqlBuilder": "SQL Builder",
-    "sqlBuilderDesc": "Automatically generate SQL from conditions and execute with current environment.",
+    "simpleQuery": "Simple Query",
+    "sqlBuilderDesc": "Automatically generate query from conditions and execute with current environment.",
     "executeQuery": "Execute Query",
     "operationType": "Operation Type",
     "select": "Query (SELECT)",
@@ -253,6 +253,7 @@
     "delete": "Delete",
     "setValues": "SET / VALUES (JSON Payload)",
     "generatedSql": "Generated SQL Preview",
+    "queryPreview": "Query Preview",
     "sqlNote": "ES 7.1+ SQL supports queries. Use Index Manager or REST API for write operations.",
     "queryResult": "Query Results {{count}} rows",
     "noResults": "No results. Please execute a query."

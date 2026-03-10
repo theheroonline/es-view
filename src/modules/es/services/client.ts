@@ -73,8 +73,10 @@ async function tauriHttpRequest(
   verifyTls = true,
   auth?: { authType: string; username?: string; password?: string; apiKey?: string }
 ): Promise<{ status: number; ok: boolean; body: string }> {
-  const responseStr = await invoke<string>("http_request", { url, method, headers, body, verifyTls, auth });
-  const response = JSON.parse(responseStr);
+  const result = await invoke<string | { status: number; ok: boolean; body: string }>("http_request", { url, method, headers, body, verifyTls, auth });
+
+  // Handle both string (JSON) and object responses
+  const response = typeof result === "string" ? JSON.parse(result) : result;
   return { status: response.status, ok: response.ok, body: response.body };
 }
 

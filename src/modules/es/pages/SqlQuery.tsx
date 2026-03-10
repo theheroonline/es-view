@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../../../components/FieldFilterButton";
 import { logError } from "../../../lib/errorLog";
 import { useAppContext } from "../../../state/AppContext";
-import { extractFieldsFromMapping, getIndexMapping, sqlQuery } from "../services/client";
+import { extractFieldsFromMapping, getIndexMapping, searchIndex } from "../services/client";
 import SqlHistory from "./SqlHistory";
 
 const { RangePicker } = DatePicker;
@@ -146,28 +146,26 @@ export default function SqlQuery() {
 
   const formatDateTime = (value: Dayjs | null) => (value ? value.format("YYYY-MM-DD HH:mm:ss") : "");
 
-  // 生成 SQL
+  // 生成 DSL 查询和显示用的 SQL 字符串
   useEffect(() => {
     const name = selectedIndex || "your_index";
-    let generated = "";
+    let displaySql = "";
     switch (operation) {
       case "select":
         const fieldsPart = !fieldFilter.enabled ? "*" : fieldFilter.fields.join(", ");
-        const enabledConditions = whereConditions.filter((c) => 
+        const enabledConditions = whereConditions.filter((c) =>
           c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
         );
-        
-        // 构建WHERE条件
+
+        // 构建 WHERE 条件文本显示
         let conditions: string[] = [];
-        
-        // 添加普通条件
         conditions = enabledConditions.map((c) => {
           if (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]) {
             const startStr = formatDateTime(c.rangeValue[0]);
             const endStr = formatDateTime(c.rangeValue[1]);
             return `${c.field} >= '${startStr}' AND ${c.field} <= '${endStr}'`;
           }
-          
+
           switch (c.operator) {
             case "=": return `${c.field} = '${c.value}'`;
             case "!=": return `${c.field} != '${c.value}'`;
@@ -179,24 +177,83 @@ export default function SqlQuery() {
             default: return `${c.field} = '${c.value}'`;
           }
         });
-        
+
         const wherePart = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
-        generated = `SELECT ${fieldsPart} FROM ${name}${wherePart} LIMIT ${limit}`;
+        displaySql = `SELECT ${fieldsPart} FROM ${name}${wherePart} LIMIT ${limit}`;
         break;
       case "insert":
-        generated = `INSERT INTO ${name} VALUES ${payload}`;
+        displaySql = `INSERT INTO ${name} VALUES ${payload}`;
         break;
       case "update":
-        generated = `UPDATE ${name} SET ${payload}`;
+        displaySql = `UPDATE ${name} SET ${payload}`;
         break;
       case "delete":
-        generated = `DELETE FROM ${name}`;
+        displaySql = `DELETE FROM ${name}`;
         break;
       default:
-        generated = "";
+        displaySql = "";
     }
-    setSql(generated);
+    setSql(displaySql);
   }, [operation, selectedIndex, whereConditions, payload, limit, fieldFilter.enabled, fieldFilter.fields]);
+
+  // 构建 Elasticsearch DSL 查询
+  const buildDslQuery = () => {
+    const enabledConditions = whereConditions.filter((c) =>
+      c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
+    );
+
+    let query: any = { match_all: {} };
+    const boolBuckets: Record<string, any[]> = { must: [] };
+
+    for (const c of enabledConditions) {
+      if (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]) {
+        const startStr = formatDateTime(c.rangeValue[0]);
+        const endStr = formatDateTime(c.rangeValue[1]);
+        boolBuckets.must.push({
+          range: { [c.field]: { gte: startStr, lte: endStr } }
+        });
+        continue;
+      }
+
+      switch (c.operator) {
+        case "=":
+          boolBuckets.must.push({ term: { [c.field]: c.value } });
+          break;
+        case "!=":
+          boolBuckets.must.push({ bool: { must_not: { term: { [c.field]: c.value } } } });
+          break;
+        case ">":
+          boolBuckets.must.push({ range: { [c.field]: { gt: c.value } } });
+          break;
+        case ">=":
+          boolBuckets.must.push({ range: { [c.field]: { gte: c.value } } });
+          break;
+        case "<":
+          boolBuckets.must.push({ range: { [c.field]: { lt: c.value } } });
+          break;
+        case "<=":
+          boolBuckets.must.push({ range: { [c.field]: { lte: c.value } } });
+          break;
+        case "LIKE":
+          boolBuckets.must.push({ match: { [c.field]: c.value } });
+          break;
+        default:
+          boolBuckets.must.push({ term: { [c.field]: c.value } });
+      }
+    }
+
+    if (boolBuckets.must.length > 0) {
+      query = { bool: { must: boolBuckets.must } };
+    }
+
+    const body: Record<string, any> = {
+      size: limit,
+      query,
+      track_total_hits: true
+    };
+
+    return body;
+  };
 
   const execute = async () => {
     setError("");
@@ -209,30 +266,55 @@ export default function SqlQuery() {
       setError(t('sqlQuery.sqlOnlySupportsQuery'));
       return;
     }
+    if (!selectedIndex) {
+      setError(t('dataBrowser.pleaseSelectIndex'));
+      return;
+    }
+
     try {
-      const response = await sqlQuery(activeConnection, sql);
-      let columns = response.columns?.map((col: { name: string }) => col.name) ?? [];
-      let rows = response.rows ?? [];
+      // 构建 DSL 查询
+      const body = buildDslQuery();
 
-      // 只显示选中的字段（启用过滤时）
-      if (fieldFilter.enabled) {
-        const fieldIndices = fieldFilter.fields.map((field) => columns.indexOf(field));
-        const validPairs = fieldIndices
-          .map((idx, i) => ({ idx, name: fieldFilter.fields[i] }))
-          .filter((p) => p.idx >= 0);
+      // 执行 DSL 搜索
+      const response = await searchIndex(activeConnection, selectedIndex, body);
 
-        columns = validPairs.map((p) => p.name);
-        rows = rows.map((row) => validPairs.map((p) => row[p.idx]));
+      // 提取列和行数据
+      const hits = response?.hits?.hits ?? [];
+      let columns = availableFields.length > 0 ? availableFields : [];
+
+      // 从结果中自动提取列（如果 mapping 未加载）
+      if (columns.length === 0) {
+        const colSet = new Set<string>();
+        hits.forEach((hit: any) => {
+          Object.keys(hit._source || {}).forEach((key) => colSet.add(key));
+        });
+        columns = Array.from(colSet);
       }
 
-      setResult({ columns, rows });
-      setTotalRows(rows.length);
-      await addHistory(selectedIndex ? `SQL: ${selectedIndex}` : t('sqlQuery.sqlHistory'), sql);
+      // 转换为二维数组格式
+      const rows = hits.map((hit: any) => columns.map((col) => hit._source?.[col]));
+
+      // 应用字段过滤
+      if (fieldFilter.enabled) {
+        const filteredColumns = fieldFilter.fields.filter((f) => columns.includes(f));
+        const filteredRows = rows.map((row: Array<unknown>) =>
+          filteredColumns.map((col) => {
+            const idx = columns.indexOf(col);
+            return idx >= 0 ? row[idx] : undefined;
+          })
+        );
+        setResult({ columns: filteredColumns, rows: filteredRows });
+      } else {
+        setResult({ columns, rows });
+      }
+
+      setTotalRows(hits.length);
+      await addHistory(selectedIndex ? `DSL: ${selectedIndex}` : t('sqlQuery.sqlHistory'), sql);
     } catch (err) {
       const message = err instanceof Error ? err.message : t('common.error');
       logError(err, {
         source: "esSqlQuery.execute",
-        message: `Elasticsearch SQL execution failed for index ${selectedIndex ?? "unknown"}`
+        message: `Elasticsearch DSL query execution failed for index ${selectedIndex ?? "unknown"}`
       });
       setError(`${t('sqlQuery.sqlError')} ${message}`);
     }
@@ -306,7 +388,7 @@ export default function SqlQuery() {
         <div className="card">
         <div className="card-header">
           <div>
-            <h3 className="card-title">{t('sqlQuery.sqlBuilder')}</h3>
+            <h3 className="card-title">{t('sqlQuery.simpleQuery')}</h3>
             <p className="muted">{t('sqlQuery.sqlBuilderDesc')}</p>
           </div>
           <div className="button-group">
@@ -316,8 +398,9 @@ export default function SqlQuery() {
           </div>
         </div>
         <div className="card-body">
-          <div className="form-grid">
-            <div>
+          {/* 第一行：操作类型、索引选择、结果限制、字段过滤 */}
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: '0 0 150px' }}>
               <label>{t('sqlQuery.operationType')}</label>
               <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)}>
                 <option value="select">{t('sqlQuery.select')}</option>
@@ -326,12 +409,13 @@ export default function SqlQuery() {
                 <option value="delete">{t('sqlQuery.delete')}</option>
               </select>
             </div>
-            <div>
+
+            <div style={{ flex: '1', minWidth: '200px' }}>
               <label>{t('sqlQuery.selectIndex')}</label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <select 
-                  className="form-control" 
-                  value={selectedIndex ?? ""} 
+                <select
+                  className="form-control"
+                  value={selectedIndex ?? ""}
                   onChange={(event) => setSelectedIndex(event.target.value || undefined)}
                   style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
                 >
@@ -367,44 +451,46 @@ export default function SqlQuery() {
                 )}
               </div>
             </div>
-          </div>
 
-
-
-          {/* WHERE 条件构建器 */}
-          {operation === "select" && (
-            <div style={{ marginTop: '16px' }}>
-              <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ margin: 0 }}>{t('sqlQuery.resultLimit')}</label>
+            {operation === "select" && (
+              <>
+                <div style={{ flex: '0 0 140px' }}>
+                  <label>{t('sqlQuery.resultLimit')}</label>
                   <input
                     type="number"
                     className="form-control"
                     value={limit}
                     onChange={handleLimitChange}
-                    style={{ width: '120px' }}
                     min="1"
                     max="1000"
                   />
                 </div>
-                <FieldFilterButton
-                  allFields={availableFields}
-                  state={fieldFilter}
-                  onChange={setFieldFilter}
-                  align="left"
-                  label={t('sqlQuery.fieldFilter')}
-                />
-              </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ flex: '0 0 auto' }}>
+                  <FieldFilterButton
+                    allFields={availableFields}
+                    state={fieldFilter}
+                    onChange={setFieldFilter}
+                    align="left"
+                    label={t('sqlQuery.fieldFilter')}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* WHERE 条件构建器 */}
+          {operation === "select" && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '16px' }}>
                 <label style={{ fontWeight: 600, margin: 0 }}>{t('sqlQuery.whereCondition')}</label>
                 <button className="btn btn-sm btn-secondary" onClick={addCondition}>
                   <span>+</span> {t('sqlQuery.addCondition')}
                 </button>
               </div>
 
-              <div style={{ 
-                background: '#fbfbfd', 
+              <div style={{
+                background: '#fbfbfd',
                 borderRadius: '12px',
                 border: '1px solid rgba(0,0,0,0.05)',
                 padding: '16px'
@@ -483,7 +569,7 @@ export default function SqlQuery() {
                   </div>
                 ))}
               </div>
-            </div>
+            </>
           )}
 
           <div className="form-grid" style={{ marginTop: '16px' }}>
@@ -494,13 +580,12 @@ export default function SqlQuery() {
               </div>
             )}
             <div className="span-2">
-              <label>{t('sqlQuery.generatedSql')}</label>
-              <textarea className="form-control json-editor" style={{ height: '100px', background: '#fbfbfd', color: '#1d1d1f' }} value={sql} onChange={(event) => setSql(event.target.value)} />
+              <label>{t('sqlQuery.queryPreview')}</label>
+              <textarea className="form-control json-editor" style={{ height: '100px', background: '#fbfbfd', color: '#1d1d1f' }} value={sql} onChange={(event) => setSql(event.target.value)} readOnly />
             </div>
           </div>
           <div className="toolbar">
              {error && <span className="text-danger">{error}</span>}
-             {!error && <span className="muted">{t('sqlQuery.sqlNote')}</span>}
           </div>
         </div>
       </div>

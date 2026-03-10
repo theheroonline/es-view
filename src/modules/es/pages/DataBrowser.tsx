@@ -471,12 +471,7 @@ export default function DataBrowser() {
     }
 
     const from = (page - 1) * size;
-    let sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
-    if (sortParams.length === 0) {
-      sortParams = [{ _id: { order: "asc" } }];
-    } else {
-      sortParams.push({ _id: { order: "asc" } });
-    }
+    const sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
 
     // 简化版：直接使用普通分页返回结果
     if (from + size <= 10000) {

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,5 +81,14 @@ func (a *App) HttpRequest(params HttpRequestParams) (string, error) {
 	}
 
 	// Return JSON response with status code
-	return fmt.Sprintf(`{"status":%d,"ok":%v,"body":%s}`, resp.StatusCode, resp.StatusCode >= 200 && resp.StatusCode < 300, string(respBody)), nil
+	result := map[string]interface{}{
+		"status": resp.StatusCode,
+		"ok":     resp.StatusCode >= 200 && resp.StatusCode < 300,
+		"body":   string(respBody),
+	}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal response: %w", err)
+	}
+	return string(resultJSON), nil
 }

@@ -230,8 +230,8 @@
     "sqlOnlySupportsQuery": "ES SQL 仅支持查询，请使用数据浏览或索引管理完成写操作",
     "sqlHistory": "SQL: 未选择",
     "sqlError": "SQL 查询错误:",
-    "sqlBuilder": "SQL 生成器",
-    "sqlBuilderDesc": "按条件自动生成 SQL，并使用当前环境与索引执行。",
+    "simpleQuery": "简易查询",
+    "sqlBuilderDesc": "按条件自动生成查询，并使用当前环境与索引执行。",
     "executeQuery": "执行查询",
     "operationType": "操作类型",
     "select": "查询 (SELECT)",
@@ -253,6 +253,7 @@
     "delete": "删除",
     "setValues": "SET / VALUES (JSON Payload)",
     "generatedSql": "生成的 SQL 预览",
+    "queryPreview": "查询预览",
     "sqlNote": "ES 7.1+ SQL 支持查询，写操作推荐使用索引管理或 REST API。",
     "queryResult": "查询结果 {{count}} 行",
     "noResults": "暂无结果，请执行查询。"
