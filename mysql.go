@@ -237,14 +237,13 @@ func (a *App) MysqlListTables(connectionID string, database string) ([]string, e
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	// First, switch to the specified database
+	// Use database-qualified query instead of USE command to avoid race conditions
+	query := "SHOW TABLES"
 	if database != "" {
-		if _, err := db.Exec(fmt.Sprintf("USE `%s`", database)); err != nil {
-			return nil, fmt.Errorf("failed to select database: %w", err)
-		}
+		query = fmt.Sprintf("SHOW TABLES FROM `%s`", database)
 	}
 
-	rows, err := db.Query("SHOW TABLES")
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
@@ -272,14 +271,15 @@ func (a *App) MysqlDescribeTable(connectionID string, database string, tableName
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	// First, switch to the specified database if provided
+	// Use database-qualified table name to avoid race conditions from USE command
+	var query string
 	if database != "" {
-		if _, err := db.Exec(fmt.Sprintf("USE `%s`", database)); err != nil {
-			return nil, fmt.Errorf("failed to select database: %w", err)
-		}
+		query = fmt.Sprintf("DESCRIBE `%s`.`%s`", database, tableName)
+	} else {
+		query = fmt.Sprintf("DESCRIBE `%s`", tableName)
 	}
 
-	rows, err := db.Query(fmt.Sprintf("DESCRIBE `%s`", tableName))
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
@@ -311,14 +311,15 @@ func (a *App) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta, e
 		return nil, fmt.Errorf("connection not found: %s", req.ConnectionID)
 	}
 
-	// First, switch to the specified database if provided
+	// Use database-qualified table name to avoid race conditions from USE command
+	var query string
 	if req.Database != "" {
-		if _, err := db.Exec(fmt.Sprintf("USE `%s`", req.Database)); err != nil {
-			return nil, fmt.Errorf("failed to select database: %w", err)
-		}
+		query = fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", req.Database, req.TableName)
+	} else {
+		query = fmt.Sprintf("SHOW INDEX FROM `%s`", req.TableName)
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SHOW INDEX FROM `%s`", req.TableName))
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list indexes: %w", err)
 	}
@@ -377,13 +378,6 @@ func (a *App) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
 		return "", fmt.Errorf("connection not found: %s", req.ConnectionID)
 	}
 
-	// First, switch to the specified database if provided
-	if req.Database != "" {
-		if _, err := db.Exec(fmt.Sprintf("USE `%s`", req.Database)); err != nil {
-			return "", fmt.Errorf("failed to select database: %w", err)
-		}
-	}
-
 	if len(req.Columns) == 0 {
 		return "", fmt.Errorf("at least one column is required for index")
 	}
@@ -397,7 +391,7 @@ func (a *App) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
 		columnList += fmt.Sprintf("`%s`", col)
 	}
 
-	// Build CREATE INDEX statement
+	// Build CREATE INDEX statement with database-qualified table name
 	uniqueStr := ""
 	if req.Unique {
 		uniqueStr = "UNIQUE "
@@ -408,7 +402,12 @@ func (a *App) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
 		typeStr = fmt.Sprintf(" USING %s", req.IndexType)
 	}
 
-	query := fmt.Sprintf("CREATE %sINDEX `%s` ON `%s` (%s)%s", uniqueStr, req.IndexName, req.TableName, columnList, typeStr)
+	var query string
+	if req.Database != "" {
+		query = fmt.Sprintf("CREATE %sINDEX `%s` ON `%s`.`%s` (%s)%s", uniqueStr, req.IndexName, req.Database, req.TableName, columnList, typeStr)
+	} else {
+		query = fmt.Sprintf("CREATE %sINDEX `%s` ON `%s` (%s)%s", uniqueStr, req.IndexName, req.TableName, columnList, typeStr)
+	}
 
 	if _, err := db.Exec(query); err != nil {
 		return "", fmt.Errorf("failed to create index: %w", err)
@@ -427,19 +426,18 @@ func (a *App) MysqlDropIndex(req MysqlDropIndexRequest) (string, error) {
 		return "", fmt.Errorf("connection not found: %s", req.ConnectionID)
 	}
 
-	// First, switch to the specified database if provided
-	if req.Database != "" {
-		if _, err := db.Exec(fmt.Sprintf("USE `%s`", req.Database)); err != nil {
-			return "", fmt.Errorf("failed to select database: %w", err)
-		}
-	}
-
 	// Cannot drop PRIMARY key using DROP INDEX
 	if req.IndexName == "PRIMARY" {
 		return "", fmt.Errorf("cannot drop PRIMARY key using DROP INDEX, use ALTER TABLE instead")
 	}
 
-	query := fmt.Sprintf("DROP INDEX `%s` ON `%s`", req.IndexName, req.TableName)
+	// Use database-qualified table name to avoid race conditions from USE command
+	var query string
+	if req.Database != "" {
+		query = fmt.Sprintf("DROP INDEX `%s` ON `%s`.`%s`", req.IndexName, req.Database, req.TableName)
+	} else {
+		query = fmt.Sprintf("DROP INDEX `%s` ON `%s`", req.IndexName, req.TableName)
+	}
 
 	if _, err := db.Exec(query); err != nil {
 		return "", fmt.Errorf("failed to drop index: %w", err)
