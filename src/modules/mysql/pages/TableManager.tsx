@@ -11,8 +11,8 @@ import {
     type MysqlOpenedTable,
     useMysqlContext
 } from "../../../state/MysqlContext";
-import { mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/client";
-import type { ColumnMeta } from "../types";
+import { mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery, mysqlListIndexes, mysqlCreateIndex, mysqlDropIndex } from "../services/client";
+import type { ColumnMeta, IndexMeta } from "../types";
 
 type FilterConditionDraft = MysqlFilterConditionNode;
 type FilterGroupDraft = MysqlFilterGroupNode;
@@ -222,6 +222,19 @@ export default function MysqlTableManager() {
   });
   const [columnEditLoading, setColumnEditLoading] = useState(false);
   const [columnEditError, setColumnEditError] = useState("");
+
+  // Index management state
+  const [indexModalOpen, setIndexModalOpen] = useState(false);
+  const [indexModalMode, setIndexModalMode] = useState<"view" | "create" | "edit">("view");
+  const [indexes, setIndexes] = useState<IndexMeta[]>([]);
+  const [indexLoading, setIndexLoading] = useState(false);
+  const [indexError, setIndexError] = useState("");
+  const [indexFormData, setIndexFormData] = useState({
+    name: "",
+    columns: [] as string[],
+    unique: false,
+    indexType: "BTREE"
+  });
 
   const connectionId = activeMysqlConnection?.id;
   const isTableWorkspace = location.pathname === "/mysql/table";
@@ -661,6 +674,131 @@ export default function MysqlTableManager() {
 
     return { columns, rowCount, info };
   }, [connectionId, escapeSqlLiteral]);
+
+  const loadIndexes = useCallback(async (db: string, table: string) => {
+    if (!connectionId) return;
+    try {
+      setIndexLoading(true);
+      setIndexError("");
+      const data = await mysqlListIndexes(connectionId, db, table);
+      setIndexes(data);
+    } catch (err) {
+      logError(err, {
+        source: "mysqlTableManager.loadIndexes",
+        message: `Failed to load indexes for ${db}.${table}`
+      });
+      setIndexError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIndexLoading(false);
+    }
+  }, [connectionId]);
+
+  const openIndexModal = useCallback(async () => {
+    if (!selectedTableInfo) return;
+    setIndexModalMode("view");
+    setIndexFormData({ name: "", columns: [], unique: false, indexType: "BTREE" });
+    setIndexModalOpen(true);
+    await loadIndexes(selectedTableInfo.database, selectedTableInfo.table);
+  }, [selectedTableInfo, loadIndexes]);
+
+  const openCreateIndexModal = useCallback(() => {
+    if (!selectedTableInfo) return;
+    setIndexModalMode("create");
+    setIndexFormData({ name: "", columns: [], unique: false, indexType: "BTREE" });
+    setIndexModalOpen(true);
+  }, [selectedTableInfo]);
+
+  const handleCreateIndex = async () => {
+    if (!selectedTableInfo || !connectionId || indexFormData.columns.length === 0) return;
+    try {
+      setIndexLoading(true);
+      setIndexError("");
+      await mysqlCreateIndex(
+        connectionId,
+        selectedTableInfo.database,
+        selectedTableInfo.table,
+        indexFormData.name,
+        indexFormData.columns,
+        indexFormData.unique,
+        indexFormData.indexType
+      );
+      await loadIndexes(selectedTableInfo.database, selectedTableInfo.table);
+      setIndexFormData({ name: "", columns: [], unique: false, indexType: "BTREE" });
+      setIndexModalMode("view");
+    } catch (err) {
+      logError(err, {
+        source: "mysqlTableManager.createIndex",
+        message: `Failed to create index`
+      });
+      setIndexError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIndexLoading(false);
+    }
+  };
+
+  const handleDropIndex = async (indexName: string) => {
+    if (!selectedTableInfo || !connectionId) return;
+    if (!confirm(`Are you sure you want to drop index "${indexName}"?`)) return;
+    try {
+      setIndexLoading(true);
+      setIndexError("");
+      await mysqlDropIndex(connectionId, selectedTableInfo.database, selectedTableInfo.table, indexName);
+      await loadIndexes(selectedTableInfo.database, selectedTableInfo.table);
+    } catch (err) {
+      logError(err, {
+        source: "mysqlTableManager.dropIndex",
+        message: `Failed to drop index`
+      });
+      setIndexError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIndexLoading(false);
+    }
+  };
+
+  const openEditIndexModal = useCallback((index: IndexMeta) => {
+    if (!selectedTableInfo) return;
+    setIndexModalMode("edit");
+    setIndexFormData({
+      name: index.name,
+      columns: [...index.columns],
+      unique: index.unique,
+      indexType: index.indexType
+    });
+    setIndexModalOpen(true);
+  }, [selectedTableInfo]);
+
+  const handleUpdateIndex = async () => {
+    if (!selectedTableInfo || !connectionId || indexFormData.columns.length === 0) return;
+    const oldIndex = indexes.find(idx => idx.name === indexFormData.name);
+    if (!oldIndex) return;
+
+    try {
+      setIndexLoading(true);
+      setIndexError("");
+      // Drop old index and create new one
+      await mysqlDropIndex(connectionId, selectedTableInfo.database, selectedTableInfo.table, oldIndex.name);
+      await mysqlCreateIndex(
+        connectionId,
+        selectedTableInfo.database,
+        selectedTableInfo.table,
+        indexFormData.name,
+        indexFormData.columns,
+        indexFormData.unique,
+        indexFormData.indexType
+      );
+      await loadIndexes(selectedTableInfo.database, selectedTableInfo.table);
+      setIndexFormData({ name: "", columns: [], unique: false, indexType: "BTREE" });
+      setIndexModalMode("view");
+    } catch (err) {
+      logError(err, {
+        source: "mysqlTableManager.updateIndex",
+        message: `Failed to update index`
+      });
+      setIndexError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIndexLoading(false);
+    }
+  };
 
   const handleSelectTable = (db: string, table: string) => {
     setSelectedDatabase(db);
@@ -1519,6 +1657,9 @@ export default function MysqlTableManager() {
         <div className="tm-structure-actions">
           <button className="btn btn-sm btn-primary" onClick={openAddColumnModal}>
             {t("mysql.tableManager.addColumn")}
+          </button>
+          <button className="btn btn-sm btn-ghost" onClick={openIndexModal}>
+            📑 {t("mysql.tableManager.manageIndexes")}
           </button>
         </div>
         <table className="table">
@@ -2582,6 +2723,194 @@ export default function MysqlTableManager() {
               <button className="btn btn-sm btn-primary" onClick={handleSaveColumnEdit} disabled={columnEditLoading}>
                 {columnEditLoading ? t("common.loading") : t("common.save")}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Index management modal */}
+      {indexModalOpen && (
+        <div className="modal-overlay">
+          <div className="card modal-card modal-card-lg modal-card-scroll">
+            <div className="card-header page-section-header">
+              <h3 className="card-title">
+                {indexModalMode === "view" ? t("mysql.tableManager.indexManagement") : indexModalMode === "create" ? t("mysql.tableManager.createNewIndex") : t("mysql.tableManager.editIndex")}
+              </h3>
+              <button className="btn btn-sm btn-ghost" onClick={() => setIndexModalOpen(false)}>{t("common.close")}</button>
+            </div>
+
+            <div className="modal-card-body modal-card-grid">
+              {indexModalMode === "view" ? (
+                <>
+                  <div className="flex-gap">
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={openCreateIndexModal}
+                      disabled={!selectedTableInfo?.columns || selectedTableInfo.columns.length === 0}
+                    >
+                      + {t("mysql.tableManager.createIndex")}
+                    </button>
+                  </div>
+
+                  {indexError && <div className="text-danger">{indexError}</div>}
+
+                  {indexLoading ? (
+                    <div className="muted">{t("common.loading")}</div>
+                  ) : indexes.filter(idx => !idx.primary).length === 0 ? (
+                    <div className="muted">{t("common.noData")}</div>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="table table-sm">
+                        <thead>
+                          <tr>
+                            <th>{t("mysql.tableManager.indexName")}</th>
+                            <th>{t("dataBrowser.field")}</th>
+                            <th>{t("mysql.tableManager.indexType")}</th>
+                            <th>{t("mysql.tableManager.uniqueIndex")}</th>
+                            <th className="tm-table-head-actions">{t("dataBrowser.actions")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {indexes.filter(idx => !idx.primary).map((idx) => (
+                            <tr key={idx.name}>
+                              <td><strong>{idx.name}</strong></td>
+                              <td>{idx.columns.join(", ")}</td>
+                              <td>{idx.indexType}</td>
+                              <td>{idx.unique ? "✓" : "-"}</td>
+                              <td className="tm-actions-cell">
+                                <button
+                                  className="btn btn-sm btn-ghost"
+                                  onClick={() => openEditIndexModal(idx)}
+                                  disabled={indexLoading}
+                                >
+                                  {t("common.edit")}
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-ghost text-danger"
+                                  onClick={() => handleDropIndex(idx.name)}
+                                  disabled={indexLoading}
+                                >
+                                  {t("common.delete")}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label>{t("mysql.tableManager.indexName")} *</label>
+                    <input
+                      className="form-control"
+                      value={indexFormData.name}
+                      onChange={(e) => setIndexFormData((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g. idx_email"
+                      disabled={indexModalMode === "edit"}
+                    />
+                  </div>
+
+                  <div>
+                    <label>{t("mysql.tableManager.selectColumns")} *</label>
+                    <div className="tm-index-columns">
+                      {selectedTableInfo?.columns?.map((col) => (
+                        <label key={col.field} className="tm-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={indexFormData.columns.includes(col.field)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setIndexFormData((prev) => ({
+                                  ...prev,
+                                  columns: [...prev.columns, col.field]
+                                }));
+                              } else {
+                                setIndexFormData((prev) => ({
+                                  ...prev,
+                                  columns: prev.columns.filter((c) => c !== col.field)
+                                }));
+                              }
+                            }}
+                          />
+                          {col.field}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={indexFormData.unique}
+                        onChange={(e) => setIndexFormData((prev) => ({ ...prev, unique: e.target.checked }))}
+                      />
+                      {t("mysql.tableManager.uniqueIndex")}
+                    </label>
+                  </div>
+
+                  <div>
+                    <label>{t("mysql.tableManager.indexType")}</label>
+                    <select
+                      className="form-control"
+                      value={indexFormData.indexType}
+                      onChange={(e) => setIndexFormData((prev) => ({ ...prev, indexType: e.target.value }))}
+                    >
+                      <option value="BTREE">BTREE</option>
+                      <option value="HASH">HASH</option>
+                    </select>
+                  </div>
+
+                  {indexError && <div className="text-danger">{indexError}</div>}
+                </>
+              )}
+            </div>
+
+            <div className="modal-card-footer">
+              {indexModalMode === "create" ? (
+                <>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => {
+                      setIndexModalMode("view");
+                      setIndexFormData({ name: "", columns: [], unique: false, indexType: "BTREE" });
+                    }}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handleCreateIndex}
+                    disabled={indexLoading || !indexFormData.name || indexFormData.columns.length === 0}
+                  >
+                    {indexLoading ? t("common.loading") : t("mysql.tableManager.createIndex")}
+                  </button>
+                </>
+              ) : indexModalMode === "edit" ? (
+                <>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => {
+                      setIndexModalMode("view");
+                      setIndexFormData({ name: "", columns: [], unique: false, indexType: "BTREE" });
+                    }}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handleUpdateIndex}
+                    disabled={indexLoading || !indexFormData.name || indexFormData.columns.length === 0}
+                  >
+                    {indexLoading ? t("common.loading") : t("mysql.tableManager.updateIndex")}
+                  </button>
+                </>
+              ) : (
+                <button className="btn btn-sm btn-ghost" onClick={() => setIndexModalOpen(false)}>{t("common.close")}</button>
+              )}
             </div>
           </div>
         </div>

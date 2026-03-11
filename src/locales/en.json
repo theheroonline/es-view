@@ -477,7 +477,17 @@
       "tableCount": "{{count}} tables",
       "copyTablePrompt": "Enter the name of the copied table",
       "createDatabasePrompt": "Enter the new database name",
-      "dropDatabaseConfirm": "Delete database {{name}}? This action cannot be undone."
+      "dropDatabaseConfirm": "Delete database {{name}}? This action cannot be undone.",
+      "manageIndexes": "Manage Indexes",
+      "indexManagement": "Index Management",
+      "createNewIndex": "Create New Index",
+      "editIndex": "Edit Index",
+      "indexName": "Index Name",
+      "selectColumns": "Select Columns",
+      "uniqueIndex": "Unique Index",
+      "indexType": "Index Type",
+      "createIndex": "Create Index",
+      "updateIndex": "Update Index"
     }
   },
   "redis": {

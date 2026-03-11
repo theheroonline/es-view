@@ -476,7 +476,17 @@
       "tableCount": "共 {{count}} 张表",
       "copyTablePrompt": "请输入复制后的新表名",
       "createDatabasePrompt": "请输入新数据库名称",
-      "dropDatabaseConfirm": "确定删除数据库 {{name}} 吗？此操作不可恢复。"
+      "dropDatabaseConfirm": "确定删除数据库 {{name}} 吗？此操作不可恢复。",
+      "manageIndexes": "管理索引",
+      "indexManagement": "索引管理",
+      "createNewIndex": "创建新索引",
+      "editIndex": "编辑索引",
+      "indexName": "索引名称",
+      "selectColumns": "选择列",
+      "uniqueIndex": "唯一索引",
+      "indexType": "索引类型",
+      "createIndex": "创建索引",
+      "updateIndex": "更新索引"
     }
   },
   "redis": {

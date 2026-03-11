@@ -1152,7 +1152,33 @@ body {
 .tm-structure-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   padding: 8px 12px;
+}
+
+.tm-index-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #d8e0ea;
+  border-radius: 6px;
+  background: #f8fafb;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.tm-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tm-checkbox-label input[type="checkbox"] {
+  cursor: pointer;
 }
 
 .tm-actions-cell {

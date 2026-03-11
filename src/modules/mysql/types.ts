@@ -29,3 +29,11 @@ export interface ColumnMeta {
   default: string | null;
   extra: string;
 }
+
+export interface IndexMeta {
+  name: string;
+  columns: string[];
+  unique: boolean;
+  primary: boolean;
+  indexType: string;
+}

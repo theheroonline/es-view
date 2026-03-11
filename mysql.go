@@ -36,6 +36,41 @@ type MysqlColumnMeta struct {
 	Extra   string  `json:"extra"`
 }
 
+// MysqlIndexMeta represents index metadata
+type MysqlIndexMeta struct {
+	Name      string   `json:"name"`
+	Columns   []string `json:"columns"`
+	Unique    bool     `json:"unique"`
+	Primary   bool     `json:"primary"`
+	IndexType string   `json:"indexType"`
+}
+
+// MysqlListIndexesRequest represents parameters for listing indexes
+type MysqlListIndexesRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	TableName    string `json:"tableName"`
+}
+
+// MysqlCreateIndexRequest represents parameters for creating an index
+type MysqlCreateIndexRequest struct {
+	ConnectionID string   `json:"connectionId"`
+	Database     string   `json:"database"`
+	TableName    string   `json:"tableName"`
+	IndexName    string   `json:"indexName"`
+	Columns      []string `json:"columns"`
+	Unique       bool     `json:"unique"`
+	IndexType    string   `json:"indexType"`
+}
+
+// MysqlDropIndexRequest represents parameters for dropping an index
+type MysqlDropIndexRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	TableName    string `json:"tableName"`
+	IndexName    string `json:"indexName"`
+}
+
 // MysqlConnectionManager manages MySQL connections
 type MysqlConnectionManager struct {
 	mu          sync.RWMutex
@@ -264,6 +299,153 @@ func (a *App) MysqlDescribeTable(connectionID string, database string, tableName
 	}
 
 	return columns, nil
+}
+
+// MysqlListIndexes returns list of indexes for a table
+func (a *App) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta, error) {
+	a.mysqlConnManager.mu.RLock()
+	db, exists := a.mysqlConnManager.connections[req.ConnectionID]
+	a.mysqlConnManager.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("connection not found: %s", req.ConnectionID)
+	}
+
+	// First, switch to the specified database if provided
+	if req.Database != "" {
+		if _, err := db.Exec(fmt.Sprintf("USE `%s`", req.Database)); err != nil {
+			return nil, fmt.Errorf("failed to select database: %w", err)
+		}
+	}
+
+	rows, err := db.Query(fmt.Sprintf("SHOW INDEX FROM `%s`", req.TableName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list indexes: %w", err)
+	}
+	defer rows.Close()
+
+	// Map to track unique indexes
+	indexMap := make(map[string]*MysqlIndexMeta)
+
+	for rows.Next() {
+		var table, nonUnique, keyName, seqInIndex, columnName, collation, cardinality, subPart, packed, null_, indexType, comment, indexComment, visible, expression sql.NullString
+
+		if err := rows.Scan(&table, &nonUnique, &keyName, &seqInIndex, &columnName, &collation, &cardinality, &subPart, &packed, &null_, &indexType, &comment, &indexComment, &visible, &expression); err != nil {
+			return nil, fmt.Errorf("scan failed: %w", err)
+		}
+
+		if !keyName.Valid {
+			continue
+		}
+
+		name := keyName.String
+		if _, exists := indexMap[name]; !exists {
+			indexTypeStr := "BTREE"
+			if indexType.Valid {
+				indexTypeStr = indexType.String
+			}
+			indexMap[name] = &MysqlIndexMeta{
+				Name:      name,
+				Columns:   []string{},
+				Unique:    nonUnique.Valid && nonUnique.String == "0",
+				Primary:   name == "PRIMARY",
+				IndexType: indexTypeStr,
+			}
+		}
+
+		if columnName.Valid {
+			indexMap[name].Columns = append(indexMap[name].Columns, columnName.String)
+		}
+	}
+
+	// Convert map to slice
+	indexes := make([]MysqlIndexMeta, 0)
+	for _, index := range indexMap {
+		indexes = append(indexes, *index)
+	}
+
+	return indexes, nil
+}
+
+// MysqlCreateIndex creates a new index on a table
+func (a *App) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
+	a.mysqlConnManager.mu.RLock()
+	db, exists := a.mysqlConnManager.connections[req.ConnectionID]
+	a.mysqlConnManager.mu.RUnlock()
+
+	if !exists {
+		return "", fmt.Errorf("connection not found: %s", req.ConnectionID)
+	}
+
+	// First, switch to the specified database if provided
+	if req.Database != "" {
+		if _, err := db.Exec(fmt.Sprintf("USE `%s`", req.Database)); err != nil {
+			return "", fmt.Errorf("failed to select database: %w", err)
+		}
+	}
+
+	if len(req.Columns) == 0 {
+		return "", fmt.Errorf("at least one column is required for index")
+	}
+
+	// Build column list
+	columnList := ""
+	for i, col := range req.Columns {
+		if i > 0 {
+			columnList += ", "
+		}
+		columnList += fmt.Sprintf("`%s`", col)
+	}
+
+	// Build CREATE INDEX statement
+	uniqueStr := ""
+	if req.Unique {
+		uniqueStr = "UNIQUE "
+	}
+
+	typeStr := ""
+	if req.IndexType != "" && req.IndexType != "BTREE" {
+		typeStr = fmt.Sprintf(" USING %s", req.IndexType)
+	}
+
+	query := fmt.Sprintf("CREATE %sINDEX `%s` ON `%s` (%s)%s", uniqueStr, req.IndexName, req.TableName, columnList, typeStr)
+
+	if _, err := db.Exec(query); err != nil {
+		return "", fmt.Errorf("failed to create index: %w", err)
+	}
+
+	return fmt.Sprintf("Index '%s' created successfully", req.IndexName), nil
+}
+
+// MysqlDropIndex removes an index from a table
+func (a *App) MysqlDropIndex(req MysqlDropIndexRequest) (string, error) {
+	a.mysqlConnManager.mu.RLock()
+	db, exists := a.mysqlConnManager.connections[req.ConnectionID]
+	a.mysqlConnManager.mu.RUnlock()
+
+	if !exists {
+		return "", fmt.Errorf("connection not found: %s", req.ConnectionID)
+	}
+
+	// First, switch to the specified database if provided
+	if req.Database != "" {
+		if _, err := db.Exec(fmt.Sprintf("USE `%s`", req.Database)); err != nil {
+			return "", fmt.Errorf("failed to select database: %w", err)
+		}
+	}
+
+	// Cannot drop PRIMARY key using DROP INDEX
+	if req.IndexName == "PRIMARY" {
+		return "", fmt.Errorf("cannot drop PRIMARY key using DROP INDEX, use ALTER TABLE instead")
+	}
+
+	query := fmt.Sprintf("DROP INDEX `%s` ON `%s`", req.IndexName, req.TableName)
+
+	if _, err := db.Exec(query); err != nil {
+		return "", fmt.Errorf("failed to drop index: %w", err)
+	}
+
+	return fmt.Sprintf("Index '%s' dropped successfully", req.IndexName), nil
 }
 
 // CloseAll closes all connections
