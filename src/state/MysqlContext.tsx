@@ -38,7 +38,7 @@ export type MysqlFilterNode = MysqlFilterConditionNode | MysqlFilterGroupNode;
 export interface MysqlOpenedTable {
   database: string;
   table: string;
-  view: "data" | "structure";
+  view: "data" | "structure" | "info";
   filterTree?: MysqlFilterGroupNode;
   sortColumn?: string;
   sortDirection?: "asc" | "desc";

@@ -1,4 +1,4 @@
-import { type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
@@ -22,7 +22,27 @@ interface TableInfo {
   table: string;
   columns?: ColumnMeta[];
   rowCount?: number;
+  info?: TableDetailInfo;
   loading: boolean;
+}
+
+interface TableDetailInfo {
+  engine: string;
+  rowFormat: string;
+  tableRows: number;
+  autoIncrement: string;
+  createTime: string;
+  updateTime: string;
+  checkTime: string;
+  collation: string;
+  indexLength: number;
+  dataLength: number;
+  maxDataLength: number;
+  dataFree: number;
+  avgRowLength: number;
+  comment: string;
+  createOptions: string;
+  createSql: string;
 }
 
 interface DataState {
@@ -45,7 +65,35 @@ const defaultDataState: DataState = {
   error: ""
 };
 
-type RightPanelTab = "structure" | "data";
+type RightPanelTab = "structure" | "data" | "info";
+
+interface MysqlColumnTypeOption {
+  value: string;
+  label: string;
+  lengthMode: "none" | "single" | "pair";
+  supportsUnsigned?: boolean;
+}
+
+const mysqlColumnTypeOptions: MysqlColumnTypeOption[] = [
+  { value: "tinyint", label: "TINYINT", lengthMode: "single", supportsUnsigned: true },
+  { value: "smallint", label: "SMALLINT", lengthMode: "single", supportsUnsigned: true },
+  { value: "mediumint", label: "MEDIUMINT", lengthMode: "single", supportsUnsigned: true },
+  { value: "int", label: "INT", lengthMode: "single", supportsUnsigned: true },
+  { value: "bigint", label: "BIGINT", lengthMode: "single", supportsUnsigned: true },
+  { value: "decimal", label: "DECIMAL", lengthMode: "pair", supportsUnsigned: true },
+  { value: "float", label: "FLOAT", lengthMode: "pair", supportsUnsigned: true },
+  { value: "double", label: "DOUBLE", lengthMode: "pair", supportsUnsigned: true },
+  { value: "char", label: "CHAR", lengthMode: "single" },
+  { value: "varchar", label: "VARCHAR", lengthMode: "single" },
+  { value: "text", label: "TEXT", lengthMode: "none" },
+  { value: "longtext", label: "LONGTEXT", lengthMode: "none" },
+  { value: "date", label: "DATE", lengthMode: "none" },
+  { value: "datetime", label: "DATETIME", lengthMode: "none" },
+  { value: "timestamp", label: "TIMESTAMP", lengthMode: "none" },
+  { value: "time", label: "TIME", lengthMode: "none" },
+  { value: "json", label: "JSON", lengthMode: "none" },
+  { value: "custom", label: "Custom", lengthMode: "none" }
+];
 
 interface TreeContextMenu {
   db: string;
@@ -88,7 +136,11 @@ type ColumnEditMode = "add" | "edit";
 
 interface ColumnEditForm {
   field: string;
-  type: string;
+  typeName: string;
+  length: string;
+  scale: string;
+  unsigned: boolean;
+  customType: string;
   nullable: boolean;
   defaultValue: string;
   extra: string;
@@ -159,7 +211,11 @@ export default function MysqlTableManager() {
   const [columnEditOriginalField, setColumnEditOriginalField] = useState<string>("");
   const [columnEditForm, setColumnEditForm] = useState<ColumnEditForm>({
     field: "",
-    type: "varchar(255)",
+    typeName: "varchar",
+    length: "255",
+    scale: "",
+    unsigned: false,
+    customType: "",
     nullable: true,
     defaultValue: "",
     extra: ""
@@ -178,6 +234,111 @@ export default function MysqlTableManager() {
   const escapeSqlLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
   const escapeSqlLikeLiteral = (value: string) => value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/'/g, "''");
+
+  const getColumnTypeOption = (value: string) => mysqlColumnTypeOptions.find((option) => option.value === value);
+
+  const parseColumnType = (type: string): Pick<ColumnEditForm, "typeName" | "length" | "scale" | "unsigned" | "customType"> => {
+    const normalized = type.trim().toLowerCase();
+    const match = normalized.match(/^([a-z]+)(?:\(([^)]*)\))?(?:\s+(unsigned))?$/i);
+    if (!match) {
+      return {
+        typeName: "custom",
+        length: "",
+        scale: "",
+        unsigned: false,
+        customType: type
+      };
+    }
+
+    const [, baseTypeRaw, paramsRaw = "", unsignedRaw] = match;
+    const baseType = baseTypeRaw.toLowerCase();
+    if (!getColumnTypeOption(baseType)) {
+      return {
+        typeName: "custom",
+        length: "",
+        scale: "",
+        unsigned: false,
+        customType: type
+      };
+    }
+
+    const [length = "", scale = ""] = paramsRaw.split(",").map((item) => item.trim());
+    return {
+      typeName: baseType,
+      length,
+      scale,
+      unsigned: Boolean(unsignedRaw),
+      customType: ""
+    };
+  };
+
+  const buildColumnType = (form: ColumnEditForm) => {
+    if (form.typeName === "custom") {
+      return form.customType.trim();
+    }
+
+    const option = getColumnTypeOption(form.typeName);
+    if (!option) return "";
+
+    const length = form.length.trim();
+    const scale = form.scale.trim();
+    let type = form.typeName;
+
+    if (option.lengthMode === "single" && length) {
+      type += `(${length})`;
+    }
+
+    if (option.lengthMode === "pair") {
+      if (length && scale) {
+        type += `(${length},${scale})`;
+      } else if (length) {
+        type += `(${length})`;
+      }
+    }
+
+    if (option.supportsUnsigned && form.unsigned) {
+      type += " UNSIGNED";
+    }
+
+    return type;
+  };
+
+  const formatInfoDate = (value: unknown) => {
+    if (value === null || value === undefined || String(value).trim() === "") {
+      return "--";
+    }
+    return String(value);
+  };
+
+  const formatInfoText = (value: unknown) => {
+    if (value === null || value === undefined || String(value).trim() === "") {
+      return "--";
+    }
+    return String(value);
+  };
+
+  const toSafeNumber = (value: unknown) => {
+    const nextValue = Number(value ?? 0);
+    return Number.isFinite(nextValue) ? nextValue : 0;
+  };
+
+  const formatBytes = (value: number) => {
+    if (value <= 0) return "0 B (0)";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let size = value;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    return `${size.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]} (${value.toLocaleString()})`;
+  };
+
+  const getSingleResultRow = (columns: string[], rows: Array<Array<unknown>>) => {
+    const row = rows[0];
+    if (!row) return null;
+    return Object.fromEntries(columns.map((column, index) => [column, row[index]]));
+  };
 
   const createFilterCondition = (column = "", operator: MysqlFilterOperator = "eq", value = ""): FilterConditionDraft => ({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -466,17 +627,40 @@ export default function MysqlTableManager() {
   }, [activeOpenedTableKey, connectionId, location.pathname, navigate, openedTables, selectedDatabase, selectedTable, selectedTableInfo, setActiveOpenedTableKey, setOpenedTables, setSelectedTable, setTablesByDb]);
 
   const loadTableInfo = useCallback(async (db: string, table: string) => {
-    const [columns, countResult] = await Promise.all([
+    const [columns, countResult, statusResult, createResult] = await Promise.all([
       mysqlDescribeTable(connectionId!, db, table),
-      mysqlQuery(connectionId!, `SELECT COUNT(*) as cnt FROM \`${db}\`.\`${table}\``)
+      mysqlQuery(connectionId!, `SELECT COUNT(*) as cnt FROM \`${db}\`.\`${table}\``),
+      mysqlQuery(connectionId!, `SHOW TABLE STATUS FROM \`${db}\` LIKE ${escapeSqlLiteral(table)}`),
+      mysqlQuery(connectionId!, `SHOW CREATE TABLE \`${db}\`.\`${table}\``)
     ]);
 
     const rowCount = countResult.isResultSet && countResult.rows.length > 0
       ? Number(countResult.rows[0][0]) || 0
       : 0;
 
-    return { columns, rowCount };
-  }, [connectionId]);
+    const statusRow = getSingleResultRow(statusResult.columns, statusResult.rows);
+    const createTableRow = getSingleResultRow(createResult.columns, createResult.rows);
+    const info: TableDetailInfo = {
+      engine: formatInfoText(statusRow?.Engine),
+      rowFormat: formatInfoText(statusRow?.Row_format),
+      tableRows: toSafeNumber(statusRow?.Rows),
+      autoIncrement: formatInfoText(statusRow?.Auto_increment),
+      createTime: formatInfoDate(statusRow?.Create_time),
+      updateTime: formatInfoDate(statusRow?.Update_time),
+      checkTime: formatInfoDate(statusRow?.Check_time),
+      collation: formatInfoText(statusRow?.Collation),
+      indexLength: toSafeNumber(statusRow?.Index_length),
+      dataLength: toSafeNumber(statusRow?.Data_length),
+      maxDataLength: toSafeNumber(statusRow?.Max_data_length),
+      dataFree: toSafeNumber(statusRow?.Data_free),
+      avgRowLength: toSafeNumber(statusRow?.Avg_row_length),
+      comment: formatInfoText(statusRow?.Comment),
+      createOptions: formatInfoText(statusRow?.Create_options),
+      createSql: formatInfoText(createTableRow?.["Create Table"])
+    };
+
+    return { columns, rowCount, info };
+  }, [connectionId, escapeSqlLiteral]);
 
   const handleSelectTable = (db: string, table: string) => {
     setSelectedDatabase(db);
@@ -492,8 +676,8 @@ export default function MysqlTableManager() {
     setRightPanelTab(targetTab);
 
     try {
-      const { columns, rowCount } = await loadTableInfo(db, table);
-      setSelectedTableInfo({ database: db, table, columns, rowCount, loading: false });
+      const { columns, rowCount, info } = await loadTableInfo(db, table);
+      setSelectedTableInfo({ database: db, table, columns, rowCount, info, loading: false });
       setDataColumnMeta(columns);
 
       if (targetTab === "data") {
@@ -1197,7 +1381,11 @@ export default function MysqlTableManager() {
     setColumnEditOriginalField("");
     setColumnEditForm({
       field: "",
-      type: "varchar(255)",
+      typeName: "varchar",
+      length: "255",
+      scale: "",
+      unsigned: false,
+      customType: "",
       nullable: true,
       defaultValue: "",
       extra: ""
@@ -1209,9 +1397,10 @@ export default function MysqlTableManager() {
   const openEditColumnModal = (column: ColumnMeta) => {
     setColumnEditMode("edit");
     setColumnEditOriginalField(column.field);
+    const parsedType = parseColumnType(column.type);
     setColumnEditForm({
       field: column.field,
-      type: column.type,
+      ...parsedType,
       nullable: column.null === "YES",
       defaultValue: column.default ?? "",
       extra: column.extra ?? ""
@@ -1242,7 +1431,7 @@ export default function MysqlTableManager() {
     if (!connectionId || !selectedTableInfo) return;
 
     const field = columnEditForm.field.trim();
-    const type = columnEditForm.type.trim();
+    const type = buildColumnType(columnEditForm).trim();
     const extra = columnEditForm.extra.trim();
     if (!field || !type) {
       setColumnEditError(t("connections.nameAndAddressRequired"));
@@ -1299,7 +1488,7 @@ export default function MysqlTableManager() {
   if (!activeMysqlConnection) {
     return (
       <div className="page">
-        <div className="card" style={{ padding: "32px", textAlign: "center" }}>
+        <div className="card workspace-empty-card">
           <span className="muted">{t("mysql.query.noMysqlConnection")}</span>
         </div>
       </div>
@@ -1311,7 +1500,7 @@ export default function MysqlTableManager() {
 
     if (selectedTableInfo.loading) {
       return (
-        <div style={{ padding: "32px", textAlign: "center" }}>
+        <div className="workspace-empty-card">
           <span className="muted">{t("common.loading")}</span>
         </div>
       );
@@ -1319,7 +1508,7 @@ export default function MysqlTableManager() {
 
     if (!selectedTableInfo.columns) {
       return (
-        <div style={{ padding: "32px", textAlign: "center" }}>
+        <div className="workspace-empty-card">
           <span className="muted">{t("common.noData")}</span>
         </div>
       );
@@ -1327,7 +1516,7 @@ export default function MysqlTableManager() {
 
     return (
       <div className="table-wrapper">
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 12px" }}>
+        <div className="tm-structure-actions">
           <button className="btn btn-sm btn-primary" onClick={openAddColumnModal}>
             {t("mysql.tableManager.addColumn")}
           </button>
@@ -1341,20 +1530,20 @@ export default function MysqlTableManager() {
               <th>Key</th>
               <th>Default</th>
               <th>Extra</th>
-              <th style={{ textAlign: "right", width: "180px" }}>{t("dataBrowser.actions")}</th>
+              <th className="tm-table-head-actions">{t("dataBrowser.actions")}</th>
             </tr>
           </thead>
           <tbody>
             {selectedTableInfo.columns.map((col) => (
               <tr key={col.field}>
-                <td style={{ fontWeight: col.key === "PRI" ? 600 : 400 }}>{col.field}</td>
+                <td className={col.key === "PRI" ? "tm-table-field-primary" : undefined}>{col.field}</td>
                 <td><span className="pill">{col.type}</span></td>
                 <td>{col.null}</td>
                 <td>{col.key && <span className="pill">{col.key}</span>}</td>
                 <td className="muted">{col.default ?? "NULL"}</td>
                 <td className="muted">{col.extra}</td>
-                <td style={{ textAlign: "right" }}>
-                  <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                <td className="tm-actions-cell">
+                  <div className="tm-actions-row">
                     <button className="btn btn-sm btn-ghost" onClick={() => openEditColumnModal(col)}>
                       {t("mysql.tableManager.editStructure")}
                     </button>
@@ -1379,22 +1568,14 @@ export default function MysqlTableManager() {
     const renderFilterGroup = (group: FilterGroupDraft, isRoot = false, depth = 0) => (
       <div
         key={group.id}
-        style={{
-          display: "grid",
-          gap: "10px",
-          border: "1px solid #d8e0ea",
-          borderRadius: "10px",
-          padding: "12px",
-          background: depth === 0 ? "#ffffff" : "#fdfefe",
-          marginLeft: depth > 0 ? "16px" : 0
-        }}
+        className={`tm-filter-group ${depth > 0 ? "is-nested" : ""}`}
+        style={{ marginLeft: depth > 0 ? "16px" : 0 }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-            <strong style={{ fontSize: "13px" }}>{isRoot ? t("mysql.tableManager.rootGroup") : t("mysql.tableManager.nestedGroup")}</strong>
+        <div className="tm-filter-group-header">
+          <div className="tm-filter-group-title">
+            <strong>{isRoot ? t("mysql.tableManager.rootGroup") : t("mysql.tableManager.nestedGroup")}</strong>
             <select
-              className="form-control"
-              style={{ width: "180px" }}
+              className="form-control tm-filter-mode-select"
               value={group.mode}
               onChange={(event) => setFilterDraftTree((prev) => prev ? updateFilterTreeNode(prev, group.id, (node) => node.kind === "group" ? { ...node, mode: event.target.value as "and" | "or" } : node) as FilterGroupDraft : prev)}
             >
@@ -1402,7 +1583,7 @@ export default function MysqlTableManager() {
               <option value="or">{t("mysql.tableManager.matchAny")}</option>
             </select>
           </div>
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <div className="tm-filter-group-actions">
             <button
               className="btn btn-sm btn-ghost"
               onClick={() => setFilterDraftTree((prev) => prev ? updateFilterTreeNode(prev, group.id, (node) => node.kind === "group" ? { ...node, children: [...node.children, createFilterCondition(dataState.columns[0] ?? "")] } : node) as FilterGroupDraft : prev)}
@@ -1423,14 +1604,14 @@ export default function MysqlTableManager() {
           </div>
         </div>
 
-        <div style={{ display: "grid", gap: "10px" }}>
+        <div className="tm-filter-group-children">
           {group.children.length > 0 ? group.children.map((child) => {
             if (child.kind === "group") {
               return renderFilterGroup(child, false, depth + 1);
             }
 
             return (
-              <div key={child.id} style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1fr) minmax(160px, 1fr) minmax(180px, 1.2fr) auto", gap: "8px", alignItems: "center" }}>
+              <div key={child.id} className="tm-filter-row">
                 <select className="form-control" value={child.column} onChange={(event) => setFilterDraftTree((prev) => prev ? updateFilterTreeNode(prev, child.id, (node) => node.kind === "condition" ? { ...node, column: event.target.value } : node) as FilterGroupDraft : prev)}>
                   {dataState.columns.map((column) => (
                     <option key={column} value={column}>{column}</option>
@@ -1454,17 +1635,17 @@ export default function MysqlTableManager() {
               </div>
             );
           }) : (
-            <div className="muted" style={{ fontSize: "12px" }}>{t("mysql.tableManager.emptyGroup")}</div>
+            <div className="muted tm-filter-empty">{t("mysql.tableManager.emptyGroup")}</div>
           )}
         </div>
       </div>
     );
 
     return (
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid #e5e5ea", gap: "12px", flexShrink: 0 }}>
-          <div style={{ fontSize: "12px", color: "#6b7280", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+      <div className="tm-filter-workspace">
+        <div className="tm-toolbar">
+          <div className="tm-toolbar-meta">
+            <span className="tm-toolbar-stat">
               {filterStats.conditions > 0
                 ? t("mysql.tableManager.filterSummary", {
                     count: filterStats.conditions,
@@ -1476,7 +1657,7 @@ export default function MysqlTableManager() {
                 <button className="btn btn-sm btn-ghost" onClick={() => void clearFilter()}>{t("common.close")}</button>
               )}
             </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+            <span className="tm-toolbar-stat">
               {activeOpenedTable?.sortColumn
                 ? t("mysql.tableManager.sortSummary", {
                     column: activeOpenedTable.sortColumn,
@@ -1488,7 +1669,7 @@ export default function MysqlTableManager() {
               )}
             </span>
           </div>
-          <div style={{ display: "flex", gap: "8px", marginLeft: "auto", position: "relative" }}>
+          <div className="tm-toolbar-actions">
             <button
               className="btn btn-sm btn-ghost"
               onClick={() => {
@@ -1531,35 +1712,15 @@ export default function MysqlTableManager() {
 
             {/* Column selection dropdown menu */}
             {columnMenuOpen && dataState.columns.length > 0 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  right: 0,
-                  marginTop: "4px",
-                  background: "white",
-                  border: "1px solid #d1d1d6",
-                  borderRadius: "8px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                  zIndex: 100,
-                  minWidth: "220px",
-                  maxHeight: "400px",
-                  overflow: "auto"
-                }}
-              >
-                <div style={{ padding: "8px" }}>
-                  <div style={{ display: "flex", gap: "6px", marginBottom: "8px", flexWrap: "wrap", borderBottom: "1px solid #f0f0f0", paddingBottom: "8px" }}>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      onClick={handleSelectAllVisibleColumns}
-                      style={{ fontSize: "12px" }}
-                    >
+              <div className="tm-column-menu">
+                <div className="tm-column-menu-body">
+                  <div className="tm-column-menu-tools">
+                    <button className="btn btn-sm btn-ghost" onClick={handleSelectAllVisibleColumns}>
                       {t("common.selectAll")}
                     </button>
                     <button
                       className="btn btn-sm btn-ghost"
                       onClick={() => activeOpenedTable && updateOpenedTableVisibleColumns(activeOpenedTable.database, activeOpenedTable.table, dataState.columns)}
-                      style={{ fontSize: "12px" }}
                     >
                       {t("common.close")}
                     </button>
@@ -1567,23 +1728,11 @@ export default function MysqlTableManager() {
                   {dataState.columns.map((column) => {
                     const checked = visibleDataColumns.includes(column);
                     return (
-                      <label
-                        key={column}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          padding: "6px 8px",
-                          cursor: "pointer",
-                          borderRadius: "4px",
-                          fontSize: "13px",
-                          backgroundColor: checked ? "#eff6ff" : "transparent"
-                        }}
-                      >
+                      <label key={column} className={`tm-column-option ${checked ? "is-checked" : ""}`}>
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={(event) => handleVisibleColumnToggle(column, event.target.checked)}
-                          style={{ marginRight: "8px" }}
                         />
                         {column}
                       </label>
@@ -1596,12 +1745,12 @@ export default function MysqlTableManager() {
         </div>
 
         {filterPanelOpen && (
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e5ea", background: "#f8fafc", display: "grid", gap: "12px", flexShrink: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <strong style={{ fontSize: "13px" }}>{t("mysql.tableManager.filterPanelTitle")}</strong>
+          <div className="tm-filter-panel">
+            <div className="page-section-header">
+              <div className="tm-inline-checkbox">
+                <strong>{t("mysql.tableManager.filterPanelTitle")}</strong>
               </div>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <div className="flex-gap">
                 <button className="btn btn-sm btn-ghost" onClick={() => setFilterPanelOpen(false)}>{t("common.close")}</button>
                 <button className="btn btn-sm btn-ghost" onClick={() => void clearFilter()}>{t("mysql.tableManager.clearFilter")}</button>
                 <button className="btn btn-sm btn-primary" onClick={() => void applyFilter(filterDraftTree)}>{t("common.save")}</button>
@@ -1612,8 +1761,8 @@ export default function MysqlTableManager() {
         )}
 
         {selectedCells.length > 0 && (
-          <div style={{ padding: "8px 16px", borderBottom: "1px solid #eef1f4", background: "#f8fbff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", flexShrink: 0 }}>
-            <span style={{ fontSize: "12px", color: "#4b5563" }}>
+          <div className="tm-selection-bar">
+            <span className="tm-selection-summary">
               {t("mysql.tableManager.selectedCellsSummary", { count: selectedCells.length })}
             </span>
             <button className="btn btn-sm btn-ghost" onClick={() => setSelectedCells([])}>{t("mysql.tableManager.clearSelection")}</button>
@@ -1622,18 +1771,18 @@ export default function MysqlTableManager() {
 
         {/* Data error */}
         {dataState.error && (
-          <div className="text-danger" style={{ margin: "8px 12px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
+          <div className="text-danger tm-inline-error">
             {dataState.error}
           </div>
         )}
 
 
         {/* Data table */}
-        <div style={{ flex: 1, overflow: "auto" }}>
+        <div className="tm-table-scroller">
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: "50px" }}>#</th>
+                <th className="col-w-10">#</th>
                 {visibleDataColumns.map((col) => {
                   const isSorted = activeOpenedTable?.sortColumn === col;
                   const sortArrow = isSorted
@@ -1645,24 +1794,24 @@ export default function MysqlTableManager() {
                     <th
                       key={col}
                       onContextMenu={(event) => handleColumnHeaderContextMenu(event, col)}
-                      style={{ cursor: "context-menu", userSelect: "none" }}
+                      className="tm-header-trigger"
                     >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                      <span className="tm-header-label">
                         <span>{col}</span>
-                        <span style={{ minWidth: "10px", fontSize: "12px", lineHeight: 1, color: "#2563eb", visibility: isSorted ? "visible" : "hidden" }}>
+                        <span className={`tm-sort-indicator ${isSorted ? "" : "is-hidden"}`}>
                           {sortArrow || "↑"}
                         </span>
                       </span>
                     </th>
                   );
                 })}
-                <th style={{ width: "100px", textAlign: "right" }}>{t("dataBrowser.actions")}</th>
+                <th className="table-col-actions">{t("dataBrowser.actions")}</th>
               </tr>
             </thead>
             <tbody>
               {dataState.rows.map((row, rowIndex) => (
                 <>
-                  <tr key={rowIndex} style={{ background: selectedRowIndex === rowIndex ? "#eef4ff" : undefined }} onClick={() => setSelectedRowIndex(rowIndex)}>
+                  <tr key={rowIndex} className={selectedRowIndex === rowIndex ? "tm-row-selected" : undefined} onClick={() => setSelectedRowIndex(rowIndex)}>
                     <td className="muted">{(dataState.page - 1) * dataState.pageSize + rowIndex + 1}</td>
                     {visibleDataColumns.map((column) => {
                       const cellIndex = dataState.columns.indexOf(column);
@@ -1670,15 +1819,7 @@ export default function MysqlTableManager() {
                       return (
                         <td
                           key={`${rowIndex}-${column}`}
-                          style={{
-                            maxWidth: "300px",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            background: selectedCellKeySet.has(`${rowIndex}:${cellIndex}`) ? "#dceafe" : undefined,
-                            boxShadow: selectedCellKeySet.has(`${rowIndex}:${cellIndex}`) ? "inset 0 0 0 1px #60a5fa" : undefined,
-                            cursor: "cell"
-                          }}
+                          className={`tm-cell ${selectedCellKeySet.has(`${rowIndex}:${cellIndex}`) ? "tm-cell-selected" : ""}`}
                           title={cell === null ? "NULL" : String(cell)}
                           onClick={(event) => handleCellClick(event, rowIndex, cellIndex)}
                           onContextMenu={(event) => handleRowContextMenu(event, rowIndex, column, cell)}
@@ -1687,8 +1828,8 @@ export default function MysqlTableManager() {
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: "right" }}>
-                      <div style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>
+                    <td className="table-col-actions">
+                      <div className="flex-gap justify-end table-action-group-tight">
                         <button className="btn btn-sm btn-ghost" onClick={() => setExpandedRow(expandedRow === rowIndex ? null : rowIndex)}>
                           {expandedRow === rowIndex ? "▲" : "▼"}
                         </button>
@@ -1700,7 +1841,7 @@ export default function MysqlTableManager() {
                   {expandedRow === rowIndex && (
                     <tr key={`${rowIndex}-expanded`}>
                       <td colSpan={visibleDataColumns.length + 2}>
-                        <pre style={{ background: "#f5f7fb", padding: "12px", borderRadius: "8px", fontSize: "12px", margin: 0, whiteSpace: "pre-wrap" }}>
+                        <pre className="tm-expanded-json">
                           {JSON.stringify(
                             Object.fromEntries(visibleDataColumns.map((col) => [col, row[dataState.columns.indexOf(col)]])),
                             null,
@@ -1714,7 +1855,7 @@ export default function MysqlTableManager() {
               ))}
               {dataState.rows.length === 0 && !dataState.loading && (
                 <tr>
-                  <td colSpan={visibleDataColumns.length + 2} className="muted" style={{ textAlign: "center", padding: "32px" }}>
+                  <td colSpan={visibleDataColumns.length + 2} className="muted table-empty-cell">
                     {t("common.noData")}
                   </td>
                 </tr>
@@ -1724,16 +1865,16 @@ export default function MysqlTableManager() {
         </div>
 
         {/* Pagination */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #e5e5ea", flexShrink: 0 }}>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "13px" }}>
+        <div className="tm-pagination">
+          <div className="tm-pagination-group">
             <span>{t("dataBrowser.pageSize")}:</span>
-            <select className="form-control" style={{ width: "80px" }} value={dataState.pageSize} onChange={(e) => handlePageSizeChange(Number(e.target.value))}>
+            <select className="form-control tm-page-size-select" value={dataState.pageSize} onChange={(e) => handlePageSizeChange(Number(e.target.value))}>
               {[50, 100, 200, 500].map((size) => (
                 <option key={size} value={size}>{size}</option>
               ))}
             </select>
           </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "13px" }}>
+          <div className="tm-pagination-group">
             <button className="btn btn-sm btn-ghost" disabled={dataState.page <= 1} onClick={() => handlePageChange(dataState.page - 1)}>
               {t("dataBrowser.previousPage")}
             </button>
@@ -1747,10 +1888,78 @@ export default function MysqlTableManager() {
     );
   };
 
+  const renderInfoTab = () => {
+    if (!selectedTableInfo) return null;
+
+    if (selectedTableInfo.loading) {
+      return (
+        <div className="workspace-empty-card">
+          <span className="muted">{t("common.loading")}</span>
+        </div>
+      );
+    }
+
+    const info = selectedTableInfo.info;
+    if (!info) {
+      return (
+        <div className="workspace-empty-card">
+          <span className="muted">{t("common.noData")}</span>
+        </div>
+      );
+    }
+
+    const detailItems = [
+      { label: t("mysql.tableManager.tableType"), value: t("mysql.tableManager.baseTable") },
+      { label: t("mysql.tableManager.engine"), value: info.engine },
+      { label: t("mysql.tableManager.databaseLabel"), value: selectedTableInfo.database },
+      { label: t("mysql.tableManager.rowCountLabel"), value: info.tableRows.toLocaleString() },
+      { label: t("mysql.tableManager.autoIncrement"), value: info.autoIncrement },
+      { label: t("mysql.tableManager.rowFormat"), value: info.rowFormat },
+      { label: t("mysql.tableManager.createTime"), value: info.createTime },
+      { label: t("mysql.tableManager.updateTime"), value: info.updateTime },
+      { label: t("mysql.tableManager.checkTime"), value: info.checkTime },
+      { label: t("mysql.tableManager.collation"), value: info.collation },
+      { label: t("mysql.tableManager.indexLength"), value: formatBytes(info.indexLength) },
+      { label: t("mysql.tableManager.dataLength"), value: formatBytes(info.dataLength) },
+      { label: t("mysql.tableManager.maxDataLength"), value: formatBytes(info.maxDataLength) },
+      { label: t("mysql.tableManager.dataFree"), value: formatBytes(info.dataFree) },
+      { label: t("mysql.tableManager.avgRowLength"), value: formatBytes(info.avgRowLength) },
+      { label: t("mysql.tableManager.createOptions"), value: info.createOptions },
+      { label: t("mysql.tableManager.tableComment"), value: info.comment }
+    ];
+
+    return (
+      <div className="tm-info-pane">
+        <div className="tm-info-stack">
+          <div className="tm-info-title-block">
+            <div className="tm-info-title">{selectedTableInfo.table}</div>
+            <div className="muted tm-info-subtitle">{selectedTableInfo.database}</div>
+          </div>
+
+          <div className="tm-info-grid">
+            {detailItems.map((item) => (
+              <Fragment key={item.label}>
+                <div className="muted tm-info-label">{item.label}</div>
+                <div className="tm-info-value">{item.value}</div>
+              </Fragment>
+            ))}
+          </div>
+
+          <div className="tm-info-section">
+            <div className="muted tm-info-label">{t("mysql.tableManager.createSql")}</div>
+            <pre className="tm-sql-preview">
+              {info.createSql}
+            </pre>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderDatabaseOverview = () => {
     if (!expandedDatabase) {
       return (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="workspace-center-state">
           <span className="muted">{t("mysql.tableManager.openDatabaseHint")}</span>
         </div>
       );
@@ -1760,14 +1969,14 @@ export default function MysqlTableManager() {
 
     return (
       <>
-        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="card-header page-section-header">
           <div>
             <h3 className="card-title">{expandedDatabase}</h3>
-            <p className="muted" style={{ margin: "4px 0 0" }}>
+            <p className="muted tm-overview-header-note">
               {t("mysql.tableManager.tableCount", { count: tables.length })}
             </p>
           </div>
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div className="tm-overview-actions">
             <button className="btn btn-sm btn-ghost" onClick={() => refreshTablesForDb(expandedDatabase)} disabled={loading}>
               {t("mysql.tableManager.refreshTables")}
             </button>
@@ -1777,7 +1986,7 @@ export default function MysqlTableManager() {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "16px" }}>
+        <div className="tm-overview-content">
           {tables.length > 0 ? (
             <div className="mysql-table-grid">
               {tables.map((table) => (
@@ -1798,13 +2007,12 @@ export default function MysqlTableManager() {
                     }
                   }}
                 >
-                  <div className="mysql-table-card-icon">▤</div>
                   <div className="mysql-table-card-name" title={table}>{table}</div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="card" style={{ padding: "32px", textAlign: "center" }}>
+            <div className="card workspace-empty-card">
               <span className="muted">{t("mysql.data.noTables")}</span>
             </div>
           )}
@@ -1816,7 +2024,7 @@ export default function MysqlTableManager() {
   const renderTableWorkspace = () => {
     if (!activeOpenedTable) {
       return (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="workspace-center-state">
           <span className="muted">请选择表</span>
         </div>
       );
@@ -1824,18 +2032,27 @@ export default function MysqlTableManager() {
 
     return (
       <>
-        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="card-header page-section-header">
           <div>
-            <h3 className="card-title" style={{ margin: 0 }}>
+            <h3 className="card-title card-title-reset">
               {selectedTableInfo?.database ?? activeOpenedTable.database}.{selectedTableInfo?.table ?? activeOpenedTable.table}({selectedTableInfo?.rowCount ?? 0} {t("mysql.data.rowCount")})
             </h3>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "0", borderBottom: "1px solid #e5e5ea", padding: "0 16px", flexShrink: 0 }}>
+        <div className="tm-tab-strip">
           <button
-            className={`btn btn-sm ${rightPanelTab === "structure" ? "btn-primary" : "btn-ghost"}`}
-            style={{ borderRadius: "6px 6px 0 0", borderBottom: rightPanelTab === "structure" ? "2px solid #007aff" : "2px solid transparent" }}
+            className={`btn btn-sm tm-tab-button ${rightPanelTab === "data" ? "btn-primary is-active" : "btn-ghost"}`}
+            onClick={() => {
+              if (!activeOpenedTable) return;
+              setRightPanelTab("data");
+              setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "data");
+            }}
+          >
+            {t("mysql.tableManager.data")}
+          </button>
+          <button
+            className={`btn btn-sm tm-tab-button ${rightPanelTab === "structure" ? "btn-primary is-active" : "btn-ghost"}`}
             onClick={() => {
               if (!activeOpenedTable) return;
               setRightPanelTab("structure");
@@ -1845,20 +2062,23 @@ export default function MysqlTableManager() {
             {t("mysql.tableManager.structure")}
           </button>
           <button
-            className={`btn btn-sm ${rightPanelTab === "data" ? "btn-primary" : "btn-ghost"}`}
-            style={{ borderRadius: "6px 6px 0 0", borderBottom: rightPanelTab === "data" ? "2px solid #007aff" : "2px solid transparent" }}
+            className={`btn btn-sm tm-tab-button ${rightPanelTab === "info" ? "btn-primary is-active" : "btn-ghost"}`}
             onClick={() => {
               if (!activeOpenedTable) return;
-              setRightPanelTab("data");
-              setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "data");
+              setRightPanelTab("info");
+              setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "info");
             }}
           >
-            {t("mysql.tableManager.data")}
+            {t("mysql.tableManager.info")}
           </button>
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
-          {rightPanelTab === "structure" ? renderStructureTab() : renderDataTab()}
+        <div className="tm-tab-panel">
+          {rightPanelTab === "data"
+            ? renderDataTab()
+            : rightPanelTab === "info"
+              ? renderInfoTab()
+              : renderStructureTab()}
         </div>
       </>
     );
@@ -1866,41 +2086,35 @@ export default function MysqlTableManager() {
 
   return (
     <div className="page">
-      <div style={{ display: "flex", gap: "12px", height: "calc(100vh - 160px)" }}>
-        <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      <div className="tm-shell">
+        <div className="card tm-main-card">
           {isTableWorkspace ? renderTableWorkspace() : renderDatabaseOverview()}
         </div>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="text-danger" style={{ marginTop: "12px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
+        <div className="text-danger tm-error-banner">
           {error}
-          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "8px" }} onClick={() => setError("")}>{t("common.close")}</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setError("")}>{t("common.close")}</button>
         </div>
       )}
 
       {/* Tree context menu */}
       {treeContextMenu && (
         <div
+          className="context-menu-panel"
           style={{
             position: "fixed",
             left: `${treeContextMenu.x}px`,
             top: `${treeContextMenu.y}px`,
-            zIndex: 1200,
-            minWidth: "140px",
-            background: "#fff",
-            border: "1px solid #d1d1d6",
-            borderRadius: "8px",
-            boxShadow: "0 8px 20px rgba(0, 0, 0, 0.12)",
-            padding: "4px"
+            minWidth: "140px"
           }}
           onClick={(e) => e.stopPropagation()}
         >
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               const { db, table } = treeContextMenu;
               setTreeContextMenu(null);
@@ -1911,8 +2125,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               const { db, table } = treeContextMenu;
               setTreeContextMenu(null);
@@ -1921,11 +2134,10 @@ export default function MysqlTableManager() {
           >
             {t("mysql.tableManager.designTable")}
           </button>
-          <div style={{ height: "1px", background: "#e5e5ea", margin: "4px 0" }} />
+          <div className="context-menu-separator" />
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               const { db, table } = treeContextMenu;
               setTreeContextMenu(null);
@@ -1936,8 +2148,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               const { db, table } = treeContextMenu;
               setTreeContextMenu(null);
@@ -1948,8 +2159,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost text-danger"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost text-danger context-menu-button"
             onClick={() => {
               const { db, table } = treeContextMenu;
               setTreeContextMenu(null);
@@ -1963,24 +2173,18 @@ export default function MysqlTableManager() {
 
       {rowContextMenu && (
         <div
+          className="context-menu-panel"
           style={{
             position: "fixed",
             left: `${rowContextMenu.x}px`,
             top: `${rowContextMenu.y}px`,
-            zIndex: 1200,
-            minWidth: "180px",
-            background: "#fff",
-            border: "1px solid #d1d1d6",
-            borderRadius: "8px",
-            boxShadow: "0 8px 20px rgba(0, 0, 0, 0.12)",
-            padding: "4px"
+            minWidth: "180px"
           }}
           onClick={(event) => event.stopPropagation()}
         >
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void copyToClipboard(rowContextMenu.value === null ? "NULL" : String(rowContextMenu.value));
               setRowContextMenu(null);
@@ -1990,8 +2194,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void copyToClipboard(formatSqlValue(rowContextMenu.value));
               setRowContextMenu(null);
@@ -2001,8 +2204,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void copyToClipboard(JSON.stringify(getRowObject(rowContextMenu.rowIndex), null, 2));
               setRowContextMenu(null);
@@ -2012,8 +2214,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void copyToClipboard(buildInsertSql(rowContextMenu.rowIndex));
               setRowContextMenu(null);
@@ -2021,11 +2222,10 @@ export default function MysqlTableManager() {
           >
             {t("mysql.tableManager.copyInsert")}
           </button>
-          <div style={{ height: "1px", background: "#e5e5ea", margin: "4px 0" }} />
+          <div className="context-menu-separator" />
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void applyFilter(appendConditionToRootTree(
                 activeFilterTree,
@@ -2042,8 +2242,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void applySort(rowContextMenu.column, "asc");
               setRowContextMenu(null);
@@ -2053,8 +2252,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void applySort(rowContextMenu.column, "desc");
               setRowContextMenu(null);
@@ -2062,11 +2260,10 @@ export default function MysqlTableManager() {
           >
             {t("dataBrowser.sortDescending")}
           </button>
-          <div style={{ height: "1px", background: "#e5e5ea", margin: "4px 0" }} />
+          <div className="context-menu-separator" />
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void applyValueToCells(getContextTargetCells(rowContextMenu), "");
               setRowContextMenu(null);
@@ -2076,8 +2273,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void applyValueToCells(getContextTargetCells(rowContextMenu), null);
               setRowContextMenu(null);
@@ -2087,8 +2283,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               handleEditCell(rowContextMenu.rowIndex, rowContextMenu.column, rowContextMenu.value);
               setRowContextMenu(null);
@@ -2098,8 +2293,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               const targetCells = getContextTargetCells(rowContextMenu);
               setSelectedCells(targetCells);
@@ -2114,24 +2308,18 @@ export default function MysqlTableManager() {
 
       {columnHeaderContextMenu && (
         <div
+          className="context-menu-panel"
           style={{
             position: "fixed",
             left: `${columnHeaderContextMenu.x}px`,
             top: `${columnHeaderContextMenu.y}px`,
-            zIndex: 1200,
-            minWidth: "180px",
-            background: "#fff",
-            border: "1px solid #d1d1d6",
-            borderRadius: "8px",
-            boxShadow: "0 8px 20px rgba(0, 0, 0, 0.12)",
-            padding: "4px"
+            minWidth: "180px"
           }}
           onClick={(event) => event.stopPropagation()}
         >
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void applySort(columnHeaderContextMenu.column, "asc");
               setColumnHeaderContextMenu(null);
@@ -2141,8 +2329,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void applySort(columnHeaderContextMenu.column, "desc");
               setColumnHeaderContextMenu(null);
@@ -2152,8 +2339,7 @@ export default function MysqlTableManager() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
               void clearSort();
               setColumnHeaderContextMenu(null);
@@ -2165,13 +2351,13 @@ export default function MysqlTableManager() {
       )}
 
       {sortModalOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "480px", display: "flex", flexDirection: "column" }}>
-            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="modal-overlay">
+          <div className="card modal-card modal-card-sm">
+            <div className="card-header page-section-header">
               <h3 className="card-title">{t("mysql.tableManager.sortData")}</h3>
               <button className="btn btn-sm btn-ghost" onClick={() => setSortModalOpen(false)}>{t("common.close")}</button>
             </div>
-            <div style={{ padding: "16px", display: "grid", gap: "12px" }}>
+            <div className="modal-card-body modal-card-grid">
               <div>
                 <label>{t("mysql.tableManager.sortColumn")}</label>
                 <select className="form-control" value={sortDraft.column} onChange={(event) => setSortDraft((prev) => ({ ...prev, column: event.target.value }))}>
@@ -2188,7 +2374,7 @@ export default function MysqlTableManager() {
                 </select>
               </div>
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e5ea", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <div className="modal-card-footer">
               <button className="btn btn-sm btn-ghost" onClick={() => void clearSort()}>{t("mysql.tableManager.clearSort")}</button>
               <button className="btn btn-sm btn-ghost" onClick={() => setSortModalOpen(false)}>{t("common.cancel")}</button>
               <button className="btn btn-sm btn-primary" onClick={() => void applySort(sortDraft.column, sortDraft.direction)}>{t("common.save")}</button>
@@ -2199,22 +2385,21 @@ export default function MysqlTableManager() {
 
       {/* Edit row modal */}
       {editingRow && (
-        <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "600px", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
-            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="modal-overlay">
+          <div className="card modal-card modal-card-xl modal-card-scroll">
+            <div className="card-header page-section-header">
               <h3 className="card-title">{t("dataBrowser.editDocument")}</h3>
               <button className="btn btn-sm btn-ghost" onClick={() => setEditingRow(null)}>{t("common.close")}</button>
             </div>
-            <div style={{ flex: 1, padding: "16px", overflow: "auto" }}>
+            <div className="modal-card-body modal-card-body-scroll">
               <textarea
-                className="json-editor"
-                style={{ width: "100%", minHeight: "300px", fontFamily: "monospace", fontSize: "13px", padding: "12px", border: "1px solid #d1d1d6", borderRadius: "8px", resize: "vertical" }}
+                className="json-editor json-editor-lg"
                 value={editingRow.json}
                 onChange={(e) => setEditingRow({ ...editingRow, json: e.target.value })}
               />
-              {editError && <div className="text-danger" style={{ marginTop: "8px" }}>{editError}</div>}
+              {editError && <div className="text-danger modal-inline-error">{editError}</div>}
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e5ea", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <div className="modal-card-footer">
               <button className="btn btn-sm btn-ghost" onClick={() => setEditingRow(null)}>{t("common.cancel")}</button>
               <button className="btn btn-sm btn-primary" onClick={handleSaveEdit}>{t("common.save")}</button>
             </div>
@@ -2223,23 +2408,22 @@ export default function MysqlTableManager() {
       )}
 
       {editingCell && (
-        <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "520px", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
-            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="modal-overlay">
+          <div className="card modal-card modal-card-md modal-card-scroll">
+            <div className="card-header page-section-header">
               <h3 className="card-title">{t("mysql.tableManager.cellEditorTitle", { column: editingCell.column })}</h3>
               <button className="btn btn-sm btn-ghost" onClick={() => setEditingCell(null)}>{t("common.close")}</button>
             </div>
-            <div style={{ flex: 1, padding: "16px", overflow: "auto", display: "grid", gap: "8px" }}>
+            <div className="modal-card-body modal-card-body-scroll tm-compact-grid">
               <label>{t("mysql.tableManager.cellValue")}</label>
               <textarea
-                className="json-editor"
-                style={{ width: "100%", minHeight: "180px", fontFamily: "monospace", fontSize: "13px", padding: "12px", border: "1px solid #d1d1d6", borderRadius: "8px", resize: "vertical" }}
+                className="json-editor json-editor-md"
                 value={editingCell.value}
                 onChange={(event) => setEditingCell((prev) => prev ? { ...prev, value: event.target.value } : prev)}
               />
               {editError && <div className="text-danger">{editError}</div>}
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e5ea", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <div className="modal-card-footer">
               <button className="btn btn-sm btn-ghost" onClick={() => setEditingCell(null)}>{t("common.cancel")}</button>
               <button className="btn btn-sm btn-primary" onClick={() => void handleSaveCellEdit()}>{t("common.save")}</button>
             </div>
@@ -2248,13 +2432,13 @@ export default function MysqlTableManager() {
       )}
 
       {batchEditOpen && (
-        <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "520px", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
-            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="modal-overlay">
+          <div className="card modal-card modal-card-md modal-card-scroll">
+            <div className="card-header page-section-header">
               <h3 className="card-title">{t("mysql.tableManager.batchEditTitle", { count: selectedCells.length })}</h3>
               <button className="btn btn-sm btn-ghost" onClick={() => setBatchEditOpen(false)}>{t("common.close")}</button>
             </div>
-            <div style={{ padding: "16px", display: "grid", gap: "12px" }}>
+            <div className="modal-card-body modal-card-grid">
               <div>
                 <label>{t("mysql.tableManager.batchEditMode")}</label>
                 <select className="form-control" value={batchEditDraft.mode} onChange={(event) => setBatchEditDraft((prev) => ({ ...prev, mode: event.target.value as BatchEditMode }))}>
@@ -2266,16 +2450,15 @@ export default function MysqlTableManager() {
               <div>
                 <label>{t("mysql.tableManager.batchEditValue")}</label>
                 <textarea
-                  className="json-editor"
+                  className="json-editor json-editor-sm"
                   disabled={batchEditDraft.mode !== "text"}
-                  style={{ width: "100%", minHeight: "160px", fontFamily: "monospace", fontSize: "13px", padding: "12px", border: "1px solid #d1d1d6", borderRadius: "8px", resize: "vertical" }}
                   value={batchEditDraft.value}
                   onChange={(event) => setBatchEditDraft((prev) => ({ ...prev, value: event.target.value }))}
                 />
               </div>
               {batchEditError && <div className="text-danger">{batchEditError}</div>}
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e5ea", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <div className="modal-card-footer">
               <button className="btn btn-sm btn-ghost" onClick={() => setBatchEditOpen(false)}>{t("common.cancel")}</button>
               <button className="btn btn-sm btn-primary" onClick={() => void handleSaveBatchEdit()}>{t("common.save")}</button>
             </div>
@@ -2285,15 +2468,15 @@ export default function MysqlTableManager() {
 
       {/* Column edit modal */}
       {columnEditOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "560px", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
-            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="modal-overlay">
+          <div className="card modal-card modal-card-lg modal-card-scroll">
+            <div className="card-header page-section-header">
               <h3 className="card-title">
                 {columnEditMode === "add" ? t("mysql.tableManager.addColumn") : t("mysql.tableManager.editStructure")}
               </h3>
               <button className="btn btn-sm btn-ghost" onClick={() => setColumnEditOpen(false)}>{t("common.close")}</button>
             </div>
-            <div style={{ padding: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="modal-card-body modal-card-grid-2">
               <div>
                 <label>{t("mysql.tableManager.columnName")}</label>
                 <input
@@ -2305,11 +2488,53 @@ export default function MysqlTableManager() {
               </div>
               <div>
                 <label>{t("mysql.tableManager.columnType")}</label>
-                <input
-                  className="form-control"
-                  value={columnEditForm.type}
-                  onChange={(event) => setColumnEditForm((prev) => ({ ...prev, type: event.target.value }))}
-                />
+                <div className="tm-compact-grid">
+                  <select
+                    className="form-control"
+                    value={columnEditForm.typeName}
+                    onChange={(event) => {
+                      const nextTypeName = event.target.value;
+                      const option = getColumnTypeOption(nextTypeName);
+                      setColumnEditForm((prev) => ({
+                        ...prev,
+                        typeName: nextTypeName,
+                        length: option?.lengthMode === "none" ? "" : prev.length,
+                        scale: option?.lengthMode === "pair" ? prev.scale : "",
+                        unsigned: option?.supportsUnsigned ? prev.unsigned : false,
+                        customType: nextTypeName === "custom" ? prev.customType : ""
+                      }));
+                    }}
+                  >
+                    {mysqlColumnTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  {columnEditForm.typeName === "custom" ? (
+                    <input
+                      className="form-control"
+                      value={columnEditForm.customType}
+                      onChange={(event) => setColumnEditForm((prev) => ({ ...prev, customType: event.target.value }))}
+                      placeholder="varchar(255) / enum('a','b')"
+                    />
+                  ) : (
+                    <div className="tm-compact-grid-2">
+                      <input
+                        className="form-control"
+                        value={columnEditForm.length}
+                        disabled={getColumnTypeOption(columnEditForm.typeName)?.lengthMode === "none"}
+                        onChange={(event) => setColumnEditForm((prev) => ({ ...prev, length: event.target.value.replace(/[^0-9]/g, "") }))}
+                        placeholder={t("mysql.tableManager.typeLength")}
+                      />
+                      <input
+                        className="form-control"
+                        value={columnEditForm.scale}
+                        disabled={getColumnTypeOption(columnEditForm.typeName)?.lengthMode !== "pair"}
+                        onChange={(event) => setColumnEditForm((prev) => ({ ...prev, scale: event.target.value.replace(/[^0-9]/g, "") }))}
+                        placeholder={t("mysql.tableManager.typeScale")}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label>{t("mysql.tableManager.defaultValue")}</label>
@@ -2329,20 +2554,30 @@ export default function MysqlTableManager() {
                   placeholder="AUTO_INCREMENT"
                 />
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div className="tm-inline-checkbox">
                 <input
                   id="column-nullable"
                   type="checkbox"
                   checked={columnEditForm.nullable}
                   onChange={(event) => setColumnEditForm((prev) => ({ ...prev, nullable: event.target.checked }))}
                 />
-                <label htmlFor="column-nullable" style={{ margin: 0 }}>{t("mysql.tableManager.nullable")}</label>
+                <label htmlFor="column-nullable">{t("mysql.tableManager.nullable")}</label>
+              </div>
+              <div className="tm-inline-checkbox">
+                <input
+                  id="column-unsigned"
+                  type="checkbox"
+                  checked={columnEditForm.unsigned}
+                  disabled={!getColumnTypeOption(columnEditForm.typeName)?.supportsUnsigned || columnEditForm.typeName === "custom"}
+                  onChange={(event) => setColumnEditForm((prev) => ({ ...prev, unsigned: event.target.checked }))}
+                />
+                <label htmlFor="column-unsigned">{t("mysql.tableManager.unsigned")}</label>
               </div>
             </div>
             {columnEditError && (
-              <div className="text-danger" style={{ padding: "0 16px 12px" }}>{columnEditError}</div>
+              <div className="text-danger modal-card-error">{columnEditError}</div>
             )}
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e5ea", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <div className="modal-card-footer">
               <button className="btn btn-sm btn-ghost" onClick={() => setColumnEditOpen(false)}>{t("common.cancel")}</button>
               <button className="btn btn-sm btn-primary" onClick={handleSaveColumnEdit} disabled={columnEditLoading}>
                 {columnEditLoading ? t("common.loading") : t("common.save")}
@@ -2354,36 +2589,26 @@ export default function MysqlTableManager() {
 
       {/* SQL execution modal */}
       {sqlModalOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="card" style={{ width: "600px", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
-            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="modal-overlay">
+          <div className="card modal-card modal-card-xl modal-card-scroll">
+            <div className="card-header page-section-header">
               <h3 className="card-title">{t("mysql.tableManager.executeSql")}</h3>
               <button className="btn btn-sm btn-ghost" onClick={() => setSqlModalOpen(false)}>{t("common.close")}</button>
             </div>
-            <div style={{ flex: 1, padding: "16px", overflow: "auto" }}>
+            <div className="modal-card-body modal-card-body-scroll">
               <textarea
-                className="json-editor"
-                style={{
-                  width: "100%",
-                  minHeight: "150px",
-                  fontFamily: "monospace",
-                  fontSize: "13px",
-                  padding: "12px",
-                  border: "1px solid #d1d1d6",
-                  borderRadius: "8px",
-                  resize: "vertical"
-                }}
+                className="json-editor json-editor-sm"
                 value={sqlModalValue}
                 onChange={(e) => setSqlModalValue(e.target.value)}
                 spellCheck={false}
               />
               {sqlModalResult && (
-                <div style={{ marginTop: "8px", padding: "8px 12px", background: "#f5f7fb", borderRadius: "8px", fontSize: "13px" }}>
+                <div className="tm-sql-result">
                   {sqlModalResult}
                 </div>
               )}
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e5ea", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <div className="modal-card-footer">
               <button className="btn btn-sm btn-ghost" onClick={() => setSqlModalOpen(false)}>{t("common.cancel")}</button>
               <button className="btn btn-sm btn-primary" onClick={executeSqlModal} disabled={sqlModalLoading}>
                 {sqlModalLoading ? t("common.loading") : t("mysql.query.execute")}

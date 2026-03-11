@@ -309,43 +309,47 @@ export default function MysqlDataBrowser() {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={{ flex: 1, minHeight: 0, height: "100%" }}>
       {/* Controls bar */}
       <div className="card" style={{ padding: "12px 16px", position: "relative", flex: 0 }}>
-        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectDatabase")}:</label>
-            <select
-              className="form-control"
-              style={{ minWidth: "160px" }}
-              value={selectedDatabase ?? ""}
-              onChange={(e) => setSelectedDatabase(e.target.value || undefined)}
-            >
-              <option value="">--</option>
-              {databases.map((db) => (
-                <option key={db} value={db}>{db}</option>
-              ))}
-            </select>
+        <div style={{ display: "grid", gap: "12px" }}>
+          <div className="module-toolbar-grid">
+            <div className="module-toolbar-field">
+              <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectDatabase")}</label>
+              <select
+                className="form-control"
+                style={{ minWidth: 0 }}
+                value={selectedDatabase ?? ""}
+                onChange={(e) => setSelectedDatabase(e.target.value || undefined)}
+              >
+                <option value="">--</option>
+                {databases.map((db) => (
+                  <option key={db} value={db}>{db}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="module-toolbar-field">
+              <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectTable")}</label>
+              <select
+                className="form-control"
+                style={{ minWidth: 0 }}
+                value={selectedTable ?? ""}
+                onChange={(e) => setSelectedTable(e.target.value || undefined)}
+              >
+                <option value="">--</option>
+                {tables.map((tbl) => (
+                  <option key={tbl} value={tbl}>{tbl}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectTable")}:</label>
-            <select
-              className="form-control"
-              style={{ minWidth: "160px" }}
-              value={selectedTable ?? ""}
-              onChange={(e) => setSelectedTable(e.target.value || undefined)}
-            >
-              <option value="">--</option>
-              {tables.map((tbl) => (
-                <option key={tbl} value={tbl}>{tbl}</option>
-              ))}
-            </select>
+          <div className="module-toolbar-actions">
+            <button className="btn btn-sm btn-secondary" onClick={() => fetchData()} disabled={!selectedTable || queryState.loading}>
+              {queryState.loading ? t("common.loading") : t("common.refresh")}
+            </button>
           </div>
-
-          <button className="btn btn-sm btn-secondary" onClick={() => fetchData()} disabled={!selectedTable || queryState.loading}>
-            {queryState.loading ? t("common.loading") : t("common.refresh")}
-          </button>
         </div>
       </div>
 
@@ -544,6 +548,12 @@ export default function MysqlDataBrowser() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {!selectedTable && !queryState.error && (
+        <div className="card" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 0 }}>
+          <span className="muted">{t("mysql.data.selectTableHint")}</span>
         </div>
       )}
 

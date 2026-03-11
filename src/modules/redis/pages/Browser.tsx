@@ -356,28 +356,41 @@ export default function RedisBrowserPage() {
         <div className="card-header redis-toolbar">
           <div>
             <h3 className="card-title">{t("redis.browser.title")}</h3>
-            <div className="muted">{activeRedisConnection.name}</div>
           </div>
-          <div className="redis-toolbar-actions">
+        </div>
+
+        <div style={{ padding: "12px 16px", display: "grid", gap: "12px", flexShrink: 0 }}>
+          <div className="module-toolbar-grid">
+            <div className="module-toolbar-field">
+              <label>DB</label>
+              <select className="form-control" value={currentDatabase} onChange={(event) => setSelectedDatabase(Number(event.target.value))}>
+                {databaseOptions.map((item) => (
+                  <option key={item.index} value={item.index}>
+                    {item.label}{typeof item.keyCount === "number" ? ` (${item.keyCount})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="module-toolbar-field">
+              <label>{t("common.search")}</label>
+              <input className="form-control" value={keyPattern} onChange={(event) => setKeyPattern(event.target.value)} placeholder={t("redis.browser.patternPlaceholder")} />
+            </div>
+            <div className="module-toolbar-field">
+              <label>{t("redis.browser.batchSize", { count: scanCount })}</label>
+              <select className="form-control redis-scan-count-select" value={scanCount} onChange={(event) => setScanCount(Number(event.target.value))}>
+                {SCAN_COUNT_OPTIONS.map((item) => (
+                  <option key={item} value={item}>{t("redis.browser.batchSize", { count: item })}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="redis-toolbar-button-grid">
             <button className="btn btn-primary" onClick={openCreateEditor}>
               + {t("redis.browser.newKey")}
             </button>
             <button className="btn btn-ghost text-danger" onClick={() => openDeleteModal(selectedKeyNames)} disabled={selectedKeyNames.length === 0}>
               {t("redis.browser.deleteSelected", { count: selectedKeyNames.length })}
             </button>
-            <select className="form-control" value={currentDatabase} onChange={(event) => setSelectedDatabase(Number(event.target.value))}>
-              {databaseOptions.map((item) => (
-                <option key={item.index} value={item.index}>
-                  {item.label}{typeof item.keyCount === "number" ? ` (${item.keyCount})` : ""}
-                </option>
-              ))}
-            </select>
-            <select className="form-control redis-scan-count-select" value={scanCount} onChange={(event) => setScanCount(Number(event.target.value))}>
-              {SCAN_COUNT_OPTIONS.map((item) => (
-                <option key={item} value={item}>{t("redis.browser.batchSize", { count: item })}</option>
-              ))}
-            </select>
-            <input className="form-control" value={keyPattern} onChange={(event) => setKeyPattern(event.target.value)} placeholder={t("redis.browser.patternPlaceholder")} />
             <button className="btn btn-primary" onClick={() => void loadKeys(true)} disabled={loadingKeys}>
               {loadingKeys ? t("common.loading") : t("common.search")}
             </button>
@@ -388,7 +401,6 @@ export default function RedisBrowserPage() {
         </div>
 
         {error && <div className="text-danger" style={{ marginBottom: "12px" }}>{error}</div>}
-        <div className="redis-batch-hint muted">{t("redis.browser.batchHint", { count: scannedKeys.length, batch: scanCount })}</div>
 
         <div className="redis-selection-bar">
           <label className="redis-checkbox-label">
@@ -450,7 +462,7 @@ export default function RedisBrowserPage() {
         <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <h3 className="card-title">{t("redis.browser.detail")}</h3>
-            <div className="muted">{selectedKey ?? t("redis.browser.noKeySelected")}</div>
+            {selectedKey && <div className="muted">{selectedKey}</div>}
           </div>
           <div className="redis-detail-header-actions">
             {selectedKeyDetail && (
@@ -467,7 +479,6 @@ export default function RedisBrowserPage() {
           </div>
         </div>
 
-        {!selectedKey && <div className="muted">{t("redis.browser.noKeySelected")}</div>}
         {selectedKey && loadingDetail && <div className="muted">{t("common.loading")}</div>}
         {selectedKeyDetail && !isEditableKeyType(selectedKeyDetail.keyType) && <div className="text-warning" style={{ marginBottom: "12px" }}>{t("redis.browser.editUnsupported")}</div>}
         {selectedKeyDetail && (

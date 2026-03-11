@@ -113,6 +113,8 @@ function AppLayout() {
   const [isWorkspaceSuspended, setIsWorkspaceSuspended] = useState(false);
   const [isErrorLogOpen, setIsErrorLogOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const activeConnectionStatus = activeConnectionId ? connectionStatusById[activeConnectionId] ?? "idle" : "idle";
+  const activeEngineLabel = activeEngine === "mysql" ? "MySQL" : activeEngine === "redis" ? "Redis" : "Elasticsearch";
 
   const markConnectionSuccess = (connectionId: string) => {
     setConnectionStatusById((prev) => ({
@@ -738,7 +740,7 @@ function AppLayout() {
     return (
       <div
         key={profile.id}
-        className={`mdb-tree-item ${focusedConnectionId === profile.id ? "active" : ""}`}
+        className={`mdb-tree-item mdb-connection-item ${focusedConnectionId === profile.id ? "active" : ""}`}
         onClick={() => {
           setFocusedConnectionId(profile.id);
           if (activeConnectionId === profile.id) {
@@ -779,24 +781,15 @@ function AppLayout() {
             }
           }
         }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}
       >
-        <span style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-          <span
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              flexShrink: 0,
-              background: status === "success" ? "#22c55e" : status === "failed" ? "#ef4444" : "#9ca3af"
-            }}
-          />
-          <span className="name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span className="mdb-connection-main">
+          <span className={`mdb-status-dot status-${status}`} />
+          <span className="mdb-connection-name">
             {profile.name}
           </span>
         </span>
         {activeConnectionId === profile.id && (
-          <span style={{ fontSize: "11px", background: "#dcfce7", color: "#166534", padding: "2px 6px", borderRadius: "4px", flexShrink: 0 }}>
+          <span className="mdb-connection-badge">
             {t("connections.currentInUse")}
           </span>
         )}
@@ -808,73 +801,69 @@ function AppLayout() {
     <div className="mdb-layout">
       <header className="mdb-topbar">
         <div className="mdb-topbar-left">
-          <div className="mdb-brand" style={{ visibility: "hidden", width: 0, margin: 0, padding: 0 }}>{t("sidebar.brand")}</div>
+          <button
+            type="button"
+            className="mdb-chrome-button"
+            onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+          >
+            {isSidebarCollapsed ? "▶" : "◀"}
+          </button>
+          <div className="mdb-brand-block">
+            <div className="mdb-brand">{t("sidebar.brand")}</div>
+            <div className="mdb-window-hint">
+              {activeProfile ? `${activeEngineLabel} / ${activeProfile.name}` : t("sidebar.notConnected")}
+            </div>
+          </div>
+        </div>
+        <div className="mdb-topbar-right">
+          {activeProfile && (
+            <span className={`mdb-window-chip status-${activeConnectionStatus}`}>
+              {activeEngineLabel}
+            </span>
+          )}
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={toggleLanguage}
+            title={t("app.switchLanguageTitle", {
+              language: i18n.language === "zh" ? t("common.english") : t("common.chinese")
+            })}
+          >
+            {i18n.language === "zh" ? "EN" : "中"}
+          </button>
         </div>
       </header>
 
-      <div className="mdb-main" style={{ gridTemplateColumns: isSidebarCollapsed ? "0 1fr" : "280px 1fr" }}>
-        <aside className="mdb-sidebar" style={{ display: isSidebarCollapsed ? "none" : "flex", position: "relative" }}>
+      <div className={`mdb-main ${isSidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
+        <aside className={`mdb-sidebar ${isSidebarCollapsed ? "is-hidden" : ""}`}>
           <div className="mdb-sidebar-body">
-            <div className="mdb-sidebar-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div className="mdb-sidebar-title">
               <span>{t("sidebar.connection")}</span>
-              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                <button
-                  className="btn btn-sm"
-                  onClick={toggleLanguage}
-                  title={t("app.switchLanguageTitle", {
-                    language: i18n.language === "zh" ? t("common.english") : t("common.chinese")
-                  })}
-                  style={{ fontSize: "11px", padding: "2px 6px" }}
-                >
-                  {i18n.language === "zh" ? "EN" : "中"}
-                </button>
-              </div>
+              <span className="muted">{allProfiles.length}</span>
             </div>
-
-          {/* Hidden collapse button positioned at middle-right of sidebar */}
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            onClick={() => setIsSidebarCollapsed(true)}
-            title="Hide sidebar"
-            style={{
-              position: "absolute",
-              right: "-12px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              padding: "4px 6px",
-              minWidth: "24px",
-              zIndex: 10
-            }}
-          >
-            ◀
-          </button>
 
           {/* Elasticsearch connections */}
           <div className="mdb-tree-group">
-            <div className="mdb-tree-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+            <div className="mdb-tree-label mdb-tree-header">
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost mdb-tree-toggle"
                 onClick={() => setEsExpanded((prev) => !prev)}
-                style={{ padding: "2px 6px", display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", fontWeight: 500 }}
               >
                 <span>{esExpanded ? "▾" : "▸"}</span>
                 <span>Elasticsearch</span>
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost mdb-tree-action"
                 onClick={() => void openConnectionConfig("elasticsearch", "add")}
                 title={t("connections.createConnection")}
-                style={{ padding: "2px 8px", minWidth: "28px" }}
               >
                 +
               </button>
             </div>
 
             {esExpanded && (
-              <div className="mdb-tree-items" style={{ paddingLeft: "18px", marginTop: "4px" }}>
+              <div className="mdb-tree-items mdb-tree-stack">
                 {esProfiles.map(renderConnectionItem)}
                 {esProfiles.length === 0 && <div className="mdb-tree-empty">{t("connections.noConnections")}</div>}
               </div>
@@ -882,39 +871,36 @@ function AppLayout() {
           </div>
 
           {/* MySQL connections */}
-          <div className="mdb-tree-group" style={{ marginTop: "8px" }}>
-            <div className="mdb-tree-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+          <div className="mdb-tree-group mdb-tree-group-spaced">
+            <div className="mdb-tree-label mdb-tree-header">
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost mdb-tree-toggle"
                 onClick={() => setMysqlExpanded((prev) => !prev)}
-                style={{ padding: "2px 6px", display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", fontWeight: 500 }}
               >
                 <span>{mysqlExpanded ? "▾" : "▸"}</span>
                 <span>MySQL</span>
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost mdb-tree-action"
                 onClick={() => void openConnectionConfig("mysql", "add")}
                 title={t("connections.createConnection")}
-                style={{ padding: "2px 8px", minWidth: "28px" }}
               >
                 +
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost mdb-tree-action"
                 onClick={refreshMysqlDatabases}
                 title={t("common.refresh")}
-                style={{ padding: "2px 8px", minWidth: "28px" }}
               >
                 ↻
               </button>
             </div>
 
             {mysqlExpanded && (
-              <div className="mdb-tree-items" style={{ paddingLeft: "18px", marginTop: "4px" }}>
+              <div className="mdb-tree-items mdb-tree-stack">
                 {mysqlProfiles.map((profile) => {
                   const isActiveMysql = activeConnectionId === profile.id && profile.engine === "mysql";
 
@@ -922,7 +908,7 @@ function AppLayout() {
                     <div key={profile.id}>
                       {renderConnectionItem(profile)}
                       {isActiveMysql && databases.length > 0 && (
-                        <div style={{ paddingLeft: "12px", marginTop: "2px", marginBottom: "4px" }}>
+                        <div className="mdb-tree-nested">
                           {databases.map((database) => {
                             const isOpened = expandedDatabase === database;
                             const isSelected = selectedDatabase === database;
@@ -934,73 +920,45 @@ function AppLayout() {
                             return (
                               <div key={`${profile.id}-${database}`}>
                                 <div
-                                  className="mdb-tree-item"
-                                  style={{
-                                    marginTop: "2px",
-                                    padding: "4px 8px",
-                                    fontSize: "12px",
-                                    background: isSelected ? "#d6e3f9" : undefined,
-                                    justifyContent: "space-between"
-                                  }}
+                                  className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${isSelected ? "is-selected" : ""}`}
                                   onClick={() => handleMysqlSelectDatabase(database)}
                                   onDoubleClick={() => handleMysqlOpenDatabase(database)}
                                   onContextMenu={(event) => handleMysqlDatabaseContextMenu(event, database)}
                                 >
-                                  <span style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                                  <span className="mdb-tree-row-main">
                                     <span>{showChildren ? "▾" : "▸"}</span>
-                                    <span
-                                      style={{
-                                        width: "8px",
-                                        height: "8px",
-                                        borderRadius: "50%",
-                                        background: isOpened ? "#22c55e" : "#9ca3af",
-                                        flexShrink: 0
-                                      }}
-                                    />
-                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{database}</span>
+                                    <span className={`mdb-status-dot ${isOpened ? "status-success" : "status-idle"}`} />
+                                    <span className="mdb-tree-row-label">{database}</span>
                                   </span>
-                                  <span className="muted" style={{ fontSize: "11px", flexShrink: 0 }}>
+                                  <span className="muted mdb-tree-count">
                                     {typeof tableCount === "number" ? tableCount : ""}
                                   </span>
                                 </div>
 
                                 {showChildren && (
-                                  <div style={{ paddingLeft: "18px" }}>
+                                  <div className="mdb-tree-nested">
                                     <div
-                                      className="mdb-tree-item"
-                                      style={{
-                                        marginTop: "2px",
-                                        padding: "4px 8px",
-                                        fontSize: "12px",
-                                        background: tablesVisible ? "#eef4ff" : undefined,
-                                        justifyContent: "space-between"
-                                      }}
+                                      className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${tablesVisible ? "is-soft-selected" : ""}`}
                                       onClick={() => {
                                         void handleMysqlToggleSidebarTables(database);
                                       }}
                                     >
-                                      <span style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                                      <span className="mdb-tree-row-main">
                                         <span>{tablesVisible ? "▾" : "▸"}</span>
                                         <span>🗂</span>
                                         <span>{t("mysql.tableManager.tables")}</span>
                                       </span>
-                                      <span className="muted" style={{ fontSize: "11px", flexShrink: 0 }}>
+                                      <span className="muted mdb-tree-count">
                                         {typeof tableCount === "number" ? tableCount : ""}
                                       </span>
                                     </div>
 
                                     {tablesVisible && (
-                                      <div style={{ paddingLeft: "18px" }}>
+                                      <div className="mdb-tree-nested mdb-tree-nested-deep">
                                         {tables.map((table) => (
                                           <div
                                             key={`${profile.id}-${database}-${table}`}
-                                            className="mdb-tree-item"
-                                            style={{
-                                              marginTop: "2px",
-                                              padding: "4px 8px",
-                                              fontSize: "12px",
-                                              background: selectedDatabase === database && selectedTable === table ? "#d6e3f9" : undefined
-                                            }}
+                                            className={`mdb-tree-item mdb-tree-item-compact ${selectedDatabase === database && selectedTable === table ? "is-selected" : ""}`}
                                             onClick={() => {
                                               void handleMysqlSelectSidebarTable(database, table);
                                             }}
@@ -1009,9 +967,9 @@ function AppLayout() {
                                             }}
                                             title={table}
                                           >
-                                            <span style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                                              <span style={{ color: "#2563eb", flexShrink: 0 }}>▤</span>
-                                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{table}</span>
+                                            <span className="mdb-tree-row-main">
+                                              <span className="mdb-tree-table-icon">▤</span>
+                                              <span className="mdb-tree-row-label">{table}</span>
                                             </span>
                                           </div>
                                         ))}
@@ -1034,30 +992,28 @@ function AppLayout() {
           </div>
 
           {/* Redis connections */}
-          <div className="mdb-tree-group" style={{ marginTop: "8px" }}>
-            <div className="mdb-tree-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+          <div className="mdb-tree-group mdb-tree-group-spaced">
+            <div className="mdb-tree-label mdb-tree-header">
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost mdb-tree-toggle"
                 onClick={() => setRedisExpanded((prev) => !prev)}
-                style={{ padding: "2px 6px", display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", fontWeight: 500 }}
               >
                 <span>{redisExpanded ? "▾" : "▸"}</span>
                 <span>Redis</span>
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost mdb-tree-action"
                 onClick={() => void openConnectionConfig("redis", "add")}
                 title={t("connections.createConnection")}
-                style={{ padding: "2px 8px", minWidth: "28px" }}
               >
                 +
               </button>
             </div>
 
             {redisExpanded && (
-              <div className="mdb-tree-items" style={{ paddingLeft: "18px", marginTop: "4px" }}>
+              <div className="mdb-tree-items mdb-tree-stack">
                 {redisProfiles.map((profile) => (
                   <div key={profile.id}>{renderConnectionItem(profile)}</div>
                 ))}
@@ -1068,7 +1024,7 @@ function AppLayout() {
 
           {/* Connection action error */}
           {connectionActionError && (
-            <div className="text-danger" style={{ fontSize: "12px", marginTop: "6px", padding: "0 12px" }}>
+            <div className="text-danger mdb-sidebar-error">
               {connectionActionError}
             </div>
           )}
@@ -1089,20 +1045,7 @@ function AppLayout() {
         </aside>
 
         <main className="mdb-workspace">
-          {isSidebarCollapsed && (
-            <div style={{ position: "fixed", left: "12px", top: "12px", zIndex: 100 }}>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => setIsSidebarCollapsed(false)}
-                title="Show sidebar"
-                style={{ padding: "6px 8px", fontSize: "16px" }}
-              >
-                ▶
-              </button>
-            </div>
-          )}
-          <div style={{ display: canShowWorkspace ? "block" : "none" }}>
+          <div className="mdb-workspace-shell" style={{ display: canShowWorkspace ? "flex" : "none" }}>
             {/* ES tabs */}
             <div className="mdb-tabs" style={{ display: isEsWorkspace ? "flex" : "none" }}>
               <NavLink to="/data" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
@@ -1228,8 +1171,8 @@ function AppLayout() {
           </div>
 
           {!canShowWorkspace && (
-            <section className="mdb-content" style={{ background: "transparent", border: "none", boxShadow: "none" }}>
-              <div className="card" style={{ minHeight: "120px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <section className="mdb-content mdb-content-empty">
+              <div className="card mdb-empty-state-card">
                 <span className="muted">{t("sidebar.notConnected")}</span>
               </div>
             </section>

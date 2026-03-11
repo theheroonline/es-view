@@ -51,6 +51,7 @@ export default function DataBrowser() {
   const { t, i18n } = useTranslation();
   const { activeConnection, indices } = useAppContext();
   const [selectedIndex, setSelectedIndex] = useState<string | undefined>(undefined);
+  const [showQueryConditions, setShowQueryConditions] = useState(false);
   const [fields, setFields] = useState<string[]>([]);
   const defaultCondition: ConditionItem = { field: "", operator: "term", value: "", boolType: "must", enabled: true };
   const [conditions, setConditions] = useState<ConditionItem[]>(() => [{ ...defaultCondition }]);
@@ -358,6 +359,11 @@ export default function DataBrowser() {
   };
 
   const addCondition = (idx?: number) => {
+    if (!showQueryConditions && idx === undefined) {
+      setShowQueryConditions(true);
+      return;
+    }
+    setShowQueryConditions(true);
     setConditions((prev) => {
       const next = [...prev];
       const insertIndex = idx !== undefined ? idx + 1 : next.length;
@@ -799,17 +805,19 @@ export default function DataBrowser() {
 
   return (
     <ConfigProvider locale={i18n.language === 'zh' ? zhCN : enUS}>
-      <div className="page">
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '24px', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flex: 1 }}>
-          <h4 className="card-title" style={{ margin: 0 }}>{t('dataBrowser.selectIndex')}</h4>
-          <div 
-            ref={indexDropdownRef}
-            style={{ 
-              position: 'relative',
-              minWidth: '300px'
-            }}
-          >
+      <div className="page" style={{ flex: 1, minHeight: 0, height: '100%' }}>
+      <div className="card" style={{ flex: '0 0 auto' }}>
+        <div className="card-body" style={{ display: 'grid', gap: '12px' }}>
+          <div className="module-toolbar-grid">
+            <div className="module-toolbar-field">
+              <label>{t('dataBrowser.selectIndex')}</label>
+              <div 
+                ref={indexDropdownRef}
+                style={{ 
+                  position: 'relative',
+                  minWidth: 0
+                }}
+              >
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <button
                 onClick={() => setShowIndexDropdown(!showIndexDropdown)}
@@ -937,13 +945,9 @@ export default function DataBrowser() {
               </div>
             )}
           </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <h3 className="card-title">{t('dataBrowser.queryCondition')}</h3>
-          <div className="flex-gap">
+            </div>
+          </div>
+          <div className="module-toolbar-actions">
             <button className="btn btn-primary btn-sm" onClick={execute} disabled={loading}>
               <span>{loading ? '⏳' : '🔍'}</span> {loading ? t('dataBrowser.querying') : t('dataBrowser.query')}
             </button>
@@ -952,119 +956,133 @@ export default function DataBrowser() {
             </button>
           </div>
         </div>
-        
-        <div className="card-body">
-          {/* Condition Builder */}
-          <div>
-            <div className="query-builder-header-row">
-              <div className="col-header">{t('dataBrowser.type')}</div>
-              <div className="col-header">{t('dataBrowser.field')}</div>
-              <div className="col-header">{t('dataBrowser.operator')}</div>
-              <div className="col-header">{t('dataBrowser.value')}</div>
-              <div className="col-header">{t('dataBrowser.operation')}</div>
-            </div>
+      </div>
 
-            {conditions.map((item, idx) => (
-              <div key={`cond-${idx}`} className={`query-row ${item.enabled ? "" : "disabled"}`}>
-                {/* Logic Group / Type */}
-                <div className="logic-group">
-                  <label className="switch">
-                    <input 
-                      type="checkbox" 
-                      checked={item.enabled} 
-                      onChange={() => toggleCondition(idx)} 
-                    />
-                    <span className="slider"></span>
-                  </label>
-                  <select
-                    className="form-control"
-                    style={{ width: '70px', padding: '2px 6px', fontSize: '12px', height: '28px' }}
-                    value={item.boolType}
-                    onChange={(event) => handleConditionChange(idx, { boolType: event.target.value as BoolType })}
-                  >
-                    <option value="must">{t('dataBrowser.must')}</option>
-                    <option value="should">{t('dataBrowser.should')}</option>
-                    <option value="must_not">{t('dataBrowser.mustNot')}</option>
-                    <option value="sort">{t('dataBrowser.sort')}</option>
-                  </select>
-                </div>
-
-                {/* Field */}
-                <div>
-                  <select
-                    className="form-control"
-                    value={item.field}
-                    onChange={(event) => handleConditionChange(idx, { field: event.target.value })}
-                  >
-                    <option value="">{t('dataBrowser.selectField')}</option>
-                    {fields.map((f) => (
-                      <option key={f} value={f}>{f}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Operator / Sort Direction */}
-                <div>
-                  {item.boolType === "sort" ? (
-                    <select
-                      className="form-control"
-                      value={item.sortDirection || "asc"}
-                      onChange={(event) => handleConditionChange(idx, { sortDirection: event.target.value as SortDirection })}
-                    >
-                      <option value="asc">{t('dataBrowser.ascending')}</option>
-                      <option value="desc">{t('dataBrowser.descending')}</option>
-                    </select>
-                  ) : (
-                    <select
-                      className="form-control"
-                      value={item.operator}
-                      onChange={(event) => handleConditionChange(idx, { operator: event.target.value })}
-                    >
-                      <option value="term">{t('dataBrowser.equal')}</option>
-                      <option value="match">{t('dataBrowser.contain')}</option>
-                      <option value="range">{t('dataBrowser.range')}</option>
-                      <option value="time_range">{t('dataBrowser.timeRange')}</option>
-                    </select>
-                  )}
-                </div>
-
-                {/* Value */}
-                <div>
-                  {item.boolType === "sort" ? (
-                    <span className="form-control" style={{ background: '#f8fafc', color: '#94a3b8', cursor: 'not-allowed' }}>-</span>
-                  ) : item.operator === "time_range" ? (
-                    <ConfigProvider locale={i18n.language === "zh" ? zhCN : enUS}>
-                      <RangePicker
-                        showTime
-                        size="small"
-                        value={item.rangeValue}
-                        onChange={(dates) => handleConditionChange(idx, { rangeValue: dates })}
-                        presets={presets}
-                        style={{ width: '100%', height: '32px' }}
-                        placeholder={[t('dataBrowser.startTime'), t('dataBrowser.endTime')]}
-                        disabled={!item.enabled}
-                      />
-                    </ConfigProvider>
-                  ) : (
-                    <input
-                      className="form-control"
-                      value={item.value}
-                      onChange={(event) => handleConditionChange(idx, { value: event.target.value })}
-                      placeholder={item.operator === 'range' ? t('dataBrowser.rangeExample') : t('dataBrowser.placeholder')}
-                    />
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div className="flex-gap justify-end">
-                   <button className="btn btn-ghost btn-icon" onClick={() => addCondition(idx)} title={t('dataBrowser.addRow')}>+</button>
-                   <button className="btn btn-ghost btn-icon text-danger" onClick={() => removeCondition(idx)} title={t('dataBrowser.deleteRow')}>−</button>
-                </div>
-              </div>
-            ))}
+      {showQueryConditions && (
+      <div className="card">
+        <div className="card-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>{t('dataBrowser.queryCondition')}</h3>
+          </div>
+          <div className="flex-gap">
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowQueryConditions(false)}
+              aria-expanded={showQueryConditions}
+              title={t('common.close')}
+            >
+              {t('common.close')}
+            </button>
           </div>
         </div>
+
+          <div className="card-body">
+            <div>
+              <div className="query-builder-header-row">
+                <div className="col-header">{t('dataBrowser.type')}</div>
+                <div className="col-header">{t('dataBrowser.field')}</div>
+                <div className="col-header">{t('dataBrowser.operator')}</div>
+                <div className="col-header">{t('dataBrowser.value')}</div>
+                <div className="col-header">{t('dataBrowser.operation')}</div>
+              </div>
+
+              {conditions.map((item, idx) => (
+                <div key={`cond-${idx}`} className={`query-row ${item.enabled ? "" : "disabled"}`}>
+                  <div className="logic-group">
+                    <label className="switch">
+                      <input 
+                        type="checkbox" 
+                        checked={item.enabled} 
+                        onChange={() => toggleCondition(idx)} 
+                      />
+                      <span className="slider"></span>
+                    </label>
+                    <select
+                      className="form-control"
+                      style={{ width: '70px', padding: '2px 6px', fontSize: '12px', height: '28px' }}
+                      value={item.boolType}
+                      onChange={(event) => handleConditionChange(idx, { boolType: event.target.value as BoolType })}
+                    >
+                      <option value="must">{t('dataBrowser.must')}</option>
+                      <option value="should">{t('dataBrowser.should')}</option>
+                      <option value="must_not">{t('dataBrowser.mustNot')}</option>
+                      <option value="sort">{t('dataBrowser.sort')}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <select
+                      className="form-control"
+                      value={item.field}
+                      onChange={(event) => handleConditionChange(idx, { field: event.target.value })}
+                    >
+                      <option value="">{t('dataBrowser.selectField')}</option>
+                      {fields.map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    {item.boolType === "sort" ? (
+                      <select
+                        className="form-control"
+                        value={item.sortDirection || "asc"}
+                        onChange={(event) => handleConditionChange(idx, { sortDirection: event.target.value as SortDirection })}
+                      >
+                        <option value="asc">{t('dataBrowser.ascending')}</option>
+                        <option value="desc">{t('dataBrowser.descending')}</option>
+                      </select>
+                    ) : (
+                      <select
+                        className="form-control"
+                        value={item.operator}
+                        onChange={(event) => handleConditionChange(idx, { operator: event.target.value })}
+                      >
+                        <option value="term">{t('dataBrowser.equal')}</option>
+                        <option value="match">{t('dataBrowser.contain')}</option>
+                        <option value="range">{t('dataBrowser.range')}</option>
+                        <option value="time_range">{t('dataBrowser.timeRange')}</option>
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    {item.boolType === "sort" ? (
+                      <span className="form-control" style={{ background: '#f8fafc', color: '#94a3b8', cursor: 'not-allowed' }}>-</span>
+                    ) : item.operator === "time_range" ? (
+                      <ConfigProvider locale={i18n.language === "zh" ? zhCN : enUS}>
+                        <RangePicker
+                          showTime
+                          size="small"
+                          value={item.rangeValue}
+                          onChange={(dates) => handleConditionChange(idx, { rangeValue: dates })}
+                          presets={presets}
+                          style={{ width: '100%', height: '32px' }}
+                          placeholder={[t('dataBrowser.startTime'), t('dataBrowser.endTime')]}
+                          disabled={!item.enabled}
+                        />
+                      </ConfigProvider>
+                    ) : (
+                      <input
+                        className="form-control"
+                        value={item.value}
+                        onChange={(event) => handleConditionChange(idx, { value: event.target.value })}
+                        placeholder={item.operator === 'range' ? t('dataBrowser.rangeExample') : t('dataBrowser.placeholder')}
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex-gap justify-end">
+                     <button className="btn btn-ghost btn-icon" onClick={() => addCondition(idx)} title={t('dataBrowser.addRow')}>+</button>
+                     <button className="btn btn-ghost btn-icon text-danger" onClick={() => removeCondition(idx)} title={t('dataBrowser.deleteRow')}>−</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
       </div>
+      )}
 
       {/* Pagination & Stats Toolbar */}
       <div className="toolbar" style={{ margin: '0 0 16px 0', border: 'none', background: 'transparent', padding: 0, position: 'relative' }}>

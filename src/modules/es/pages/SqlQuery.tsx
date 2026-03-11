@@ -9,7 +9,6 @@ import FieldFilterButton, { type FieldFilterState } from "../../../components/Fi
 import { logError } from "../../../lib/errorLog";
 import { useAppContext } from "../../../state/AppContext";
 import { extractFieldsFromMapping, getIndexMapping, searchIndex } from "../services/client";
-import SqlHistory from "./SqlHistory";
 
 const { RangePicker } = DatePicker;
 
@@ -51,6 +50,7 @@ export default function SqlQuery() {
   const [error, setError] = useState("");
   const [totalRows, setTotalRows] = useState(0);
   const [expandedSqlRows, setExpandedSqlRows] = useState<Set<number>>(new Set());
+  const [showConditions, setShowConditions] = useState(false);
 
   // Field Filter State (shared component)
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
@@ -78,6 +78,7 @@ export default function SqlQuery() {
       setPayload("{}");
       setLimit(100);
       setFieldFilter({ enabled: false, fields: [] });
+      setShowConditions(false);
       return;
     }
 
@@ -91,6 +92,7 @@ export default function SqlQuery() {
       setPayload("{}");
       setLimit(100);
       setFieldFilter({ enabled: false, fields: [] });
+      setShowConditions(false);
       return;
     }
 
@@ -101,6 +103,7 @@ export default function SqlQuery() {
     setPayload(cached.payload);
     setLimit(cached.limit);
     setFieldFilter(cached.fieldFilter);
+    setShowConditions(cached.whereConditions.some((item) => item.field || item.value || item.operator === "RANGE"));
   }, [activeConnection?.id]);
 
   useEffect(() => {
@@ -330,6 +333,11 @@ export default function SqlQuery() {
   };
 
   const addCondition = () => {
+    if (!showConditions) {
+      setShowConditions(true);
+      return;
+    }
+    setShowConditions(true);
     setWhereConditions((prev) => [...prev, { field: "", operator: "=", value: "", enabled: true }]);
   };
 
@@ -384,23 +392,17 @@ export default function SqlQuery() {
 
   return (
     <>
-      <div className="page">
-        <div className="card">
+      <div className="page" style={{ flex: 1, minHeight: 0, height: "100%" }}>
+        <div className="card" style={{ flex: "0 0 auto" }}>
         <div className="card-header">
           <div>
             <h3 className="card-title">{t('sqlQuery.simpleQuery')}</h3>
-            <p className="muted">{t('sqlQuery.sqlBuilderDesc')}</p>
-          </div>
-          <div className="button-group">
-            <button className="btn btn-primary" onClick={execute}>
-              <span>▶</span> {t('sqlQuery.executeQuery')}
-            </button>
           </div>
         </div>
         <div className="card-body">
-          {/* 第一行：操作类型、索引选择、结果限制、字段过滤 */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ flex: '0 0 150px' }}>
+          <div style={{ display: 'grid', gap: '12px' }}>
+            <div className="module-toolbar-grid">
+            <div className="module-toolbar-field">
               <label>{t('sqlQuery.operationType')}</label>
               <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)}>
                 <option value="select">{t('sqlQuery.select')}</option>
@@ -410,7 +412,7 @@ export default function SqlQuery() {
               </select>
             </div>
 
-            <div style={{ flex: '1', minWidth: '200px' }}>
+            <div className="module-toolbar-field">
               <label>{t('sqlQuery.selectIndex')}</label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <select
@@ -453,8 +455,7 @@ export default function SqlQuery() {
             </div>
 
             {operation === "select" && (
-              <>
-                <div style={{ flex: '0 0 140px' }}>
+              <div className="module-toolbar-field">
                   <label>{t('sqlQuery.resultLimit')}</label>
                   <input
                     type="number"
@@ -464,6 +465,18 @@ export default function SqlQuery() {
                     min="1"
                     max="1000"
                   />
+                </div>
+            )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div className="module-toolbar-actions">
+                {operation === "select" && (
+                  <>
+                <div style={{ flex: '0 0 auto' }}>
+                  <button className="btn btn-secondary" onClick={addCondition}>
+                    <span>+</span> {t('sqlQuery.addCondition')}
+                  </button>
                 </div>
 
                 <div style={{ flex: '0 0 auto' }}>
@@ -475,17 +488,25 @@ export default function SqlQuery() {
                     label={t('sqlQuery.fieldFilter')}
                   />
                 </div>
-              </>
-            )}
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
+                <button className="btn btn-primary" onClick={execute}>
+                  <span>▶</span> {t('sqlQuery.executeQuery')}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* WHERE 条件构建器 */}
-          {operation === "select" && (
+          {operation === "select" && showConditions && (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '16px' }}>
                 <label style={{ fontWeight: 600, margin: 0 }}>{t('sqlQuery.whereCondition')}</label>
-                <button className="btn btn-sm btn-secondary" onClick={addCondition}>
-                  <span>+</span> {t('sqlQuery.addCondition')}
+                <button className="btn btn-sm btn-ghost" onClick={() => setShowConditions(false)}>
+                  {t('common.close')}
                 </button>
               </div>
 
@@ -590,7 +611,7 @@ export default function SqlQuery() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="card-header">
           <h3 className="card-title">
             {t('sqlQuery.queryResult', { count: result ? totalRows : 0 })}
@@ -598,14 +619,15 @@ export default function SqlQuery() {
         </div>
 
         {!result && (
-          <div className="card-body">
+          <div className="card-body" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <p className="muted" style={{ textAlign: 'center' }}>{t('sqlQuery.noResults')}</p>
           </div>
         )}
 
-            {result && (
+        {result && (
           <div style={{
-            height: '600px',
+            flex: 1,
+            minHeight: 0,
             overflow: 'auto',
             borderTop: '1px solid #e2e8f0'
           }}>
@@ -660,7 +682,6 @@ export default function SqlQuery() {
         )}
       </div>
 
-      <SqlHistory />
       </div>
     </>
   );

@@ -166,7 +166,7 @@ export default function RedisConnectionsPage() {
   return (
     <div className="page">
       <div className="card">
-        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="card-header page-section-header">
           <h3 className="card-title">{t("connections.savedConnections")}</h3>
           <button className="btn btn-primary" onClick={handleAdd}>
             + {t("connections.createConnection")}
@@ -176,25 +176,25 @@ export default function RedisConnectionsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: "25%" }}>{t("connections.connectionName")}</th>
-                <th style={{ width: "15%" }}>{t("connections.engine")}</th>
-                <th style={{ width: "25%" }}>{t("connections.address")}</th>
-                <th style={{ width: "10%" }}>{t("connections.redisDatabase")}</th>
-                <th style={{ width: "25%", textAlign: "right" }}>{t("connections.operations")}</th>
+                <th className="col-w-25">{t("connections.connectionName")}</th>
+                <th className="col-w-15">{t("connections.engine")}</th>
+                <th className="col-w-25">{t("connections.address")}</th>
+                <th className="col-w-10">{t("connections.redisDatabase")}</th>
+                <th className="table-col-actions-header">{t("connections.operations")}</th>
               </tr>
             </thead>
             <tbody>
               {redisProfiles.map((profile) => (
                 <tr key={profile.id}>
-                  <td style={{ fontWeight: 500 }}>
+                  <td className="table-cell-strong">
                     {profile.name}
-                    {profile.id === activeConnectionId && <span style={{ marginLeft: "8px", fontSize: "11px", background: "#dcfce7", color: "#166534", padding: "2px 6px", borderRadius: "4px" }}>{t("connections.currentInUse")}</span>}
+                    {profile.id === activeConnectionId && <span className="status-badge-current">{t("connections.currentInUse")}</span>}
                   </td>
                   <td><span className="pill">Redis</span></td>
                   <td className="muted">{profile.redisHost ?? "127.0.0.1"}:{profile.redisPort ?? 6379}</td>
                   <td className="muted">DB {profile.redisDatabase ?? 0}</td>
-                  <td className="table-actions" style={{ textAlign: "right" }}>
-                    <div className="flex-gap justify-end" style={{ gap: "4px" }}>
+                  <td className="table-actions table-col-actions">
+                    <div className="flex-gap justify-end table-action-group-tight">
                       <button className="btn btn-sm btn-ghost" title={t("connections.testConnection")} onClick={() => handleTest(profile.id)} disabled={testingId === profile.id}>
                         {testingId === profile.id ? "..." : t("connections.test")}
                       </button>
@@ -207,7 +207,7 @@ export default function RedisConnectionsPage() {
               ))}
               {redisProfiles.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted" style={{ textAlign: "center", padding: "32px" }}>{t("connections.noConnections")}</td>
+                  <td colSpan={5} className="muted table-empty-cell">{t("connections.noConnections")}</td>
                 </tr>
               )}
             </tbody>
@@ -215,7 +215,7 @@ export default function RedisConnectionsPage() {
         </div>
       </div>
 
-      {error && <div className={messageType === "success" ? "text-success" : "text-danger"} style={{ marginTop: "12px", padding: "0 4px" }}>{error}</div>}
+      {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback-padded`}>{error}</div>}
 
       <Modal
         title={action === "edit" ? t("common.edit") : action === "copy" ? t("common.copy") : t("connections.createConnection")}
@@ -226,7 +226,7 @@ export default function RedisConnectionsPage() {
         okText={t("connections.saveConnection")}
         cancelText={t("common.cancel")}
       >
-        <div className="form-grid" style={{ marginTop: "16px" }}>
+        <div className="form-grid form-grid-spaced">
           <div>
             <label>{t("connections.name")}</label>
             <input className="form-control" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. local redis" />
@@ -254,30 +254,17 @@ export default function RedisConnectionsPage() {
           </div>
           <div>
             <label>{t("connections.password")}</label>
-            <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <div className="password-field-wrap">
               <input
-                className="form-control"
+                className="form-control password-field-input"
                 type={showPassword ? "text" : "password"}
                 value={form.password}
                 onChange={(event) => setForm({ ...form, password: event.target.value })}
-                style={{ paddingRight: "36px" }}
               />
               <button
                 type="button"
-                className="btn btn-ghost btn-icon"
+                className="btn btn-ghost btn-icon password-toggle-button"
                 onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: "absolute",
-                  right: "4px",
-                  padding: "4px 8px",
-                  fontSize: "16px",
-                  cursor: "pointer",
-                  border: "none",
-                  background: "transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
                 title={showPassword ? t("connections.hidePassword") : t("connections.showPassword")}
               >
                 {showPassword ? "🙈" : "👁️"}
@@ -285,7 +272,7 @@ export default function RedisConnectionsPage() {
             </div>
           </div>
         </div>
-        {error && <div className={messageType === "success" ? "text-success" : "text-danger"} style={{ marginTop: "12px" }}>{error}</div>}
+        {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback`}>{error}</div>}
       </Modal>
     </div>
   );
