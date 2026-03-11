@@ -465,14 +465,6 @@ export default function RedisBrowserPage() {
             {selectedKey && <div className="muted">{selectedKey}</div>}
           </div>
           <div className="redis-detail-header-actions">
-            {selectedKeyDetail && (
-              <div className="redis-meta-list">
-                <span className="pill">{selectedKeyDetail.keyType}</span>
-                <span className="pill">TTL {formatTtl(selectedKeyDetail.ttlMs)}</span>
-                {selectedKeyDetail.encoding && <span className="pill">{selectedKeyDetail.encoding}</span>}
-                {typeof selectedKeyDetail.size === "number" && <span className="pill">size {selectedKeyDetail.size}</span>}
-              </div>
-            )}
             {selectedKeyDetail && <button className="btn btn-ghost redis-ttl-button" onClick={() => setTtlModalOpen(true)} title={t("redis.browser.editTtl")}>TTL {ttlButtonValue}</button>}
             {selectedKeyDetail && isEditableKeyType(selectedKeyDetail.keyType) && <button className="btn btn-ghost" onClick={openEditEditor}>{t("common.edit")}</button>}
             {selectedKeyDetail && <button className="btn btn-ghost text-danger" onClick={() => openDeleteModal([selectedKeyDetail.name])}>{t("common.delete")}</button>}

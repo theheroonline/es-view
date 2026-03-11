@@ -1,26 +1,26 @@
-import { invoke, isWails, waitForWails } from "../../../lib/wailsapi";
 import { logError } from "../../../lib/errorLog";
+import { invoke, isWails, waitForWails } from "../../../lib/wailsapi";
 import type {
-    RedisCommandResult,
-    RedisConnection,
-    RedisDatabaseInfo,
-    RedisKeyDetail,
-    RedisScanResult,
-    RedisSetKeyRequest,
-    RedisUpdateTtlRequest,
+  RedisCommandResult,
+  RedisConnection,
+  RedisDatabaseInfo,
+  RedisKeyDetail,
+  RedisScanResult,
+  RedisSetKeyRequest,
+  RedisUpdateTtlRequest,
 } from "../types";
 
 async function requireWails() {
   // Wait for Wails to initialize
   await waitForWails();
 
-  // Add extra wait and retry for robustness - try up to 20 times with 200ms between retries
-  for (let i = 0; i < 20; i++) {
+  // Add short retry for robustness - try up to 3 times with 50ms between retries
+  for (let i = 0; i < 3; i++) {
     if (isWails()) {
       return;
     }
-    // Wait 200ms and retry
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Wait 50ms and retry (max total 150ms vs 4 seconds before)
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
 
   // If still not available, throw detailed error

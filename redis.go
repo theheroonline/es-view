@@ -188,17 +188,15 @@ func (a *App) RedisListDatabases(connectionID string) ([]RedisDatabaseInfo, erro
 			IsDefault: i == 0,
 		}
 
-		opts := client.Options()
-		redisDB := redis.NewClient(&redis.Options{
-			Addr:     opts.Addr,
-			Password: opts.Password,
-			DB:       i,
-			Username: opts.Username,
-		})
+		// Use SELECT command instead of creating new connections
+		_, err := client.Do(ctx, "SELECT", i).Result()
+		if err != nil {
+			// Database doesn't exist or is inaccessible, skip it
+			databases = append(databases, db)
+			continue
+		}
 
-		count, err := redisDB.DBSize(ctx).Result()
-		redisDB.Close()
-
+		count, err := client.DBSize(ctx).Result()
 		if err == nil && count > 0 {
 			keyCount := uint64(count)
 			db.KeyCount = &keyCount
@@ -206,6 +204,13 @@ func (a *App) RedisListDatabases(connectionID string) ([]RedisDatabaseInfo, erro
 
 		databases = append(databases, db)
 	}
+
+	// Reset to original database
+	originalDB := 0
+	if opts := client.Options(); opts != nil && opts.DB > 0 {
+		originalDB = opts.DB
+	}
+	_, _ = client.Do(ctx, "SELECT", originalDB).Result()
 
 	return databases, nil
 }
@@ -239,15 +244,13 @@ func (a *App) RedisScanKeys(req RedisScanRequest) (RedisScanResult, error) {
 		pattern = *req.Pattern
 	}
 
-	scanClient := redis.NewClient(&redis.Options{
-		Addr:     client.Options().Addr,
-		Password: client.Options().Password,
-		DB:       req.Database,
-		Username: client.Options().Username,
-	})
-	defer scanClient.Close()
+	// Switch to the requested database on the main connection
+	_, err := client.Do(ctx, "SELECT", req.Database).Result()
+	if err != nil {
+		return RedisScanResult{}, fmt.Errorf("failed to select database: %w", err)
+	}
 
-	cmd := scanClient.Scan(ctx, cursor, pattern, count)
+	cmd := client.Scan(ctx, cursor, pattern, count)
 	keys, nextCursor, err := cmd.Result()
 	if err != nil {
 		return RedisScanResult{}, fmt.Errorf("scan failed: %w", err)
@@ -255,7 +258,7 @@ func (a *App) RedisScanKeys(req RedisScanRequest) (RedisScanResult, error) {
 
 	items := make([]RedisKeySummary, 0)  // Initialize as empty slice, not nil
 	for _, key := range keys {
-		keyType, ttl := a.getKeyTypeAndTTL(scanClient, ctx, key)
+		keyType, ttl := a.getKeyTypeAndTTL(client, ctx, key)
 		item := RedisKeySummary{
 			Name:    key,
 			KeyType: keyType,
@@ -289,15 +292,13 @@ func (a *App) RedisGetKeyDetail(req RedisKeyRequest) (RedisKeyDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dbClient := redis.NewClient(&redis.Options{
-		Addr:     client.Options().Addr,
-		Password: client.Options().Password,
-		DB:       req.Database,
-		Username: client.Options().Username,
-	})
-	defer dbClient.Close()
+	// Switch to the requested database on the main connection
+	_, err := client.Do(ctx, "SELECT", req.Database).Result()
+	if err != nil {
+		return RedisKeyDetail{}, fmt.Errorf("failed to select database: %w", err)
+	}
 
-	keyType, ttl := a.getKeyTypeAndTTL(dbClient, ctx, req.Key)
+	keyType, ttl := a.getKeyTypeAndTTL(client, ctx, req.Key)
 
 	detail := RedisKeyDetail{
 		Name:    req.Key,
@@ -311,30 +312,31 @@ func (a *App) RedisGetKeyDetail(req RedisKeyRequest) (RedisKeyDetail, error) {
 
 	switch keyType {
 	case "string":
-		val, err := dbClient.Get(ctx, req.Key).Result()
+		val, err := client.Get(ctx, req.Key).Result()
 		if err == nil {
-			detail.Value = []byte(fmt.Sprintf(`"%s"`, val))
+			data, _ := json.Marshal(val)
+			detail.Value = data
 		}
 	case "hash":
-		vals, err := dbClient.HGetAll(ctx, req.Key).Result()
+		vals, err := client.HGetAll(ctx, req.Key).Result()
 		if err == nil {
 			data, _ := json.Marshal(vals)
 			detail.Value = data
 		}
 	case "list":
-		vals, err := dbClient.LRange(ctx, req.Key, 0, -1).Result()
+		vals, err := client.LRange(ctx, req.Key, 0, -1).Result()
 		if err == nil {
 			data, _ := json.Marshal(vals)
 			detail.Value = data
 		}
 	case "set":
-		vals, err := dbClient.SMembers(ctx, req.Key).Result()
+		vals, err := client.SMembers(ctx, req.Key).Result()
 		if err == nil {
 			data, _ := json.Marshal(vals)
 			detail.Value = data
 		}
 	case "zset":
-		vals, err := dbClient.ZRangeByScoreWithScores(ctx, req.Key, &redis.ZRangeBy{Min: "-inf", Max: "+inf"}).Result()
+		vals, err := client.ZRangeByScoreWithScores(ctx, req.Key, &redis.ZRangeBy{Min: "-inf", Max: "+inf"}).Result()
 		if err == nil {
 			data, _ := json.Marshal(vals)
 			detail.Value = data
@@ -359,20 +361,18 @@ func (a *App) RedisExecute(req RedisExecuteRequest) (RedisCommandResult, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dbClient := redis.NewClient(&redis.Options{
-		Addr:     client.Options().Addr,
-		Password: client.Options().Password,
-		DB:       req.Database,
-		Username: client.Options().Username,
-	})
-	defer dbClient.Close()
+	// Switch to the requested database on the main connection
+	_, err := client.Do(ctx, "SELECT", req.Database).Result()
+	if err != nil {
+		return RedisCommandResult{}, fmt.Errorf("failed to select database: %w", err)
+	}
 
 	args := make([]interface{}, len(req.Args))
 	for i, arg := range req.Args {
 		args[i] = arg
 	}
 
-	result := dbClient.Do(ctx, append([]interface{}{req.Command}, args...)...)
+	result := client.Do(ctx, append([]interface{}{req.Command}, args...)...)
 	output, err := result.Result()
 	if err != nil {
 		return RedisCommandResult{}, err
@@ -397,13 +397,11 @@ func (a *App) RedisSetKey(req RedisSetKeyRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dbClient := redis.NewClient(&redis.Options{
-		Addr:     client.Options().Addr,
-		Password: client.Options().Password,
-		DB:       req.Database,
-		Username: client.Options().Username,
-	})
-	defer dbClient.Close()
+	// Switch to the requested database on the main connection
+	_, err := client.Do(ctx, "SELECT", req.Database).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to select database: %w", err)
+	}
 
 	var expiration time.Duration
 	if req.TTL != nil && *req.TTL > 0 {
@@ -413,7 +411,7 @@ func (a *App) RedisSetKey(req RedisSetKeyRequest) (string, error) {
 	var value interface{}
 	_ = json.Unmarshal(req.Value, &value)
 
-	err := dbClient.Set(ctx, req.Key, value, expiration).Err()
+	err = client.Set(ctx, req.Key, value, expiration).Err()
 	if err != nil {
 		return "", fmt.Errorf("failed to set key: %w", err)
 	}
@@ -434,15 +432,13 @@ func (a *App) RedisDeleteKey(req RedisKeyRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dbClient := redis.NewClient(&redis.Options{
-		Addr:     client.Options().Addr,
-		Password: client.Options().Password,
-		DB:       req.Database,
-		Username: client.Options().Username,
-	})
-	defer dbClient.Close()
+	// Switch to the requested database on the main connection
+	_, err := client.Do(ctx, "SELECT", req.Database).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to select database: %w", err)
+	}
 
-	err := dbClient.Del(ctx, req.Key).Err()
+	err = client.Del(ctx, req.Key).Err()
 	if err != nil {
 		return "", fmt.Errorf("failed to delete key: %w", err)
 	}
@@ -463,15 +459,13 @@ func (a *App) RedisDeleteKeys(req RedisDeleteKeysRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dbClient := redis.NewClient(&redis.Options{
-		Addr:     client.Options().Addr,
-		Password: client.Options().Password,
-		DB:       req.Database,
-		Username: client.Options().Username,
-	})
-	defer dbClient.Close()
+	// Switch to the requested database on the main connection
+	_, err := client.Do(ctx, "SELECT", req.Database).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to select database: %w", err)
+	}
 
-	err := dbClient.Del(ctx, req.Keys...).Err()
+	err = client.Del(ctx, req.Keys...).Err()
 	if err != nil {
 		return "", fmt.Errorf("failed to delete keys: %w", err)
 	}
@@ -492,16 +486,14 @@ func (a *App) RedisUpdateKeyTTL(req RedisUpdateTTLRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dbClient := redis.NewClient(&redis.Options{
-		Addr:     client.Options().Addr,
-		Password: client.Options().Password,
-		DB:       req.Database,
-		Username: client.Options().Username,
-	})
-	defer dbClient.Close()
+	// Switch to the requested database on the main connection
+	_, err := client.Do(ctx, "SELECT", req.Database).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to select database: %w", err)
+	}
 
 	expiration := time.Duration(req.TTL) * time.Second
-	err := dbClient.Expire(ctx, req.Key, expiration).Err()
+	err = client.Expire(ctx, req.Key, expiration).Err()
 	if err != nil {
 		return "", fmt.Errorf("failed to update TTL: %w", err)
 	}
