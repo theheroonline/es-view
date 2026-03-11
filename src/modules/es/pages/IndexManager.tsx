@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { createIndex, deleteIndex, getIndexInfo, refreshIndex } from "../services/client";
 
 export default function IndexManager() {
   const { t } = useTranslation();
-  const { activeConnection, selectedIndex, setSelectedIndex, refreshIndices, indicesMeta } = useAppContext();
+  const { activeConnection, selectedIndex, setSelectedIndex, refreshIndices, indicesMeta } = useElasticsearchContext();
   
   // Creation States
   const [showCreate, setShowCreate] = useState(false);

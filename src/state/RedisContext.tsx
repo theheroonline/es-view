@@ -1,7 +1,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { RedisConnection, RedisDatabaseInfo, RedisKeyDetail, RedisKeySummary } from "../modules/redis/types";
-import { useAppContext } from "./AppContext";
+import { useElasticsearchContext } from "./ElasticsearchContext";
 
 interface RedisContextValue {
   activeRedisConnection: RedisConnection | null;
@@ -28,7 +28,7 @@ interface RedisContextValue {
 const RedisContext = createContext<RedisContextValue | null>(null);
 
 export function RedisProvider({ children }: { children: ReactNode }) {
-  const { state, activeConnectionId } = useAppContext();
+  const { state, activeConnectionId } = useElasticsearchContext();
   const [databases, setDatabases] = useState<RedisDatabaseInfo[]>([]);
   const [selectedDatabase, setSelectedDatabase] = useState<number | null>(null);
   const [keyPattern, setKeyPattern] = useState("*");

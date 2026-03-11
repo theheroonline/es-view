@@ -1,7 +1,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { MysqlConnection } from "../modules/mysql/types";
-import { useAppContext } from "./AppContext";
+import { useElasticsearchContext } from "./ElasticsearchContext";
 
 export type MysqlFilterOperator =
   | "eq"
@@ -71,7 +71,7 @@ interface MysqlContextValue {
 const MysqlContext = createContext<MysqlContextValue | null>(null);
 
 export function MysqlProvider({ children }: { children: ReactNode }) {
-  const { state, activeConnectionId } = useAppContext();
+  const { state, activeConnectionId } = useElasticsearchContext();
   const [databases, setDatabases] = useState<string[]>([]);
   const [tablesByDb, setTablesByDb] = useState<Record<string, string[]>>({});
   const [expandedDatabase, setExpandedDatabase] = useState<string | null>(null);

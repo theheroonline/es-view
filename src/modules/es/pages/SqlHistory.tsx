@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 
 export default function SqlHistory() {
   const { t } = useTranslation();
-  const { state, clearHistory } = useAppContext();
+  const { state, clearHistory } = useElasticsearchContext();
 
   return (
     <div className="card">

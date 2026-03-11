@@ -18,7 +18,7 @@ import RedisBrowserPage from "./modules/redis/pages/Browser";
 import RedisConnectionsPage from "./modules/redis/pages/Connections";
 import RedisConsolePage from "./modules/redis/pages/Console";
 import { redisConnect, redisDisconnect, redisListDatabases } from "./modules/redis/services/client";
-import { AppProvider, useAppContext } from "./state/AppContext";
+import { ElasticsearchProvider, useElasticsearchContext } from "./state/ElasticsearchContext";
 import { getMysqlOpenedTableKey, MysqlProvider, useMysqlContext } from "./state/MysqlContext";
 import { RedisProvider, useRedisContext } from "./state/RedisContext";
 
@@ -26,13 +26,13 @@ type ConnectionStatus = "success" | "idle" | "failed";
 
 function App() {
   return (
-    <AppProvider>
+    <ElasticsearchProvider>
       <MysqlProvider>
         <RedisProvider>
           <AppLayout />
         </RedisProvider>
       </MysqlProvider>
-    </AppProvider>
+    </ElasticsearchProvider>
   );
 }
 
@@ -49,7 +49,7 @@ function AppLayout() {
     disconnectActiveConnection,
     deleteConnection,
     getConnectionById
-  } = useAppContext();
+  } = useElasticsearchContext();
 
   const {
     databases,

@@ -7,7 +7,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../../../components/FieldFilterButton";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { extractFieldsFromMapping, getIndexMapping, searchIndex } from "../services/client";
 
 const { RangePicker } = DatePicker;
@@ -36,7 +36,7 @@ const sqlQueryCacheByConnection = new Map<string, SqlQueryCacheState>();
 
 export default function SqlQuery() {
   const { t, i18n } = useTranslation();
-  const { activeConnection, addHistory, indices } = useAppContext();
+  const { activeConnection, addHistory, indices } = useElasticsearchContext();
   const [selectedIndex, setSelectedIndex] = useState<string | undefined>(undefined);
   const [operation, setOperation] = useState<SqlOperation>("select");
   const [availableFields, setAvailableFields] = useState<string[]>([]);

@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { AuthType, ConnectionProfile } from "../../../lib/types";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { pingCluster } from "../services/client";
 
 const emptyForm = {
@@ -23,7 +23,7 @@ export default function EsConnectionsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { state, activeConnectionId, saveConnection, deleteConnection, setActiveConnection, getConnectionById, refreshIndices, setSelectedIndex } = useAppContext();
+  const { state, activeConnectionId, saveConnection, deleteConnection, setActiveConnection, getConnectionById, refreshIndices, setSelectedIndex } = useElasticsearchContext();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success">("error");

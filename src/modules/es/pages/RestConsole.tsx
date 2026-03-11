@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { esRequestRaw } from "../services/client";
 
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"] as const;
@@ -36,7 +36,7 @@ type ScriptTemplate = {
 
 export default function RestConsole() {
   const { t } = useTranslation();
-  const { activeConnection } = useAppContext();
+  const { activeConnection } = useElasticsearchContext();
 
   const [method, setMethod] = useState<HttpMethod>("GET");
   const [path, setPath] = useState("/_cluster/health");

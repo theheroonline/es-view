@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { mysqlConnect, mysqlDisconnect } from "../services/client";
 import type { MysqlConnection } from "../types";
 
@@ -23,7 +23,7 @@ export default function MysqlConnectionsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { state, activeConnectionId, saveConnection, deleteConnection } = useAppContext();
+  const { state, activeConnectionId, saveConnection, deleteConnection } = useElasticsearchContext();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success">("error");

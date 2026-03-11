@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type 
 import { useTranslation } from "react-i18next";
 import { format as formatSql } from "sql-formatter";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { useMysqlContext } from "../../../state/MysqlContext";
 import { mysqlConnect, mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery, type MysqlQueryResult } from "../services/client";
 
@@ -179,7 +179,7 @@ function getVisibleColumns(columns: string[], preferred?: string[]) {
 
 export default function MysqlSqlQuery() {
   const { t } = useTranslation();
-  const { addHistory, activeConnectionId, setActiveConnection, state } = useAppContext();
+  const { addHistory, activeConnectionId, setActiveConnection, state } = useElasticsearchContext();
   const {
     activeMysqlConnection,
     databases,

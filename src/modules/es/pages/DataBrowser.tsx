@@ -7,7 +7,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../../../components/FieldFilterButton";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { deleteDocument, extractFieldsFromMapping, getIndexMapping, refreshIndex, searchIndex, updateDocument } from "../services/client";
 
 const { RangePicker } = DatePicker;
@@ -49,7 +49,7 @@ const dataBrowserCacheByConnection = new Map<string, DataBrowserCacheState>();
 
 export default function DataBrowser() {
   const { t, i18n } = useTranslation();
-  const { activeConnection, indices } = useAppContext();
+  const { activeConnection, indices } = useElasticsearchContext();
   const [selectedIndex, setSelectedIndex] = useState<string | undefined>(undefined);
   const [showQueryConditions, setShowQueryConditions] = useState(false);
   const [fields, setFields] = useState<string[]>([]);
@@ -466,19 +466,18 @@ export default function DataBrowser() {
     const from = (page - 1) * size;
     const sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
 
-    // 简化版：直接使用普通分页返回结果
-    if (from + size <= 10000) {
-      const body: Record<string, unknown> = {
-        from,
-        size,
-        query,
-        sort: sortParams,
-        track_total_hits: true
-      };
-      return await searchIndex(activeConnection, selectedIndex, body);
-    }
-
-    throw new Error(t('dataBrowser.deepPagingNotSupported'));
+    // Elasticsearch 限制：from + size 必须 <= 10000
+    // 自动查询只返回前 10000 条记录
+    // 如果用户需要查看更深的分页，使用手动查询按钮（支持 search_after）
+    const adjustedFrom = Math.min(from, 10000 - size);
+    const body: Record<string, unknown> = {
+      from: adjustedFrom,
+      size,
+      query,
+      sort: sortParams,
+      track_total_hits: true
+    };
+    return await searchIndex(activeConnection, selectedIndex, body);
   };
 
   const handleUpdateDoc = async () => {

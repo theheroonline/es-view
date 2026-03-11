@@ -17,7 +17,7 @@ const normalizeProfile = (profile: ConnectionProfile): ConnectionProfile => ({
   }
 });
 
-interface AppContextValue {
+interface ElasticsearchContextValue {
   state: LocalState;
   activeConnectionId?: string;
   saveConnection: (profile: ConnectionProfile, secret: SecretConfig) => Promise<void>;
@@ -44,9 +44,9 @@ const defaultState: LocalState = {
 
 const isSystemIndex = (name: string) => name.startsWith(".");
 
-const AppContext = createContext<AppContextValue | null>(null);
+const ElasticsearchContext = createContext<ElasticsearchContextValue | null>(null);
 
-export function AppProvider({ children }: { children: ReactNode }) {
+export function ElasticsearchProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LocalState>(defaultState);
   const [connectedConnectionId, setConnectedConnectionId] = useState<string | undefined>(undefined);
   const [selectedIndex, setSelectedIndexState] = useState<string | undefined>(undefined);
@@ -73,7 +73,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .catch((error) => {
         logError(error, {
-          source: "appContext.loadState",
+          source: "elasticsearchContext.loadState",
           message: "Failed to load local application state"
         });
         setState(defaultState);
@@ -248,7 +248,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     } catch (error) {
       logError(error, {
-        source: "appContext.refreshIndices",
+        source: "elasticsearchContext.refreshIndices",
         message: `Failed to refresh Elasticsearch indices for ${target.name}`
       });
       setIndices([]);
@@ -296,13 +296,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSelectedIndex
   }), [state, connectedConnectionId, saveConnection, deleteConnection, setActiveConnection, disconnectActiveConnection, addHistory, clearHistory, activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex]);
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return <ElasticsearchContext.Provider value={value}>{children}</ElasticsearchContext.Provider>;
 }
 
-export function useAppContext() {
-  const ctx = useContext(AppContext);
+export function useElasticsearchContext() {
+  const ctx = useContext(ElasticsearchContext);
   if (!ctx) {
-    throw new Error("AppContext 未初始化");
+    throw new Error("ElasticsearchContext 未初始化");
   }
   return ctx;
 }
