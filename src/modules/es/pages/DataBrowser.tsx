@@ -77,9 +77,7 @@ export default function DataBrowser() {
     y: 0,
     row: null
   });
-  const [showIndexDropdown, setShowIndexDropdown] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const indexDropdownRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const skipNextAutoQueryRef = useRef(false);
 
@@ -98,17 +96,6 @@ export default function DataBrowser() {
   useEffect(() => {
     dayjs.locale(i18n.language === "zh" ? "zh-cn" : "en");
   }, [i18n.language]);
-
-  // Close index dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (indexDropdownRef.current && !indexDropdownRef.current.contains(e.target as Node)) {
-        setShowIndexDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -587,12 +574,8 @@ export default function DataBrowser() {
 
     // 构建排序参数，从activeSorts中获取
     let sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
-    if (sortParams.length === 0) {
-      sortParams = [{ _id: { order: "asc" } }];
-    } else {
-      // 添加 _id 作为最后的排序字段，确保 search_after 的稳定性
-      sortParams.push({ _id: { order: "asc" } });
-    }
+    // 注意：不对 _id 字段排序，因为 Elasticsearch 7.0+ 禁用了 _id 的 fielddata 访问
+    // 如果没有其他排序字段，Elasticsearch 会自动保持插入顺序或使用内部排序
 
     try {
       // 如果 from + size <= 10000，使用普通分页
@@ -808,152 +791,59 @@ export default function DataBrowser() {
       <div className="page" style={{ flex: 1, minHeight: 0, height: '100%' }}>
       <div className="card" style={{ flex: '0 0 auto' }}>
         <div className="card-body" style={{ display: 'grid', gap: '12px' }}>
-          <div className="module-toolbar-grid">
-            <div className="module-toolbar-field">
+          <div className="module-toolbar-grid" style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+            <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
               <label>{t('dataBrowser.selectIndex')}</label>
-              <div 
-                ref={indexDropdownRef}
-                style={{ 
-                  position: 'relative',
-                  minWidth: 0
-                }}
-              >
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <button
-                onClick={() => setShowIndexDropdown(!showIndexDropdown)}
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '8px',
-                  background: 'white',
-                  padding: '10px 12px',
-                  paddingRight: selectedIndex ? '36px' : '32px',
-                  borderRadius: '8px',
-                  border: selectedIndex ? '2px solid #3b82f6' : '2px solid #e2e8f0',
-                  width: '100%',
-                  fontSize: '14px',
-                  fontWeight: selectedIndex ? '600' : '400',
-                  color: selectedIndex ? '#1e293b' : '#94a3b8',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textAlign: 'left'
-                }}
-              >
-                <span style={{ fontSize: '18px' }}>📑</span>
-                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {selectedIndex || t('dataBrowser.selectIndexPlaceholder')}
-                </span>
-                <span style={{ fontSize: '12px', opacity: 0.5 }}>
-                  {showIndexDropdown ? '▲' : '▼'}
-                </span>
-              </button>
-
-              {selectedIndex && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleIndexChange("");
-                  }}
-                  style={{
-                    position: 'absolute',
-                    right: '32px',
-                    background: '#f1f5f9',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: '18px',
-                    height: '18px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '10px',
-                    color: '#64748b',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    zIndex: 2
-                  }}
-                  title={t('common.clear')}
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '200px' }}>
+                <select
+                  className="form-control"
+                  value={selectedIndex ?? ""}
+                  onChange={(event) => handleIndexChange(event.target.value)}
+                  style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
                 >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {showIndexDropdown && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  marginTop: '4px',
-                  background: 'white',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
-                  maxHeight: '400px',
-                  overflowY: 'auto',
-                  zIndex: 1000,
-                }}
-              >
-                {indices.length === 0 ? (
-                  <div style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '13px' }}>
-                    {t('dataBrowser.noIndices')}
-                  </div>
-                ) : (
-                  indices
-                    .filter((item) => !item.startsWith('.')) // 过滤掉 ES 系统索引
+                  <option value="">{t('dataBrowser.selectIndexPlaceholder')}</option>
+                  {indices
+                    .filter((item) => !item.startsWith('.'))
                     .sort()
                     .map((item) => (
-                    <button
-                      key={item}
-                      onClick={() => {
-                        handleIndexChange(item);
-                        setShowIndexDropdown(false);
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        width: '100%',
-                        padding: '10px 16px',
-                        background: selectedIndex === item ? '#eff6ff' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        fontSize: '14px',
-                        color: selectedIndex === item ? '#1e40af' : '#334155',
-                        fontWeight: selectedIndex === item ? '600' : '400',
-                        transition: 'background 0.15s',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedIndex !== item) {
-                          (e.currentTarget as HTMLElement).style.background = '#f1f5f9';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedIndex !== item) {
-                          (e.currentTarget as HTMLElement).style.background = 'transparent';
-                        }
-                      }}
-                    >
-                      {selectedIndex === item && <span>✓</span>}
-                      {selectedIndex !== item && <span style={{ width: '16px' }}></span>}
-                      <span>{item}</span>
-                    </button>
-                  ))
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                </select>
+                {selectedIndex && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleIndexChange("");
+                    }}
+                    className="btn-clear"
+                    style={{
+                      position: 'absolute',
+                      right: '24px',
+                      background: 'none',
+                      border: 'none',
+                      color: '#86868b',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title={t('common.clear')}
+                  >
+                    ✕
+                  </button>
                 )}
               </div>
-            )}
-          </div>
             </div>
-          </div>
-          <div className="module-toolbar-actions">
-            <button className="btn btn-primary btn-sm" onClick={execute} disabled={loading}>
-              <span>{loading ? '⏳' : '🔍'}</span> {loading ? t('dataBrowser.querying') : t('dataBrowser.query')}
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={() => addCondition()} disabled={loading}>
-              <span>+</span> {t('dataBrowser.addCondition')}
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn btn-primary btn-sm" onClick={execute} disabled={loading}>
+                <span>{loading ? '⏳' : '🔍'}</span> {loading ? t('dataBrowser.querying') : t('dataBrowser.query')}
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => addCondition()} disabled={loading}>
+                <span>🔎</span> {t('dataBrowser.filter')}
+              </button>
+            </div>
           </div>
         </div>
       </div>

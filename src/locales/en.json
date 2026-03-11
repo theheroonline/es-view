@@ -43,6 +43,7 @@
     "query": "Search",
     "querying": "Searching...",
     "addCondition": "Add",
+    "filter": "Filter",
     "queryResult": "Query Results",
     "noIndices": "No indices",
     "type": "Type",

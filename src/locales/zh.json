@@ -43,6 +43,7 @@
     "query": "查询",
     "querying": "查询中...",
     "addCondition": "添加",
+    "filter": "筛选",
     "queryResult": "查询结果",
     "noIndices": "暂无索引",
     "type": "类型",
