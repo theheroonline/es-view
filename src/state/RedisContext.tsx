@@ -31,7 +31,7 @@ export function RedisProvider({ children }: { children: ReactNode }) {
   const { state, activeConnectionId } = useElasticsearchContext();
   const [databases, setDatabases] = useState<RedisDatabaseInfo[]>([]);
   const [selectedDatabase, setSelectedDatabase] = useState<number | null>(null);
-  const [keyPattern, setKeyPattern] = useState("*");
+  const [keyPattern, setKeyPattern] = useState("");
   const [scannedKeys, setScannedKeys] = useState<RedisKeySummary[]>([]);
   const [nextCursor, setNextCursor] = useState("0");
   const [hasMoreKeys, setHasMoreKeys] = useState(false);
@@ -71,7 +71,7 @@ export function RedisProvider({ children }: { children: ReactNode }) {
   const resetRedisWorkspace = useCallback(() => {
     setDatabases([]);
     setSelectedDatabase(null);
-    setKeyPattern("*");
+    setKeyPattern("");
     setScannedKeys([]);
     setNextCursor("0");
     setHasMoreKeys(false);

@@ -108,10 +108,21 @@ export default function RedisBrowserPage() {
     setLoadingKeys(true);
     setError("");
     try {
+      // 自动在搜索值前后加 *，如果前后已有 * 则不加
+      let searchPattern = keyPattern || "*";
+      if (searchPattern !== "*") {
+        if (!searchPattern.startsWith("*")) {
+          searchPattern = "*" + searchPattern;
+        }
+        if (!searchPattern.endsWith("*")) {
+          searchPattern = searchPattern + "*";
+        }
+      }
+
       const result = await redisScanKeys(
         activeRedisConnection.id,
         currentDatabase,
-        keyPattern || "*",
+        searchPattern,
         reset ? "0" : nextCursor,
         scanCount,
       );
@@ -154,8 +165,18 @@ export default function RedisBrowserPage() {
       return;
     }
 
+    // 切换数据库或批次大小时自动加载数据（用 * 搜索全部）
     void loadKeys(true);
   }, [activeRedisConnection?.id, currentDatabase, scanCount]);
+
+  useEffect(() => {
+    if (!activeRedisConnection) {
+      return;
+    }
+
+    // 搜索框变动时自动搜索
+    void loadKeys(true);
+  }, [keyPattern]);
 
   useEffect(() => {
     setLiveTtlMs(selectedKeyDetail?.ttlMs ?? null);
