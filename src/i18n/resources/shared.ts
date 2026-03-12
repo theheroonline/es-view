@@ -1,6 +1,7 @@
 export const sharedResources = {
   en: {
     common: {
+      ok: "OK",
       confirm: "Confirm",
       cancel: "Cancel",
       delete: "Delete",
@@ -107,6 +108,7 @@ export const sharedResources = {
   },
   zh: {
     common: {
+      ok: "确定",
       confirm: "确认",
       cancel: "取消",
       delete: "删除",

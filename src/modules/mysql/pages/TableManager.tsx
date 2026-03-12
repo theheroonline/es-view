@@ -207,6 +207,7 @@ export default function MysqlTableManager() {
   const [selectedOverviewTables, setSelectedOverviewTables] = useState<string[]>([]);
   const [overviewSelectionAnchor, setOverviewSelectionAnchor] = useState<string | null>(null);
   const [exportSelectionModal, setExportSelectionModal] = useState<ExportSelectionModalState | null>(null);
+  const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
   const selectedOverviewTablesRef = useRef<string[]>([]);
 
   // Data browsing state
@@ -1586,7 +1587,7 @@ export default function MysqlTableManager() {
     try {
       const message = await mysqlExportDatabase(connectionId, database, includeData);
       if (message) {
-        window.alert(message);
+        setExportSuccessMessage(message);
       }
     } catch (err) {
       logError(err, {
@@ -1606,7 +1607,7 @@ export default function MysqlTableManager() {
       await refreshDatabases();
       await refreshTablesForDb(database);
       if (message) {
-        window.alert(message);
+        setExportSuccessMessage(message);
       }
     } catch (err) {
       logError(err, {
@@ -1624,7 +1625,7 @@ export default function MysqlTableManager() {
     try {
       const message = await mysqlExportTable(connectionId, database, table, includeData);
       if (message) {
-        window.alert(message);
+        setExportSuccessMessage(message);
       }
     } catch (err) {
       logError(err, {
@@ -1642,7 +1643,7 @@ export default function MysqlTableManager() {
     try {
       const message = await mysqlExportTables(connectionId, database, tables, includeData);
       if (message) {
-        window.alert(message);
+        setExportSuccessMessage(message);
       }
       return true;
     } catch (err) {
@@ -3417,6 +3418,25 @@ export default function MysqlTableManager() {
                 {sqlModalLoading ? t("common.loading") : t("mysql.query.execute")}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {exportSuccessMessage && (
+        <div className="export-success-overlay" onClick={() => setExportSuccessMessage(null)}>
+          <div className="export-success-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="export-success-icon">💾</div>
+            <h3 className="export-success-title">{t("mysql.tableManager.exportSuccess")}</h3>
+            <p className="export-success-message">
+              {t("mysql.tableManager.exportedSuccessfully", { path: exportSuccessMessage })}
+            </p>
+            <button
+              type="button"
+              className="export-success-button"
+              onClick={() => setExportSuccessMessage(null)}
+            >
+              {t("common.ok")}
+            </button>
           </div>
         </div>
       )}
