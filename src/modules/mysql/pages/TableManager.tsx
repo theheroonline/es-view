@@ -274,6 +274,8 @@ export default function MysqlTableManager() {
   const [selectedCells, setSelectedCells] = useState<SelectedCell[]>([]);
   const [selectionAnchor, setSelectionAnchor] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
   const [editError, setEditError] = useState("");
+  const [newRowDraft, setNewRowDraft] = useState<{ json: string; isEditing: boolean } | null>(null);
+  const [newRowError, setNewRowError] = useState("");
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [sortModalOpen, setSortModalOpen] = useState(false);
   const [columnMenuOpen, setColumnMenuOpen] = useState(false);
@@ -1493,6 +1495,73 @@ export default function MysqlTableManager() {
     }
   };
 
+  // ─── Add new row ───
+
+  const handleAddNewRow = () => {
+    if (!selectedTableInfo) return;
+    // Initialize empty row with all columns set to null
+    const newRow: Record<string, unknown> = {};
+    dataState.columns.forEach((col) => {
+      newRow[col] = null;
+    });
+    setNewRowDraft({
+      json: JSON.stringify(newRow, null, 2),
+      isEditing: true
+    });
+    setNewRowError("");
+  };
+
+  const handleSaveNewRow = async () => {
+    if (!newRowDraft || !connectionId || !selectedTableInfo) return;
+    const { database: db, table } = selectedTableInfo;
+
+    try {
+      const data = JSON.parse(newRowDraft.json) as Record<string, unknown>;
+
+      // Filter out null values - let database use defaults
+      const insertColumns: string[] = [];
+      const insertValues: string[] = [];
+
+      for (const [col, val] of Object.entries(data)) {
+        if (val === null) {
+          continue; // Skip null values to use database defaults
+        }
+
+        insertColumns.push(`\`${col}\``);
+        if (typeof val === "number") {
+          insertValues.push(String(val));
+        } else if (typeof val === "boolean") {
+          insertValues.push(val ? "1" : "0");
+        } else {
+          insertValues.push(`'${String(val).replace(/'/g, "''")}'`);
+        }
+      }
+
+      if (insertColumns.length === 0) {
+        // If all values are null, use default INSERT for one column
+        insertColumns.push(`\`${dataState.columns[0] ?? "id"}\``);
+        insertValues.push("DEFAULT");
+      }
+
+      const sql = `INSERT INTO \`${db}\`.\`${table}\` (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`;
+      await mysqlQuery(connectionId, sql);
+      setNewRowDraft(null);
+      setNewRowError("");
+      await fetchData();
+    } catch (err) {
+      logError(err, {
+        source: "mysqlTableManager.addNewRow",
+        message: `Failed to insert row into ${selectedTableInfo.database}.${selectedTableInfo.table}`
+      });
+      setNewRowError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleCancelNewRow = () => {
+    setNewRowDraft(null);
+    setNewRowError("");
+  };
+
   // ─── Table operations ───
 
   const handleDropTable = async (db: string, table: string) => {
@@ -2390,6 +2459,12 @@ export default function MysqlTableManager() {
           <div className="tm-toolbar-actions">
             <button
               className="btn btn-sm btn-ghost"
+              onClick={handleAddNewRow}
+            >
+              {t("mysql.tableManager.addNewRow")}
+            </button>
+            <button
+              className="btn btn-sm btn-ghost"
               onClick={() => {
                 syncFilterDraftFromOpenedTable(activeOpenedTable, dataState.columns);
                 setFilterPanelOpen((prev) => !prev);
@@ -2578,11 +2653,39 @@ export default function MysqlTableManager() {
                   </td>
                 </tr>
               )}
+              {newRowDraft?.isEditing && (
+                <tr key="new-row-draft" className="tm-new-row-editing">
+                  <td colSpan={visibleDataColumns.length + 2}>
+                    <div className="tm-new-row-editor">
+                      <textarea
+                        className="form-control tm-new-row-textarea"
+                        value={newRowDraft.json}
+                        onChange={(e) => setNewRowDraft({ ...newRowDraft, json: e.target.value })}
+                        placeholder={t("mysql.tableManager.enterRowDataJson")}
+                        rows={Math.max(3, newRowDraft.json.split("\n").length)}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* New row error */}
+        {newRowError && (
+          <div className="text-danger tm-inline-error">
+            {newRowError}
+          </div>
+        )}
+
+        {/* New row actions */}
+        {newRowDraft?.isEditing && (
+          <div className="tm-new-row-actions">
+            <button className="btn btn-sm btn-ghost" onClick={handleCancelNewRow}>{t("common.cancel")}</button>
+            <button className="btn btn-sm btn-primary" onClick={handleSaveNewRow}>{t("common.save")}</button>
+          </div>
+        )}
         <div className="tm-pagination">
           <div className="tm-pagination-group">
             <span>{t("dataBrowser.pageSize")}:</span>
