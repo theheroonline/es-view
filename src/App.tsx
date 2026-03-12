@@ -160,17 +160,6 @@ function AppLayout() {
           {connection.activeEngineLabel}
         </span>
       ) : null}
-      <button
-        className="btn btn-sm btn-ghost"
-        onClick={() => {
-          void i18n.changeLanguage(i18n.language === "zh" ? "en" : "zh");
-        }}
-        title={t("app.switchLanguageTitle", {
-          language: i18n.language === "zh" ? t("common.english") : t("common.chinese"),
-        })}
-      >
-        {i18n.language === "zh" ? "EN" : "中"}
-      </button>
     </>
   );
 
@@ -253,15 +242,29 @@ function AppLayout() {
   );
 
   const sidebarFooter = (
-    <button
-      type="button"
-      className="mdb-sidebar-footer-button"
-      onClick={() => setIsErrorLogOpen(true)}
-      title={t("errorLog.open")}
-    >
-      <span>{t("errorLog.button")}</span>
-      <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
-    </button>
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <button
+        type="button"
+        className="mdb-sidebar-footer-button"
+        onClick={() => setIsErrorLogOpen(true)}
+        title={t("errorLog.open")}
+      >
+        <span>{t("errorLog.button")}</span>
+        <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
+      </button>
+      <button
+        className="btn btn-sm btn-ghost"
+        onClick={() => {
+          void i18n.changeLanguage(i18n.language === "zh" ? "en" : "zh");
+        }}
+        title={t("app.switchLanguageTitle", {
+          language: i18n.language === "zh" ? t("common.english") : t("common.chinese"),
+        })}
+        style={{ width: "100%" }}
+      >
+        {i18n.language === "zh" ? "EN" : "中"}
+      </button>
+    </div>
   );
 
   const workspace = (

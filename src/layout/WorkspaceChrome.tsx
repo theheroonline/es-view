@@ -29,9 +29,6 @@ export default function WorkspaceChrome({
     <div className="mdb-layout">
       <header className="mdb-topbar">
         <div className="mdb-topbar-left">
-          <button type="button" className="mdb-chrome-button" onClick={onToggleSidebar}>
-            {isSidebarCollapsed ? "▶" : "◀"}
-          </button>
           <div className="mdb-brand-block">
             <div className="mdb-brand">{brand}</div>
             <div className="mdb-window-hint">{windowHint}</div>
@@ -41,6 +38,9 @@ export default function WorkspaceChrome({
       </header>
 
       <div className={`mdb-main ${isSidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
+        <button type="button" className="mdb-sidebar-toggle-button" onClick={onToggleSidebar}>
+          {isSidebarCollapsed ? "▶" : "◀"}
+        </button>
         <aside className={`mdb-sidebar ${isSidebarCollapsed ? "is-hidden" : ""}`}>
           <div className="mdb-sidebar-body">{sidebarContent}</div>
           {sidebarFooter ? <div className="mdb-sidebar-footer">{sidebarFooter}</div> : null}

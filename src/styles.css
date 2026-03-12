@@ -37,7 +37,7 @@ body {
 
 .mdb-topbar {
   height: var(--chrome-height);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -133,6 +133,7 @@ body {
   min-height: 0;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   transition: grid-template-columns 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  position: relative;
 }
 
 .mdb-main.is-sidebar-collapsed {
@@ -151,6 +152,38 @@ body {
   padding: 10px 8px 8px;
   transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+.mdb-sidebar-toggle-button {
+  position: absolute;
+  left: var(--sidebar-width);
+  top: 50%;
+  transform: translateY(-50%) translateX(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c3cfdb;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #edf3f8 100%);
+  color: #314458;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.88) inset, 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 20;
+  transition: all 0.2s ease;
+  font-size: 12px;
+  padding: 0;
+}
+
+.mdb-main.is-sidebar-collapsed .mdb-sidebar-toggle-button {
+  left: 0;
+}
+
+.mdb-sidebar-toggle-button:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #e8eef6 100%);
+  border-color: #b6c4d3;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.88) inset, 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .mdb-sidebar.is-hidden {
