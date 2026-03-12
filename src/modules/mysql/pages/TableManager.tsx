@@ -232,6 +232,7 @@ export default function MysqlTableManager() {
   const [createTableError, setCreateTableError] = useState("");
   const [createTableLoading, setCreateTableLoading] = useState(false);
   const [createTableSuccess, setCreateTableSuccess] = useState<string | null>(null);
+  const [selectedEditingRowId, setSelectedEditingRowId] = useState<string | null>(null);
   const [editingRows, setEditingRows] = useState<Array<{
     id: string;
     name: string;
@@ -243,6 +244,9 @@ export default function MysqlTableManager() {
     isPrimary: boolean;
     autoIncrement: boolean;
     comment: string;
+    timestampDefault?: "none" | "current_timestamp";
+    timestampOnUpdate?: boolean;
+    extraAttributes?: string;
   }>>([{
     id: Date.now().toString(),
     name: "",
@@ -253,7 +257,10 @@ export default function MysqlTableManager() {
     defaultValue: "",
     isPrimary: false,
     autoIncrement: false,
-    comment: ""
+    comment: "",
+    timestampDefault: "none",
+    timestampOnUpdate: false,
+    extraAttributes: ""
   }]);
   const selectedOverviewTablesRef = useRef<string[]>([]);
 
@@ -1673,7 +1680,10 @@ export default function MysqlTableManager() {
       defaultValue: "",
       isPrimary: false,
       autoIncrement: false,
-      comment: ""
+      comment: "",
+      timestampDefault: "none",
+      timestampOnUpdate: false,
+      extraAttributes: ""
     }]);
   }, [editingRows]);
 
@@ -1688,6 +1698,27 @@ export default function MysqlTableManager() {
 
   const handleDeleteEditingRow = useCallback((rowId: string) => {
     setEditingRows(editingRows.filter(row => row.id !== rowId));
+    if (selectedEditingRowId === rowId) {
+      setSelectedEditingRowId(null);
+    }
+  }, [editingRows, selectedEditingRowId]);
+
+  const handleMoveEditingRowUp = useCallback((rowId: string) => {
+    const index = editingRows.findIndex(row => row.id === rowId);
+    if (index <= 0) return;
+
+    const newRows = [...editingRows];
+    [newRows[index - 1], newRows[index]] = [newRows[index], newRows[index - 1]];
+    setEditingRows(newRows);
+  }, [editingRows]);
+
+  const handleMoveEditingRowDown = useCallback((rowId: string) => {
+    const index = editingRows.findIndex(row => row.id === rowId);
+    if (index < 0 || index >= editingRows.length - 1) return;
+
+    const newRows = [...editingRows];
+    [newRows[index], newRows[index + 1]] = [newRows[index + 1], newRows[index]];
+    setEditingRows(newRows);
   }, [editingRows]);
 
   // 列名自动切换类型和默认值
@@ -1763,7 +1794,23 @@ export default function MysqlTableManager() {
         def += " NOT NULL";
       }
 
-      if (col.defaultValue) {
+      // Handle timestamp-specific properties
+      if (col.type === "timestamp" || col.type === "datetime") {
+        const tsProps = col as any;
+        if (tsProps.timestampDefault === "current_timestamp") {
+          def += " DEFAULT CURRENT_TIMESTAMP";
+        } else if (col.defaultValue) {
+          if (col.defaultValue.toUpperCase() === "CURRENT_TIMESTAMP") {
+            def += " DEFAULT CURRENT_TIMESTAMP";
+          } else {
+            def += ` DEFAULT '${col.defaultValue.replace(/'/g, "''")}'`;
+          }
+        }
+
+        if (tsProps.timestampOnUpdate) {
+          def += " ON UPDATE CURRENT_TIMESTAMP";
+        }
+      } else if (col.defaultValue) {
         if (col.defaultValue.toUpperCase() === "CURRENT_TIMESTAMP") {
           def += " DEFAULT CURRENT_TIMESTAMP";
         } else {
@@ -1781,6 +1828,11 @@ export default function MysqlTableManager() {
 
       if (col.comment) {
         def += ` COMMENT '${col.comment.replace(/'/g, "''")}'`;
+      }
+
+      // Add extra attributes
+      if ((col as any).extraAttributes) {
+        def += ` ${(col as any).extraAttributes}`;
       }
 
       return def;
@@ -1812,8 +1864,11 @@ export default function MysqlTableManager() {
         defaultValue: row.defaultValue,
         isPrimary: row.isPrimary,
         autoIncrement: row.autoIncrement,
-        comment: row.comment
-      }));
+        comment: row.comment,
+        timestampDefault: row.timestampDefault,
+        timestampOnUpdate: row.timestampOnUpdate,
+        extraAttributes: row.extraAttributes
+      } as any));
 
     // 合并已有列和编辑行中有效的列
     const allColumns = [...createTableModal.columns, ...editingColumnsToAdd];
@@ -1860,6 +1915,7 @@ export default function MysqlTableManager() {
 
       setCreateTableSuccess(tableName);
       setCreateTableModal(null);
+      setSelectedEditingRowId(null);
       setEditingRows([{
         id: Date.now().toString(),
         name: "",
@@ -1870,7 +1926,10 @@ export default function MysqlTableManager() {
         defaultValue: "",
         isPrimary: false,
         autoIncrement: false,
-        comment: ""
+        comment: "",
+        timestampDefault: "none",
+        timestampOnUpdate: false,
+        extraAttributes: ""
       }]);
     } catch (err) {
       logError(err, {
@@ -2651,6 +2710,22 @@ export default function MysqlTableManager() {
                   engine: "InnoDB"
                 });
                 setCreateTableError("");
+                setSelectedEditingRowId(null);
+                setEditingRows([{
+                  id: Date.now().toString(),
+                  name: "",
+                  type: "varchar",
+                  length: "255",
+                  scale: "",
+                  nullable: true,
+                  defaultValue: "",
+                  isPrimary: false,
+                  autoIncrement: false,
+                  comment: "",
+                  timestampDefault: "none",
+                  timestampOnUpdate: false,
+                  extraAttributes: ""
+                }]);
               }}
             >
               {t("mysql.tableManager.createTable")}
@@ -3800,7 +3875,11 @@ export default function MysqlTableManager() {
 
                       {/* Editing rows */}
                       {editingRows.map((row) => (
-                        <tr key={row.id} className="mysql-create-table-new-row">
+                        <tr
+                          key={row.id}
+                          className="mysql-create-table-new-row"
+                          onClick={() => setSelectedEditingRowId(row.id)}
+                        >
                           <td>
                             <input
                               className="form-control"
@@ -3913,6 +3992,28 @@ export default function MysqlTableManager() {
                           </td>
                           <td className="tm-actions-cell">
                             <button
+                              className="btn btn-sm btn-ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveEditingRowUp(row.id);
+                              }}
+                              disabled={createTableLoading || editingRows.findIndex(r => r.id === row.id) === 0}
+                              title="上移"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              className="btn btn-sm btn-ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveEditingRowDown(row.id);
+                              }}
+                              disabled={createTableLoading || editingRows.findIndex(r => r.id === row.id) === editingRows.length - 1}
+                              title="下移"
+                            >
+                              ↓
+                            </button>
+                            <button
                               className="btn btn-sm btn-ghost text-danger"
                               onClick={() => handleDeleteEditingRow(row.id)}
                               disabled={createTableLoading}
@@ -3930,21 +4031,42 @@ export default function MysqlTableManager() {
             </div>
 
             {/* Footer */}
-            <div className="modal-card-footer">
-              <button
-                className="btn btn-sm btn-ghost"
-                onClick={() => setCreateTableModal(null)}
-                disabled={createTableLoading}
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={handleCreateTable}
-                disabled={createTableLoading || !createTableModal.tableName.trim() || (createTableModal.columns.length === 0 && editingRows.filter(r => r.name.trim()).length === 0)}
-              >
-                {createTableLoading ? t("common.loading") : "💾 " + t("common.save")}
-              </button>
+            <div className="modal-card-footer" style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+              {/* Extra attributes input on the left */}
+              {selectedEditingRowId && editingRows.find(r => r.id === selectedEditingRowId) && (
+                <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center" }}>
+                  <label style={{ fontSize: "12px", color: "#666", whiteSpace: "nowrap" }}>额外属性:</label>
+                  <input
+                    className="form-control"
+                    type="text"
+                    value={(editingRows.find(r => r.id === selectedEditingRowId) as any)?.extraAttributes || ""}
+                    onChange={(e) => setEditingRows(editingRows.map(r =>
+                      r.id === selectedEditingRowId ? { ...r, extraAttributes: e.target.value } as any : r
+                    ))}
+                    placeholder="e.g., DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+                    disabled={createTableLoading}
+                    style={{ fontSize: "12px", flex: 1 }}
+                  />
+                </div>
+              )}
+
+              {/* Buttons on the right */}
+              <div style={{ display: "flex", gap: "8px", marginLeft: "auto" }}>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => setCreateTableModal(null)}
+                  disabled={createTableLoading}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={handleCreateTable}
+                  disabled={createTableLoading || !createTableModal.tableName.trim() || (createTableModal.columns.length === 0 && editingRows.filter(r => r.name.trim()).length === 0)}
+                >
+                  {createTableLoading ? t("common.loading") : "💾 " + t("common.save")}
+                </button>
+              </div>
             </div>
           </div>
         </div>
