@@ -2515,3 +2515,200 @@ input:checked + .slider:before {
   background: #1d4ed8;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
 }
+
+.create-table-new-row {
+  background-color: #f5f8fc;
+}
+
+.create-table-new-row td {
+  padding: 0;
+  border: none;
+}
+
+.create-table-new-row button {
+  border-top: 1px solid #e5e5ea;
+  border-radius: 0;
+}
+
+/* MySQL Create Table Modal - New Professional Style */
+.modal-card-fullscreen {
+  position: fixed;
+  top: 10%;
+  left: 10%;
+  right: 10%;
+  bottom: 10%;
+  width: auto;
+  max-width: none;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+}
+
+.mysql-create-table-header {
+  padding: 20px;
+  background: #fafbfc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.mysql-create-table-basic-info {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 20px;
+}
+
+.mysql-create-table-basic-info > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mysql-create-table-basic-info label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mysql-create-table-toolbar {
+  padding: 12px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mysql-create-table-content {
+  flex: 1;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.mysql-create-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.mysql-create-table thead {
+  background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.mysql-create-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: #475569;
+  border-bottom: 2px solid #e2e8f0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mysql-create-table tbody tr {
+  border-bottom: 1px solid #e2e8f0;
+  transition: background-color 0.2s ease;
+}
+
+.mysql-create-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.mysql-create-table tbody tr.mysql-create-table-row-primary {
+  background-color: #eff6ff;
+}
+
+.mysql-create-table tbody tr.mysql-create-table-row-primary:hover {
+  background-color: #e0f2fe;
+}
+
+.mysql-create-table td {
+  padding: 14px 16px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.mysql-create-table-field-name {
+  font-weight: 500;
+  color: #1e293b;
+  font-family: "Courier New", monospace;
+}
+
+.mysql-create-table td input[type="checkbox"],
+.mysql-create-table td input[type="text"],
+.mysql-create-table td select {
+  margin: 0;
+}
+
+.mysql-create-table td input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+
+.mysql-create-table .pill {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mysql-create-table .tm-actions-cell {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.mysql-create-table td input[type="text"],
+.mysql-create-table td select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.mysql-create-table td input[type="text"]:focus,
+.mysql-create-table td select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.mysql-create-table .pill {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mysql-create-table .tm-actions-cell {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.mysql-create-table-new-row {
+  background-color: #fffbeb;
+}
+
+.mysql-create-table-new-row:hover {
+  background-color: #fef3c7;
+}
+
+.mysql-create-table-new-row td {
+  padding: 10px 16px;
+}
