@@ -10,7 +10,7 @@ import { redisDeleteKey, redisDeleteKeys, redisGetKeyDetail, redisListDatabases,
 import type { RedisSetKeyRequest } from "../types";
 import { formatTtl, isEditableKeyType } from "../utils";
 
-const SCAN_COUNT_OPTIONS = [100, 200, 500];
+const SCAN_COUNT_OPTIONS = [10, 30, 50, 100, 200, 500];
 
 export default function RedisBrowserPage() {
   const { t } = useTranslation();
@@ -360,7 +360,7 @@ export default function RedisBrowserPage() {
         </div>
 
         <div style={{ padding: "12px 16px", display: "grid", gap: "12px", flexShrink: 0 }}>
-          <div className="module-toolbar-grid">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="module-toolbar-field">
               <label>DB</label>
               <select className="form-control" value={currentDatabase} onChange={(event) => setSelectedDatabase(Number(event.target.value))}>
@@ -372,17 +372,17 @@ export default function RedisBrowserPage() {
               </select>
             </div>
             <div className="module-toolbar-field">
-              <label>{t("common.search")}</label>
-              <input className="form-control" value={keyPattern} onChange={(event) => setKeyPattern(event.target.value)} placeholder={t("redis.browser.patternPlaceholder")} />
-            </div>
-            <div className="module-toolbar-field">
               <label>{t("redis.browser.batchSize", { count: scanCount })}</label>
-              <select className="form-control redis-scan-count-select" value={scanCount} onChange={(event) => setScanCount(Number(event.target.value))}>
+              <select className="form-control" value={scanCount} onChange={(event) => setScanCount(Number(event.target.value))}>
                 {SCAN_COUNT_OPTIONS.map((item) => (
                   <option key={item} value={item}>{t("redis.browser.batchSize", { count: item })}</option>
                 ))}
               </select>
             </div>
+          </div>
+          <div className="module-toolbar-field">
+            <label>{t("common.search")}</label>
+            <input className="form-control" value={keyPattern} onChange={(event) => setKeyPattern(event.target.value)} placeholder={t("redis.browser.patternPlaceholder")} />
           </div>
           <div className="redis-toolbar-button-grid">
             <button className="btn btn-primary" onClick={openCreateEditor}>
@@ -416,8 +416,8 @@ export default function RedisBrowserPage() {
               <tr>
                 <th style={{ width: "44px" }} />
                 <th>{t("redis.browser.key")}</th>
-                <th style={{ width: "110px" }}>{t("redis.browser.type")}</th>
-                <th style={{ width: "110px" }}>{t("redis.browser.ttl")}</th>
+                <th>{t("redis.browser.type")}</th>
+                <th>{t("redis.browser.ttl")}</th>
               </tr>
             </thead>
             <tbody>
@@ -439,13 +439,6 @@ export default function RedisBrowserPage() {
                   </tr>
                 );
               })}
-              {scannedKeys.length === 0 && !loadingKeys && (
-                <tr>
-                  <td colSpan={4} className="muted" style={{ textAlign: "center", padding: "32px" }}>
-                    {t("redis.browser.emptyKeys")}
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
@@ -471,14 +464,16 @@ export default function RedisBrowserPage() {
           </div>
         </div>
 
-        {selectedKey && loadingDetail && <div className="muted">{t("common.loading")}</div>}
-        {selectedKeyDetail && !isEditableKeyType(selectedKeyDetail.keyType) && <div className="text-warning" style={{ marginBottom: "12px" }}>{t("redis.browser.editUnsupported")}</div>}
-        {selectedKeyDetail && (
-          <>
-            {selectedKeyDetail.truncated && <div className="text-warning" style={{ marginBottom: "12px" }}>{t("redis.browser.truncated")}</div>}
-            <RedisKeyDetailValue detail={selectedKeyDetail} />
-          </>
-        )}
+        <div className="redis-detail-body">
+          {selectedKey && loadingDetail && <div className="muted">{t("common.loading")}</div>}
+          {selectedKeyDetail && !isEditableKeyType(selectedKeyDetail.keyType) && <div className="text-warning">{t("redis.browser.editUnsupported")}</div>}
+          {selectedKeyDetail && (
+            <>
+              {selectedKeyDetail.truncated && <div className="text-warning">{t("redis.browser.truncated")}</div>}
+              <RedisKeyDetailValue detail={selectedKeyDetail} />
+            </>
+          )}
+        </div>
       </div>
 
       <RedisKeyEditorModal

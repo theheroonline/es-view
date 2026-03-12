@@ -1,11 +1,15 @@
-package main
+package backend
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"sort"
+	"strconv"
 	"sync"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysql "github.com/go-sql-driver/mysql"
 )
 
 // MysqlConnectRequest represents MySQL connection parameters
@@ -84,37 +88,98 @@ func NewMysqlConnectionManager() *MysqlConnectionManager {
 	}
 }
 
-// MysqlConnect establishes a MySQL connection
 func (a *App) MysqlConnect(req MysqlConnectRequest) (string, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		req.Username, req.Password, req.Host, req.Port, req.Database)
+	return a.mysql.MysqlConnect(req)
+}
+
+func (a *App) MysqlDisconnect(connectionID string) (string, error) {
+	return a.mysql.MysqlDisconnect(connectionID)
+}
+
+func (a *App) MysqlPing(connectionID string) (string, error) {
+	return a.mysql.MysqlPing(connectionID)
+}
+
+func (a *App) MysqlQuery(connectionID string, query string) (MysqlQueryResult, error) {
+	return a.mysql.MysqlQuery(connectionID, query)
+}
+
+func (a *App) MysqlListDatabases(connectionID string) ([]string, error) {
+	return a.mysql.MysqlListDatabases(connectionID)
+}
+
+func (a *App) MysqlListTables(connectionID string, database string) ([]string, error) {
+	return a.mysql.MysqlListTables(connectionID, database)
+}
+
+func (a *App) MysqlDescribeTable(connectionID string, database string, tableName string) ([]MysqlColumnMeta, error) {
+	return a.mysql.MysqlDescribeTable(connectionID, database, tableName)
+}
+
+func (a *App) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta, error) {
+	return a.mysql.MysqlListIndexes(req)
+}
+
+func (a *App) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
+	return a.mysql.MysqlCreateIndex(req)
+}
+
+func (a *App) MysqlDropIndex(req MysqlDropIndexRequest) (string, error) {
+	return a.mysql.MysqlDropIndex(req)
+}
+
+// MysqlConnect establishes a MySQL connection
+func (m *MysqlModule) MysqlConnect(req MysqlConnectRequest) (string, error) {
+	config := mysql.NewConfig()
+	config.User = req.Username
+	config.Passwd = req.Password
+	config.Net = "tcp"
+	config.Addr = fmt.Sprintf("%s:%d", req.Host, req.Port)
+	config.DBName = req.Database
+	config.Params = map[string]string{"charset": "utf8mb4"}
+	config.ParseTime = true
+	config.Loc = time.Local
+	config.Timeout = 3 * time.Second
+	config.ReadTimeout = 5 * time.Second
+	config.WriteTimeout = 5 * time.Second
+
+	dsn := config.FormatDSN()
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return "", fmt.Errorf("failed to open connection: %w", err)
 	}
+	db.SetConnMaxLifetime(90 * time.Second)
+	db.SetConnMaxIdleTime(60 * time.Second)
+	db.SetMaxIdleConns(1)
+	db.SetMaxOpenConns(5)
 
-	// Test the connection
-	if err := db.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return "", fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	a.mysqlConnManager.mu.Lock()
-	defer a.mysqlConnManager.mu.Unlock()
-	a.mysqlConnManager.connections[req.ConnectionID] = db
+	m.connManager.mu.Lock()
+	defer m.connManager.mu.Unlock()
+	if existing, exists := m.connManager.connections[req.ConnectionID]; exists {
+		_ = existing.Close()
+	}
+	m.connManager.connections[req.ConnectionID] = db
 
 	return "Connected successfully", nil
 }
 
 // MysqlDisconnect closes a MySQL connection
-func (a *App) MysqlDisconnect(connectionID string) (string, error) {
-	a.mysqlConnManager.mu.Lock()
-	defer a.mysqlConnManager.mu.Unlock()
+func (m *MysqlModule) MysqlDisconnect(connectionID string) (string, error) {
+	m.connManager.mu.Lock()
+	defer m.connManager.mu.Unlock()
 
-	if db, exists := a.mysqlConnManager.connections[connectionID]; exists {
+	if db, exists := m.connManager.connections[connectionID]; exists {
 		err := db.Close()
-		delete(a.mysqlConnManager.connections, connectionID)
+		delete(m.connManager.connections, connectionID)
 		if err != nil {
 			return "", fmt.Errorf("failed to close connection: %w", err)
 		}
@@ -125,16 +190,19 @@ func (a *App) MysqlDisconnect(connectionID string) (string, error) {
 }
 
 // MysqlPing tests MySQL connection
-func (a *App) MysqlPing(connectionID string) (string, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[connectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlPing(connectionID string) (string, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[connectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return "", fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	err := db.Ping()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := db.PingContext(ctx)
 	if err != nil {
 		return "", fmt.Errorf("ping failed: %w", err)
 	}
@@ -143,18 +211,13 @@ func (a *App) MysqlPing(connectionID string) (string, error) {
 }
 
 // MysqlQuery executes a query and returns results
-func (a *App) MysqlQuery(connectionID string, query string) (MysqlQueryResult, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[connectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlQuery(connectionID string, query string) (MysqlQueryResult, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[connectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return MysqlQueryResult{}, fmt.Errorf("connection not found: %s", connectionID)
-	}
-
-	// Set character set to ensure proper encoding
-	if _, err := db.Exec("SET NAMES utf8mb4"); err != nil {
-		return MysqlQueryResult{}, fmt.Errorf("failed to set character set: %w", err)
 	}
 
 	rows, err := db.Query(query)
@@ -200,10 +263,10 @@ func (a *App) MysqlQuery(connectionID string, query string) (MysqlQueryResult, e
 }
 
 // MysqlListDatabases returns list of databases
-func (a *App) MysqlListDatabases(connectionID string) ([]string, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[connectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlListDatabases(connectionID string) ([]string, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[connectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
@@ -215,23 +278,27 @@ func (a *App) MysqlListDatabases(connectionID string) ([]string, error) {
 	}
 	defer rows.Close()
 
-	databases := make([]string, 0)
-	for rows.Next() {
-		var dbName string
-		if err := rows.Scan(&dbName); err != nil {
-			return nil, fmt.Errorf("scan failed: %w", err)
+	columns, data, err := scanRowsToNullStringMaps(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scan failed: %w", err)
+	}
+
+	databases := make([]string, 0, len(data))
+	for _, row := range data {
+		dbName := getNullStringValueByIndex(columns, row, 0)
+		if dbName.Valid {
+			databases = append(databases, dbName.String)
 		}
-		databases = append(databases, dbName)
 	}
 
 	return databases, nil
 }
 
 // MysqlListTables returns list of tables in database
-func (a *App) MysqlListTables(connectionID string, database string) ([]string, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[connectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlListTables(connectionID string, database string) ([]string, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[connectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
@@ -249,23 +316,27 @@ func (a *App) MysqlListTables(connectionID string, database string) ([]string, e
 	}
 	defer rows.Close()
 
-	tables := make([]string, 0)
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
-			return nil, fmt.Errorf("scan failed: %w", err)
+	columns, data, err := scanRowsToNullStringMaps(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scan failed: %w", err)
+	}
+
+	tables := make([]string, 0, len(data))
+	for _, row := range data {
+		tableName := getNullStringValueByIndex(columns, row, 0)
+		if tableName.Valid {
+			tables = append(tables, tableName.String)
 		}
-		tables = append(tables, tableName)
 	}
 
 	return tables, nil
 }
 
 // MysqlDescribeTable returns table structure
-func (a *App) MysqlDescribeTable(connectionID string, database string, tableName string) ([]MysqlColumnMeta, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[connectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlDescribeTable(connectionID string, database string, tableName string) ([]MysqlColumnMeta, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[connectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
@@ -302,10 +373,10 @@ func (a *App) MysqlDescribeTable(connectionID string, database string, tableName
 }
 
 // MysqlListIndexes returns list of indexes for a table
-func (a *App) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[req.ConnectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[req.ConnectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return nil, fmt.Errorf("connection not found: %s", req.ConnectionID)
@@ -325,15 +396,30 @@ func (a *App) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta, e
 	}
 	defer rows.Close()
 
+	_, data, err := scanRowsToNullStringMaps(rows)
+	if err != nil {
+		return nil, fmt.Errorf("scan failed: %w", err)
+	}
+
+	type indexColumn struct {
+		name string
+		seq  int
+	}
+
+	type indexAccumulator struct {
+		meta    MysqlIndexMeta
+		columns []indexColumn
+	}
+
 	// Map to track unique indexes
-	indexMap := make(map[string]*MysqlIndexMeta)
+	indexMap := make(map[string]*indexAccumulator)
 
-	for rows.Next() {
-		var table, nonUnique, keyName, seqInIndex, columnName, collation, cardinality, subPart, packed, null_, indexType, comment, indexComment, visible, expression sql.NullString
-
-		if err := rows.Scan(&table, &nonUnique, &keyName, &seqInIndex, &columnName, &collation, &cardinality, &subPart, &packed, &null_, &indexType, &comment, &indexComment, &visible, &expression); err != nil {
-			return nil, fmt.Errorf("scan failed: %w", err)
-		}
+	for _, indexRow := range data {
+		nonUnique := getNullStringValue(indexRow, "non_unique")
+		keyName := getNullStringValue(indexRow, "key_name")
+		columnName := getNullStringValue(indexRow, "column_name")
+		indexType := getNullStringValue(indexRow, "index_type")
+		seqInIndex := getNullStringValue(indexRow, "seq_in_index")
 
 		if !keyName.Valid {
 			continue
@@ -345,34 +431,65 @@ func (a *App) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta, e
 			if indexType.Valid {
 				indexTypeStr = indexType.String
 			}
-			indexMap[name] = &MysqlIndexMeta{
-				Name:      name,
-				Columns:   []string{},
-				Unique:    nonUnique.Valid && nonUnique.String == "0",
-				Primary:   name == "PRIMARY",
-				IndexType: indexTypeStr,
+			indexMap[name] = &indexAccumulator{
+				meta: MysqlIndexMeta{
+					Name:      name,
+					Columns:   []string{},
+					Unique:    nonUnique.Valid && nonUnique.String == "0",
+					Primary:   name == "PRIMARY",
+					IndexType: indexTypeStr,
+				},
+				columns: make([]indexColumn, 0),
 			}
 		}
 
 		if columnName.Valid {
-			indexMap[name].Columns = append(indexMap[name].Columns, columnName.String)
+			seq := len(indexMap[name].columns) + 1
+			if seqInIndex.Valid {
+				if parsed, parseErr := strconv.Atoi(seqInIndex.String); parseErr == nil {
+					seq = parsed
+				}
+			}
+			indexMap[name].columns = append(indexMap[name].columns, indexColumn{
+				name: columnName.String,
+				seq:  seq,
+			})
 		}
 	}
 
 	// Convert map to slice
-	indexes := make([]MysqlIndexMeta, 0)
+	indexes := make([]MysqlIndexMeta, 0, len(indexMap))
 	for _, index := range indexMap {
-		indexes = append(indexes, *index)
+		sort.SliceStable(index.columns, func(i, j int) bool {
+			if index.columns[i].seq == index.columns[j].seq {
+				return index.columns[i].name < index.columns[j].name
+			}
+			return index.columns[i].seq < index.columns[j].seq
+		})
+
+		index.meta.Columns = make([]string, 0, len(index.columns))
+		for _, column := range index.columns {
+			index.meta.Columns = append(index.meta.Columns, column.name)
+		}
+
+		indexes = append(indexes, index.meta)
 	}
+
+	sort.SliceStable(indexes, func(i, j int) bool {
+		if indexes[i].Primary != indexes[j].Primary {
+			return indexes[i].Primary
+		}
+		return indexes[i].Name < indexes[j].Name
+	})
 
 	return indexes, nil
 }
 
 // MysqlCreateIndex creates a new index on a table
-func (a *App) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[req.ConnectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[req.ConnectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return "", fmt.Errorf("connection not found: %s", req.ConnectionID)
@@ -417,10 +534,10 @@ func (a *App) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
 }
 
 // MysqlDropIndex removes an index from a table
-func (a *App) MysqlDropIndex(req MysqlDropIndexRequest) (string, error) {
-	a.mysqlConnManager.mu.RLock()
-	db, exists := a.mysqlConnManager.connections[req.ConnectionID]
-	a.mysqlConnManager.mu.RUnlock()
+func (m *MysqlModule) MysqlDropIndex(req MysqlDropIndexRequest) (string, error) {
+	m.connManager.mu.RLock()
+	db, exists := m.connManager.connections[req.ConnectionID]
+	m.connManager.mu.RUnlock()
 
 	if !exists {
 		return "", fmt.Errorf("connection not found: %s", req.ConnectionID)

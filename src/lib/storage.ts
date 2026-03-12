@@ -1,13 +1,12 @@
-import { invoke, isWails } from "./wailsapi";
 import { logError } from "./errorLog";
 import type { LocalState } from "./types";
+import { invoke, isWails } from "./wailsapi";
 
 const STORAGE_KEY = "multi-database-browsing.state";
 
 const defaultState: LocalState = {
   profiles: [],
-  secrets: {},
-  history: []
+  secrets: {}
 };
 
 export async function loadState(): Promise<LocalState> {
@@ -35,8 +34,8 @@ export async function loadState(): Promise<LocalState> {
       return { ...defaultState };
     }
 
-    const data = JSON.parse(raw) as LocalState & { cachedIndicesByConnection?: unknown };
-    const { cachedIndicesByConnection: _legacyCache, ...rest } = data;
+    const data = JSON.parse(raw) as LocalState & { cachedIndicesByConnection?: unknown; history?: unknown };
+    const { cachedIndicesByConnection: _legacyCache, history: _legacyHistory, ...rest } = data;
     return { ...defaultState, ...rest };
   } catch (error) {
     logError(error, {

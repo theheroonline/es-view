@@ -1,27 +1,20 @@
-import { invoke, isWails, waitForWails } from "../../../lib/wailsapi";
 import { logError } from "../../../lib/errorLog";
+import { invoke, isWails, waitForWails } from "../../../lib/wailsapi";
 import type { ColumnMeta, MysqlConnection } from "../types";
 
 async function requireWails() {
-  // Wait for Wails to initialize
   await waitForWails();
 
-  // Add extra wait and retry for robustness - try up to 20 times with 200ms between retries
-  for (let i = 0; i < 20; i++) {
-    if (isWails()) {
-      return;
-    }
-    // Wait 200ms and retry
-    await new Promise(resolve => setTimeout(resolve, 200));
+  if (!isWails()) {
+    throw new Error(
+      `MySQL operations require desktop mode (Wails). ` +
+      `window.go: ${typeof window.go}, ` +
+      `window.go.backend: ${typeof window.go?.backend}, ` +
+      `window.go.backend.App: ${typeof window.go?.backend?.App}, ` +
+      `window.go.main: ${typeof window.go?.main}, ` +
+      `window.go.main.App: ${typeof window.go?.main?.App}`
+    );
   }
-
-  // If still not available, throw detailed error
-  throw new Error(
-    `MySQL operations require desktop mode (Wails). ` +
-    `window.go: ${typeof window.go}, ` +
-    `window.go.main: ${typeof window.go?.main}, ` +
-    `window.go.main.App: ${typeof window.go?.main?.App}`
-  );
 }
 
 export async function mysqlConnect(connection: MysqlConnection): Promise<void> {
@@ -222,6 +215,96 @@ export async function mysqlDropIndex(
     logError(error, {
       source: "mysqlClient.dropIndex",
       message: `Failed to drop index on ${database}.${table}`
+    });
+    throw error;
+  }
+}
+
+export async function mysqlExportDatabase(
+  connectionId: string,
+  database: string,
+  includeData: boolean,
+): Promise<string> {
+  await requireWails();
+  try {
+    return await invoke<string>("mysql_export_database", {
+      connectionId,
+      database,
+      includeData,
+    });
+  } catch (error) {
+    logError(error, {
+      source: "mysqlClient.exportDatabase",
+      message: `Failed to export database ${database}`
+    });
+    throw error;
+  }
+}
+
+export async function mysqlExportTable(
+  connectionId: string,
+  database: string,
+  table: string,
+  includeData: boolean,
+): Promise<string> {
+  await requireWails();
+  try {
+    return await invoke<string>("mysql_export_table", {
+      connectionId,
+      database,
+      tableName: table,
+      includeData,
+    });
+  } catch (error) {
+    logError(error, {
+      source: "mysqlClient.exportTable",
+      message: `Failed to export table ${database}.${table}`
+    });
+    throw error;
+  }
+}
+
+export async function mysqlExportTables(
+  connectionId: string,
+  database: string,
+  tables: string[],
+  includeData: boolean,
+): Promise<string> {
+  await requireWails();
+  try {
+    return await invoke<string>("mysql_export_tables", {
+      connectionId,
+      database,
+      tableNames: tables,
+      includeData,
+    });
+  } catch (error) {
+    logError(error, {
+      source: "mysqlClient.exportTables",
+      message: `Failed to export selected tables from ${database}`,
+      detail: tables.join(", "),
+    });
+    throw error;
+  }
+}
+
+export async function mysqlImportSql(
+  connectionId: string,
+  database?: string,
+  table?: string,
+): Promise<string> {
+  await requireWails();
+  try {
+    return await invoke<string>("mysql_import_sql", {
+      connectionId,
+      database,
+      tableName: table,
+    });
+  } catch (error) {
+    logError(error, {
+      source: "mysqlClient.importSql",
+      message: `Failed to import SQL${database ? ` into ${database}` : ""}`,
+      detail: table ? `${database}.${table}` : database,
     });
     throw error;
   }

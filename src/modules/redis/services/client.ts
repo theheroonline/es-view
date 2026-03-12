@@ -1,35 +1,28 @@
 import { logError } from "../../../lib/errorLog";
 import { invoke, isWails, waitForWails } from "../../../lib/wailsapi";
 import type {
-  RedisCommandResult,
-  RedisConnection,
-  RedisDatabaseInfo,
-  RedisKeyDetail,
-  RedisScanResult,
-  RedisSetKeyRequest,
-  RedisUpdateTtlRequest,
+    RedisCommandResult,
+    RedisConnection,
+    RedisDatabaseInfo,
+    RedisKeyDetail,
+    RedisScanResult,
+    RedisSetKeyRequest,
+    RedisUpdateTtlRequest,
 } from "../types";
 
 async function requireWails() {
-  // Wait for Wails to initialize
   await waitForWails();
 
-  // Add short retry for robustness - try up to 3 times with 50ms between retries
-  for (let i = 0; i < 3; i++) {
-    if (isWails()) {
-      return;
-    }
-    // Wait 50ms and retry (max total 150ms vs 4 seconds before)
-    await new Promise(resolve => setTimeout(resolve, 50));
+  if (!isWails()) {
+    throw new Error(
+      `Redis operations require desktop mode (Wails). ` +
+      `window.go: ${typeof window.go}, ` +
+      `window.go.backend: ${typeof window.go?.backend}, ` +
+      `window.go.backend.App: ${typeof window.go?.backend?.App}, ` +
+      `window.go.main: ${typeof window.go?.main}, ` +
+      `window.go.main.App: ${typeof window.go?.main?.App}`
+    );
   }
-
-  // If still not available, throw detailed error
-  throw new Error(
-    `Redis operations require desktop mode (Wails). ` +
-    `window.go: ${typeof window.go}, ` +
-    `window.go.main: ${typeof window.go?.main}, ` +
-    `window.go.main.App: ${typeof window.go?.main?.App}`
-  );
 }
 
 export async function redisConnect(connection: RedisConnection): Promise<void> {

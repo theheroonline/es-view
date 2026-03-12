@@ -24,8 +24,6 @@ interface ElasticsearchContextValue {
   deleteConnection: (id: string) => Promise<void>;
   setActiveConnection: (id: string) => Promise<void>;
   disconnectActiveConnection: () => Promise<void>;
-  addHistory: (title: string, sql: string) => Promise<void>;
-  clearHistory: () => Promise<void>;
   activeConnection: EsConnection | null;
   getActiveConnection: () => EsConnection | null;
   getConnectionById: (id: string) => EsConnection | null;
@@ -38,8 +36,7 @@ interface ElasticsearchContextValue {
 
 const defaultState: LocalState = {
   profiles: [],
-  secrets: {},
-  history: []
+  secrets: {}
 };
 
 const isSystemIndex = (name: string) => name.startsWith(".");
@@ -150,35 +147,6 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     setSelectedIndexState(index);
   }, []);
 
-  const addHistory = useCallback(async (title: string, sql: string) => {
-    const trimmedSql = sql.trim();
-    if (!trimmedSql) return; // 不记录空 SQL
-
-    // 规范化 SQL：移除末尾分号、压缩空白并转小写，用于去重比较
-    const normalize = (s: string) => s.replace(/\s*;+\s*$/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-    const normalizedNew = normalize(trimmedSql);
-
-    const item = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      title,
-      sql: trimmedSql,
-      createdAt: new Date().toISOString()
-    };
-
-    const HISTORY_LIMIT = 10;
-    // 去重：移除已有相同（规范化后）SQL 的历史项（保留最近一次）
-    const filtered = state.history.filter((h) => normalize(h.sql || '') !== normalizedNew);
-    const nextState: LocalState = {
-      ...state,
-      history: [item, ...filtered].slice(0, HISTORY_LIMIT)
-    };
-    await persist(nextState);
-  }, [state, persist]);
-
-  const clearHistory = useCallback(async () => {
-    await persist({ ...state, history: [] });
-  }, [state, persist]);
-
   const getActiveConnection = useCallback((): EsConnection | null => {
     const id = connectedConnectionId;
     if (!id) return null;
@@ -284,8 +252,6 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     deleteConnection,
     setActiveConnection,
     disconnectActiveConnection,
-    addHistory,
-    clearHistory,
     activeConnection,
     getActiveConnection,
     getConnectionById,
@@ -294,7 +260,7 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     refreshIndices,
     selectedIndex,
     setSelectedIndex
-  }), [state, connectedConnectionId, saveConnection, deleteConnection, setActiveConnection, disconnectActiveConnection, addHistory, clearHistory, activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex]);
+  }), [state, connectedConnectionId, saveConnection, deleteConnection, setActiveConnection, disconnectActiveConnection, activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex]);
 
   return <ElasticsearchContext.Provider value={value}>{children}</ElasticsearchContext.Provider>;
 }

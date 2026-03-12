@@ -179,7 +179,7 @@ function getVisibleColumns(columns: string[], preferred?: string[]) {
 
 export default function MysqlSqlQuery() {
   const { t } = useTranslation();
-  const { addHistory, activeConnectionId, setActiveConnection, state } = useElasticsearchContext();
+  const { activeConnectionId, setActiveConnection, state } = useElasticsearchContext();
   const {
     activeMysqlConnection,
     databases,
@@ -415,7 +415,7 @@ export default function MysqlSqlQuery() {
     });
   };
 
-  const executeStatements = async (rawSql: string, historyLabel: string, mode: "execute" | "explain" = "execute") => {
+  const executeStatements = async (rawSql: string, mode: "execute" | "explain" = "execute") => {
     if (!connectionId || !rawSql.trim()) return;
 
     const statements = splitSqlStatements(rawSql);
@@ -520,7 +520,6 @@ export default function MysqlSqlQuery() {
       setError(nextResults[0]?.error ?? "");
     }
 
-    await addHistory(historyLabel, rawSql.trim());
     setLoading(false);
   };
 
@@ -591,22 +590,18 @@ export default function MysqlSqlQuery() {
   };
 
   const handleExecuteAll = async () => {
-    await executeStatements(sql, selectedDatabase ? `[${selectedDatabase}] SQL` : "MySQL SQL");
+    await executeStatements(sql);
   };
 
   const handleExecuteSelection = async () => {
     if (!selectedText) return;
-    await executeStatements(selectedText, selectedDatabase ? `[${selectedDatabase}] SQL Selection` : "MySQL SQL Selection");
+    await executeStatements(selectedText);
   };
 
   const handleExplain = async () => {
     const targetSql = selectedText || sql;
     if (!targetSql.trim()) return;
-    await executeStatements(
-      targetSql,
-      selectedDatabase ? `[${selectedDatabase}] SQL Explain` : "MySQL SQL Explain",
-      "explain"
-    );
+    await executeStatements(targetSql, "explain");
   };
 
   const handleCloseResult = (resultId: string) => {

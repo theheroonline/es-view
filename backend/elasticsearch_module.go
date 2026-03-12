@@ -1,4 +1,4 @@
-package main
+package backend
 
 import (
 	"bytes"
@@ -9,52 +9,24 @@ import (
 	"net/http"
 )
 
-// HttpRequestParams represents parameters for HTTP requests
-type HttpRequestParams struct {
-	URL       string            `json:"url"`
-	Method    string            `json:"method"`
-	Headers   map[string]string `json:"headers"`
-	Body      string            `json:"body"`
-	VerifyTls bool              `json:"verifyTls"`
-	Auth      *AuthConfig       `json:"auth"`
-}
-
-// AuthConfig represents authentication configuration
-type AuthConfig struct {
-	AuthType string `json:"authType"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	ApiKey   string `json:"apiKey"`
-}
-
-// HttpRequest handles HTTP requests to Elasticsearch or other services
-func (a *App) HttpRequest(params HttpRequestParams) (string, error) {
+func (m *ElasticsearchModule) HttpRequest(params HttpRequestParams) (string, error) {
 	client := &http.Client{}
-
-	var req *http.Request
-	var err error
 
 	var bodyReader io.Reader
 	if params.Body != "" {
 		bodyReader = bytes.NewReader([]byte(params.Body))
 	}
 
-	req, err = http.NewRequest(params.Method, params.URL, bodyReader)
+	req, err := http.NewRequest(params.Method, params.URL, bodyReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set default headers
 	req.Header.Set("Content-Type", "application/json")
-
-	// Apply custom headers
-	if params.Headers != nil {
-		for key, value := range params.Headers {
-			req.Header.Set(key, value)
-		}
+	for key, value := range params.Headers {
+		req.Header.Set(key, value)
 	}
 
-	// Apply authentication
 	if params.Auth != nil {
 		switch params.Auth.AuthType {
 		case "basic":
@@ -80,15 +52,14 @@ func (a *App) HttpRequest(params HttpRequestParams) (string, error) {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// Return JSON response with status code
-	result := map[string]interface{}{
+	resultJSON, err := json.Marshal(map[string]interface{}{
 		"status": resp.StatusCode,
 		"ok":     resp.StatusCode >= 200 && resp.StatusCode < 300,
 		"body":   string(respBody),
-	}
-	resultJSON, err := json.Marshal(result)
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal response: %w", err)
 	}
+
 	return string(resultJSON), nil
 }

@@ -62,24 +62,47 @@ function esProxyPlugin(): Plugin {
   };
 }
 
-function wailsIpcPlugin(): Plugin {
-  return {
-    name: "wails-ipc",
-    transformIndexHtml(html: string) {
-      // Inject Wails IPC script EARLY in the head, before any other scripts
-      // This ensures window.wails.Call is available before React loads
-      return html.replace(
-        /<head>/,
-        '<head>\n    <script src="/wails/ipc.js"></script>'
-      );
-    }
-  };
-}
-
 export default defineConfig({
-  plugins: [react(), esProxyPlugin(), wailsIpcPlugin()],
-  // Tauri 要求使用相对路径
+  plugins: [react(), esProxyPlugin()],
   base: "./",
+  root: "./src",
+  build: {
+    outDir: "../dist",
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom") || id.includes("node_modules/react-router")) {
+            return "react-vendor";
+          }
+
+          if (
+            id.includes("node_modules/antd") ||
+            id.includes("node_modules/@ant-design") ||
+            id.includes("node_modules/@rc-component") ||
+            id.includes("node_modules/rc-") ||
+            id.includes("node_modules/dayjs")
+          ) {
+            return "antd-vendor";
+          }
+
+          if (id.includes("node_modules/i18next") || id.includes("node_modules/react-i18next")) {
+            return "i18n-vendor";
+          }
+
+          if (id.includes("node_modules/sql-formatter")) {
+            return "sql-vendor";
+          }
+
+          return undefined;
+        }
+      }
+    }
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

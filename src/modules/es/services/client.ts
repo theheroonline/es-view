@@ -65,7 +65,7 @@ function normalizeBaseUrl(baseUrl: string): string | null {
   }
 }
 
-async function tauriHttpRequest(
+async function wailsHttpRequest(
   url: string,
   method: string,
   headers: Record<string, string>,
@@ -121,7 +121,7 @@ export async function esRequest<T>(
       headers["Authorization"] = auth;
     }
 
-    const tauriAuth = isWails() ? {
+    const wailsAuth = isWails() ? {
       authType: normalized.authType,
       username: normalized.username,
       password: normalized.password,
@@ -131,7 +131,7 @@ export async function esRequest<T>(
     const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
 
     const res = isWails()
-      ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, tauriAuth)
+      ? await wailsHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, wailsAuth)
       : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
 
     if (!res.ok) {
@@ -185,7 +185,7 @@ export async function esRequestRaw(
       headers["Authorization"] = auth;
     }
 
-    const tauriAuth = isWails() ? {
+    const wailsAuth = isWails() ? {
       authType: normalized.authType,
       username: normalized.username,
       password: normalized.password,
@@ -208,7 +208,7 @@ export async function esRequestRaw(
     }
 
     return isWails()
-      ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, tauriAuth)
+      ? await wailsHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, wailsAuth)
       : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
   } catch (error) {
     logError(error, {

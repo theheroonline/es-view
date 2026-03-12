@@ -2,26 +2,36 @@
  * Wails v2 Runtime API wrapper
  * Provides compatibility with Tauri-like invoke() API
  *
- * In Wails v2, the runtime injects window.go.main.App with all backend methods.
+ * In Wails v2, the runtime injects window.go.<package>.App with backend methods.
  */
 
 declare global {
   interface Window {
     go?: {
-      main?: {
+      [packageName: string]: {
         App?: Record<string, (...args: any[]) => Promise<any>>;
-      };
+      } | undefined;
     };
   }
 }
 
-// Debug logging
-const DEBUG = true;
+// Debug logging — disabled for production startup speed
+const DEBUG = false;
 const log = (msg: string, data?: any) => {
   if (DEBUG) {
     console.log(`[Wails IPC] ${msg}`, data ?? "");
   }
 };
+
+function getWailsAppApi(): Record<string, (...args: any[]) => Promise<any>> | undefined {
+  const go = window.go;
+  if (!go) {
+    return undefined;
+  }
+
+  // Prefer backend package name (current project), keep main as fallback for compatibility.
+  return go.backend?.App ?? go.main?.App;
+}
 
 /**
  * Check if running in Wails environment
@@ -29,33 +39,38 @@ const log = (msg: string, data?: any) => {
 export function isWails(): boolean {
   return (
     typeof window !== "undefined" &&
-    window.go?.main?.App !== undefined
+    getWailsAppApi() !== undefined
   );
 }
 
+// Cached promise so parallel callers share a single polling loop
+let _wailsReadyPromise: Promise<void> | null = null;
+
 /**
- * Wait for Wails to be ready
+ * Wait for Wails to be ready.
+ * Uses a cached promise so multiple callers share one polling loop.
+ * Polls every 10ms (instead of 100ms) for fast detection.
  */
-export async function waitForWails(): Promise<void> {
+export function waitForWails(): Promise<void> {
   if (isWails()) {
-    log("Wails is ready");
-    return;
+    return Promise.resolve();
   }
 
-  log("Waiting for Wails to be ready...");
+  if (_wailsReadyPromise) {
+    return _wailsReadyPromise;
+  }
 
-  // Poll for Wails initialization
-  return new Promise((resolve) => {
+  _wailsReadyPromise = new Promise<void>((resolve) => {
     let attempts = 0;
-    const maxAttempts = 150; // 15 seconds with 100ms interval
+    const maxAttempts = 500; // 5 seconds with 10ms interval
 
     const checkWails = () => {
       attempts++;
       if (isWails()) {
-        log(`Wails ready after ${attempts * 100}ms`);
+        log(`Wails ready after ${attempts * 10}ms`);
         resolve();
       } else if (attempts < maxAttempts) {
-        setTimeout(checkWails, 100);
+        setTimeout(checkWails, 10);
       } else {
         log("Wails initialization timeout");
         resolve(); // Resolve anyway to avoid hanging
@@ -64,6 +79,8 @@ export async function waitForWails(): Promise<void> {
 
     checkWails();
   });
+
+  return _wailsReadyPromise;
 }
 
 /**
@@ -137,7 +154,6 @@ function extractSimpleParam(methodName: string, args?: Record<string, any> | any
 
 /**
  * Invoke a backend command
- * Compatible with Tauri's invoke API
  *
  * @param cmd - Command name to invoke (e.g., "redis_connect", "mysql_query")
  * @param args - Arguments to pass (optional)
@@ -159,7 +175,8 @@ export async function invoke<T = any>(
 
   // Convert snake_case command name to PascalCase to match Go method names
   const methodName = snakeToPascalCase(cmd);
-  const handler = window.go?.main?.App?.[methodName];
+  const appApi = getWailsAppApi();
+  const handler = appApi?.[methodName];
 
   if (typeof handler !== "function") {
     const msg = `Unknown command: ${cmd} (resolved to ${methodName})`;
@@ -168,7 +185,7 @@ export async function invoke<T = any>(
   }
 
   try {
-    log(`Calling window.go.main.App["${methodName}"](...)`);
+    log(`Calling App["${methodName}"](...)`);
     // Extract parameters based on method type
     const params = extractSimpleParam(methodName, args);
     log(`Extracted params for ${methodName}:`, params);
@@ -185,8 +202,3 @@ export async function invoke<T = any>(
     throw error;
   }
 }
-
-/**
- * Alias for compatibility with Tauri code
- */
-export const isTauri = isWails;

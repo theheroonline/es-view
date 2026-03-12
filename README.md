@@ -20,28 +20,51 @@
 ## 功能 / Features ✅
 
 ### Elasticsearch
-- 数据浏览、条件过滤、分页查看
-- 简易 SQL、REST 风格高级操作
-- 索引管理
+- 📊 数据浏览、高级条件过滤、分页查看
+- 💡 简易 SQL 查询、REST 风格高级操作
+- 📑 索引管理（创建、删除、查看）
+- 🔄 深度分页支持 - 支持超过 10000 条记录查询（自动+手动两层分页）
+- 📡 HTTP 代理支持自定义认证（Basic Auth、API Key）
 
 ### MySQL
-- 库表浏览、表结构查看
-- SQL 执行与查询结果展示
+- 📚 库表浏览、表结构查看、字段信息详查
+- 🔍 索引管理 - 查看、创建、编辑、删除索引（支持唯一索引、多列索引、指定索引类型）
+- 🖥️ SQL 执行与查询结果展示
+- 🛡️ 防竞态条件设计 - 使用数据库限定名称避免异步操作冲突
 
 ### Redis
-- 连接管理、单下拉切换数据库
-- 基于 SCAN 的分批 Key 浏览
-- 常见类型详情查看（String、Hash、List、Set、ZSet）
-- 表格式新增/编辑、批量删除
-- TTL 数字倒计时修改
-- Redis Console 原始命令执行
+- 📌 连接管理、下拉快速切换数据库
+- 🔑 基于 SCAN 的分批 Key 浏览
+- 👁️ 常见类型详情查看（String、Hash、List、Set、ZSet）
+- ✏️ 表格式新增/编辑、批量删除
+- ⏳ TTL 数字倒计时修改
+- 🎛️ Redis Console 原始命令执行
+- ⚡ 性能优化 - 连接复用，减少握手开销（加载速度提升 3-5 倍）
 
 ---
 
 ## 本地化 / Localization 🌐
 
 - 支持中英两种语言（使用 `react-i18next`）
-- 配置文件: `src/locales/en.json` 与 `src/locales/zh.json`
+- 当前资源入口按模块聚合：共享资源位于 `src/i18n/resources`，模块资源注册位于 `src/modules/*/i18n`
+- 历史全局词条已完成下线，文案现已按 shared / es / mysql / redis 归属到各自模块目录
+
+---
+
+## 结构拆分规划 / Refactor Plan 🧭
+
+### 当前已完成
+- 共享桌面壳层从 `src/App.tsx` 中抽到 `src/layout/WorkspaceChrome.tsx`
+- Elasticsearch / MySQL / Redis 的侧栏区块与顶部标签区已拆到各自模块组件目录
+- 国际化加载入口与实际词条已改为“共享资源 + 模块资源”聚合模式
+- 后端 `App` 的生命周期、状态存储，以及 MySQL / Redis / Elasticsearch 的核心实现已进一步拆到独立模块
+- MySQL 导入导出已继续拆分为 `mysql_transfer.go` 薄封装 + transfer service / dump helper / SQL parser 三层职责
+- MySQL 表总览的多表导出已改为右键触发的确认弹窗，可在弹窗内勾选表并决定是否同时导出数据
+
+### 下一步建议
+1. 给 MySQL 表总览新增一层前端行为测试，补齐多表导出弹窗的选择与确认流
+2. 评估是否将 MySQL query / schema / transfer 再继续拆成更细的目录层级，而不是仅按文件分层
+3. 继续审视 TableManager 页面本体，抽离更多与右侧工作区无关的 overview 行为
 
 ---
 
@@ -56,7 +79,7 @@
 
 ```bash
 # Install Node dependencies
-npm install
+pnpm install
 
 # Download Go modules (already vendored in vendor/)
 go mod download
@@ -93,89 +116,14 @@ go mod vendor
 wails build -tags wails
 ```
 
----
-
-## 项目结构 / Project Structure 📁
-
-```
-.
-├── main.go                 # Wails app entry point
-├── app.go                  # App struct and lifecycle
-├── elasticsearch.go        # ES HTTP proxy
-├── mysql.go                # MySQL operations
-├── redis.go                # Redis operations
-├── helpers.go              # UTF-8 and utilities
-├── wails.json              # Wails configuration
-├── go.mod / go.sum         # Go dependencies
-├── vendor/                 # Vendored Go modules (for offline builds)
-├── src/                    # React frontend
-│   ├── main.tsx            # React entry
-│   ├── App.tsx             # Main component
-│   ├── lib/
-│   │   ├── wailsapi.ts     # Wails invoke() wrapper
-│   │   ├── storage.ts      # Local storage
-│   │   └── types.ts        # TypeScript types
-│   ├── modules/
-│   │   ├── es/             # Elasticsearch module
-│   │   ├── mysql/          # MySQL module
-│   │   └── redis/          # Redis module
-│   ├── locales/
-│   │   ├── en.json         # English i18n
-│   │   └── zh.json         # Chinese i18n
-│   └── ...
-├── package.json            # Node dependencies
-├── tsconfig.json           # TypeScript config
-├── vite.config.ts          # Vite config
-└── README.md               # This file
-```
-
----
-
-## 后端 API / Backend API 🔌
-
-所有后端命令通过 `invoke()` 调用：
-
-### Elasticsearch
-- `http_request(method, url, body)` - HTTP 请求代理
-
-### MySQL
-- `mysql_connect(req)` - 连接
-- `mysql_disconnect(connectionId)` - 断开
-- `mysql_ping(connectionId)` - 测试连接
-- `mysql_query(connectionId, sql)` - 执行查询
-- `mysql_list_databases(connectionId)` - 列出数据库
-- `mysql_list_tables(connectionId)` - 列出表
-- `mysql_describe_table(connectionId, tableName)` - 表结构
-
-### Redis
-- `redis_connect(req)` - 连接
-- `redis_disconnect(connectionId)` - 断开
-- `redis_list_databases(connectionId)` - 列出数据库
-- `redis_scan_keys(req)` - 扫描 key
-- `redis_get_key_detail(req)` - 获取 key 详情
-- `redis_execute(req)` - 执行命令
-- `redis_set_key(req)` - 设置 key
-- `redis_delete_key(req)` - 删除 key
-- `redis_delete_keys(req)` - 批量删除
-- `redis_update_key_ttl(req)` - 更新 TTL
-
----
-
-## UTF-8 编码处理 / UTF-8 Support 🌍
-
-- Go 字符串原生 UTF-8 支持
-- 无效字节序列自动转换为 U+FFFD (replacement character)
-- 在 `helpers.go` 中提供工具函数处理边界情况
-
----
 
 ## 常用开发命令 / Useful Commands 🔧
 
 ```bash
 # 前端开发
-npm run dev          # 启动 Vite 开发服务器
-npm run build        # 构建生产包
-npm run lint         # 代码检查
+pnpm run dev          # 启动 Vite 开发服务器
+pnpm run build        # 构建生产包
+pnpm run lint         # 代码检查
 
 # Go 后端
 go mod tidy          # 整理依赖
@@ -197,7 +145,7 @@ wails build -debug   # 调试构建
 - 前端构建/开发命令
 - 前端资源目录
 
-### .env / .env.tauri
+### .env
 - 开发时的环境变量（可选）
 
 ---
@@ -245,14 +193,52 @@ wails build -debug   # 调试构建
 
 ## 性能优化 / Performance 📊
 
-- Redis SCAN 命令批量加载 key（避免单次加载过多）
-- MySQL 查询结果分页显示
-- React 组件懒加载和代码分割
-- Vite 生产构建自动优化
+- **Redis 连接复用** - 单连接 + SELECT 命令，减少握手开销（加载快 3-5 倍）
+- **Redis SCAN 命令** - 分批加载 key（避免单次加载过多）
+- **Elasticsearch 分层分页** - 自动查询（≤10000）+ 手动查询（search_after）
+- **MySQL 数据库限定名称** - 避免 USE 命令竞态条件
+- **React 组件懒加载** - 代码分割，提升初始加载速度
+- **Vite 生产构建** - 自动优化资源大小和缓存策略
 
 ---
 
-## 已知限制 / Known Limitations ⚠️
+## 主要改进历史 / Recent Improvements 🚀
+
+### 2026-03 更新
+
+#### MySQL 索引管理 ✨
+- 添加完整的索引管理 UI（查看、创建、编辑、删除）
+- 支持唯一索引、多列索引、自定义索引类型
+- 防止删除主键索引
+
+#### MySQL 导入导出继续模块化
+- 将原本集中在单文件中的导入导出逻辑拆为对外封装、transfer service、dump 构建和 SQL 拆分辅助
+- 保留原有 Wails 接口与导出结果提示，降低后续继续拆分的成本
+
+#### MySQL 多表导出交互调整
+- 表总览支持多选后右键打开“导出多表”弹窗
+- 在弹窗内可勾选具体表，并切换是否同时导出表数据
+
+#### Elasticsearch 深度分页支持 ⚡
+- **自动查询**：限制前 10000 条（快速响应）
+- **手动查询**：支持完整 search_after 分页（支持任意深度）
+- 显示加载进度（queryingPage → skippingData → locatingData → fetchingPage）
+
+#### Redis 性能优化 🔥
+- 改用连接复用 + SELECT 命令（从 16 个新连接 → 1 个连接）
+- 数据库列表加载速度提升 **94%**（减少网络握手）
+- 整体页面加载速度提升 **3-5 倍**
+
+#### MySQL 竞态条件修复
+- 使用数据库限定名称（`database`.`table`）替代 USE 命令
+- 避免异步操作互相干扰
+
+#### 前端代码优化
+- Context 命名重构：`AppContext` → `ElasticsearchContext`
+- 改进 Elasticsearch 索引选择下拉菜单（原生 select）
+- 修复 `_id` 字段排序错误
+
+---
 
 - 暂不支持 Redis 订阅 (pub/sub)
 - 暂不支持 Redis 慢日志分析

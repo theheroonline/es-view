@@ -36,7 +36,7 @@ const sqlQueryCacheByConnection = new Map<string, SqlQueryCacheState>();
 
 export default function SqlQuery() {
   const { t, i18n } = useTranslation();
-  const { activeConnection, addHistory, indices } = useElasticsearchContext();
+  const { activeConnection, indices } = useElasticsearchContext();
   const [selectedIndex, setSelectedIndex] = useState<string | undefined>(undefined);
   const [operation, setOperation] = useState<SqlOperation>("select");
   const [availableFields, setAvailableFields] = useState<string[]>([]);
@@ -312,7 +312,6 @@ export default function SqlQuery() {
       }
 
       setTotalRows(hits.length);
-      await addHistory(selectedIndex ? `DSL: ${selectedIndex}` : t('sqlQuery.sqlHistory'), sql);
     } catch (err) {
       const message = err instanceof Error ? err.message : t('common.error');
       logError(err, {

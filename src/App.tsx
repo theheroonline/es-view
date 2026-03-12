@@ -1,28 +1,42 @@
-import { type MouseEvent, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import ErrorLogModal from "./components/ErrorLogModal";
-import { logError, useErrorLog } from "./lib/errorLog";
+import { useConnectionWorkspace } from "./hooks/useConnectionWorkspace";
+import { useFloatingMenuDismiss } from "./hooks/useFloatingMenuDismiss";
+import { FloatingMenu, FloatingMenuDivider } from "./layout/FloatingMenu";
+import WorkspaceChrome from "./layout/WorkspaceChrome";
+import { useErrorLog } from "./lib/errorLog";
 import type { ConnectionProfile } from "./lib/types";
-import EsConnectionsPage from "./modules/es/pages/Connections";
-import DataBrowser from "./modules/es/pages/DataBrowser";
-import IndexManager from "./modules/es/pages/IndexManager";
-import RestConsole from "./modules/es/pages/RestConsole";
-import SqlQuery from "./modules/es/pages/SqlQuery";
-import { pingCluster } from "./modules/es/services/client";
-import MysqlConnectionsPage from "./modules/mysql/pages/Connections";
-import MysqlSqlQuery from "./modules/mysql/pages/SqlQuery";
-import MysqlTableManager from "./modules/mysql/pages/TableManager";
-import { mysqlConnect, mysqlDisconnect, mysqlListDatabases, mysqlListTables, mysqlQuery } from "./modules/mysql/services/client";
-import RedisBrowserPage from "./modules/redis/pages/Browser";
-import RedisConnectionsPage from "./modules/redis/pages/Connections";
-import RedisConsolePage from "./modules/redis/pages/Console";
-import { redisConnect, redisDisconnect, redisListDatabases } from "./modules/redis/services/client";
-import { ElasticsearchProvider, useElasticsearchContext } from "./state/ElasticsearchContext";
-import { getMysqlOpenedTableKey, MysqlProvider, useMysqlContext } from "./state/MysqlContext";
-import { RedisProvider, useRedisContext } from "./state/RedisContext";
+import EsSidebarSection from "./modules/es/components/EsSidebarSection";
+import EsWorkspaceTabs from "./modules/es/components/EsWorkspaceTabs";
+import MysqlSidebarSection from "./modules/mysql/components/MysqlSidebarSection";
+import MysqlWorkspaceTabs from "./modules/mysql/components/MysqlWorkspaceTabs";
+import { useMysqlSidebarWorkspace } from "./modules/mysql/hooks/useMysqlSidebarWorkspace";
+import RedisSidebarSection from "./modules/redis/components/RedisSidebarSection";
+import RedisWorkspaceTabs from "./modules/redis/components/RedisWorkspaceTabs";
+import { ElasticsearchProvider } from "./state/ElasticsearchContext";
+import { MysqlProvider } from "./state/MysqlContext";
+import { RedisProvider } from "./state/RedisContext";
 
-type ConnectionStatus = "success" | "idle" | "failed";
+const EsDataBrowserPage = lazy(() => import("./modules/es/pages/DataBrowser"));
+const EsIndexManagerPage = lazy(() => import("./modules/es/pages/IndexManager"));
+const EsRestConsolePage = lazy(() => import("./modules/es/pages/RestConsole"));
+const EsSqlQueryPage = lazy(() => import("./modules/es/pages/SqlQuery"));
+const MysqlConnectionsPage = lazy(() => import("./modules/mysql/pages/Connections"));
+const MysqlSqlQueryPage = lazy(() => import("./modules/mysql/pages/SqlQuery"));
+const MysqlTableManagerPage = lazy(() => import("./modules/mysql/pages/TableManager"));
+const RedisBrowserPage = lazy(() => import("./modules/redis/pages/Browser"));
+const RedisConnectionsPage = lazy(() => import("./modules/redis/pages/Connections"));
+const RedisConsolePage = lazy(() => import("./modules/redis/pages/Console"));
+
+function WorkspaceLoadingFallback() {
+  return (
+    <div className="card mdb-empty-state-card">
+      <span className="muted">Loading...</span>
+    </div>
+  );
+}
 
 function App() {
   return (
@@ -39,1172 +53,311 @@ function App() {
 function AppLayout() {
   const { t, i18n } = useTranslation();
   const { count: errorLogCount } = useErrorLog();
-  const navigate = useNavigate();
   const location = useLocation();
-  const {
-    state,
-    activeConnectionId,
-    setActiveConnection,
-    refreshIndices,
-    disconnectActiveConnection,
-    deleteConnection,
-    getConnectionById
-  } = useElasticsearchContext();
-
-  const {
-    databases,
-    setDatabases,
-    tablesByDb,
-    setTablesByDb,
-    expandedDatabase,
-    setExpandedDatabase,
-    selectedDatabase,
-    setSelectedDatabase,
-    selectedTable,
-    setSelectedTable,
-    openedTables,
-    setOpenedTables,
-    activeOpenedTableKey,
-    setActiveOpenedTableKey,
-    getMysqlConnectionById
-  } = useMysqlContext();
-  const {
-    setDatabases: setRedisDatabases,
-    setSelectedDatabase: setSelectedRedisDatabase,
-    setScannedKeys: setRedisScannedKeys,
-    setNextCursor: setRedisNextCursor,
-    setHasMoreKeys: setRedisHasMoreKeys,
-    setSelectedKey: setRedisSelectedKey,
-    setSelectedKeyDetail: setRedisSelectedKeyDetail,
-    getRedisConnectionById,
-    resetRedisWorkspace,
-  } = useRedisContext();
-
-  const esProfiles = useMemo(
-    () => state.profiles.filter((item) => (item.engine ?? "elasticsearch") === "elasticsearch"),
-    [state.profiles]
-  );
-  const mysqlProfiles = useMemo(
-    () => state.profiles.filter((item) => item.engine === "mysql"),
-    [state.profiles]
-  );
-  const redisProfiles = useMemo(
-    () => state.profiles.filter((item) => item.engine === "redis"),
-    [state.profiles]
-  );
-  const allProfiles = useMemo(() => [...esProfiles, ...mysqlProfiles, ...redisProfiles], [esProfiles, mysqlProfiles, redisProfiles]);
-
-  const activeProfile = activeConnectionId
-    ? state.profiles.find((p) => p.id === activeConnectionId)
-    : null;
-  const activeEngine = activeProfile?.engine ?? "elasticsearch";
+  const connection = useConnectionWorkspace();
+  const mysql = useMysqlSidebarWorkspace({
+    activeConnectionId: connection.activeConnectionId,
+    getProfileById: connection.getProfileById,
+    ensureMysqlConnectionReady: connection.ensureMysqlConnectionReady,
+    setConnectionActionError: connection.setConnectionActionError,
+  });
 
   const [esExpanded, setEsExpanded] = useState(true);
   const [mysqlExpanded, setMysqlExpanded] = useState(true);
   const [redisExpanded, setRedisExpanded] = useState(true);
-  const [focusedConnectionId, setFocusedConnectionId] = useState<string | undefined>(undefined);
-  const [contextMenu, setContextMenu] = useState<{ connectionId: string; x: number; y: number } | null>(null);
-  const [mysqlDatabaseContextMenu, setMysqlDatabaseContextMenu] = useState<{ database: string; x: number; y: number } | null>(null);
-  const [mysqlTabContextMenu, setMysqlTabContextMenu] = useState<{ key: string; x: number; y: number } | null>(null);
-  const [sidebarExpandedTablesDatabase, setSidebarExpandedTablesDatabase] = useState<string | null>(null);
-  const [isConnectionActionPending, setIsConnectionActionPending] = useState(false);
-  const [connectionActionError, setConnectionActionError] = useState("");
-  const [connectionStatusById, setConnectionStatusById] = useState<Record<string, ConnectionStatus>>({});
-  const [isWorkspaceSuspended, setIsWorkspaceSuspended] = useState(false);
   const [isErrorLogOpen, setIsErrorLogOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const activeConnectionStatus = activeConnectionId ? connectionStatusById[activeConnectionId] ?? "idle" : "idle";
-  const activeEngineLabel = activeEngine === "mysql" ? "MySQL" : activeEngine === "redis" ? "Redis" : "Elasticsearch";
 
-  const markConnectionSuccess = (connectionId: string) => {
-    setConnectionStatusById((prev) => ({
-      ...prev,
-      [connectionId]: "success"
-    }));
-  };
-
-  const resetMysqlWorkspace = () => {
-    setTablesByDb({});
-    setExpandedDatabase(null);
-    setSidebarExpandedTablesDatabase(null);
-    setSelectedDatabase(undefined);
-    setSelectedTable(undefined);
-    setOpenedTables([]);
-    setActiveOpenedTableKey(null);
-  };
-
-  const disconnectConnectionForEdit = async (connectionId?: string) => {
-    if (!connectionId || activeConnectionId !== connectionId) {
-      return;
+  useFloatingMenuDismiss(
+    Boolean(
+      connection.contextMenu ||
+      mysql.mysqlDatabaseContextMenu ||
+      mysql.mysqlTableContextMenu ||
+      mysql.mysqlTabContextMenu
+    ),
+    () => {
+      connection.closeConnectionContextMenu();
+      mysql.closeMysqlMenus();
     }
+  );
 
-    const currentProfile = state.profiles.find((item) => item.id === connectionId);
-    if (currentProfile?.engine === "mysql") {
-      try {
-        await mysqlDisconnect(connectionId);
-      } catch (error) {
-        logError(error, {
-          source: "app.connection.mysql.disconnectBeforeEdit",
-          message: `Failed to disconnect MySQL connection ${connectionId} before editing config`
-        });
-      }
-    }
-    if (currentProfile?.engine === "redis") {
-      try {
-        await redisDisconnect(connectionId);
-      } catch (error) {
-        logError(error, {
-          source: "app.connection.redis.disconnectBeforeEdit",
-          message: `Failed to disconnect Redis connection ${connectionId} before editing config`
-        });
-      }
-    }
-
-    await disconnectActiveConnection();
-    setIsWorkspaceSuspended(false);
-    resetMysqlWorkspace();
-    resetRedisWorkspace();
-    setConnectionStatusById((prev) => ({
-      ...prev,
-      [connectionId]: "idle"
-    }));
-  };
-
-  const openConnectionConfig = async (engine: "elasticsearch" | "mysql" | "redis", action: "add" | "edit" | "copy", connectionId?: string) => {
-    if (action === "edit") {
-      await disconnectConnectionForEdit(connectionId);
-    }
-
-    const params = new URLSearchParams({ action });
-    if (connectionId) {
-      params.set("id", connectionId);
-    }
-    const basePath = engine === "mysql"
-      ? "/mysql/connections"
-      : engine === "redis"
-        ? "/redis/connections"
-        : "/connections";
-    navigate(`${basePath}?${params.toString()}`, {
-      state: { from: location.pathname }
-    });
-  };
-
-  const handleConnectionChange = async (value: string, options?: { forceValidate?: boolean }) => {
-    if (isConnectionActionPending) return;
-    if (activeConnectionId === value) {
-      if (isWorkspaceSuspended) {
-        setConnectionActionError("");
-        setIsWorkspaceSuspended(false);
-        const profile = state.profiles.find((p) => p.id === value);
-        const targetRoute = profile?.engine === "mysql"
-          ? "/mysql/tables"
-          : profile?.engine === "redis"
-            ? "/redis/browser"
-            : "/data";
-        await navigate(targetRoute);
-      }
-      return true;
-    }
-
-    setIsConnectionActionPending(true);
-    setConnectionActionError("");
-    setContextMenu(null);
-
-    const profile = state.profiles.find((p) => p.id === value);
-    if (!profile) {
-      setIsConnectionActionPending(false);
-      setConnectionActionError(t("connections.connectionFailedSimple"));
-      return false;
-    }
-
-    try {
-      const currentStatus = connectionStatusById[value] ?? "idle";
-      const shouldValidate = options?.forceValidate ?? currentStatus !== "success";
-
-      if (profile.engine === "mysql") {
-        // MySQL connection flow
-        const mysqlConn = getMysqlConnectionById(value);
-        if (!mysqlConn) throw new Error("CONNECTION_FAILED");
-
-        if (shouldValidate) {
-          await mysqlConnect(mysqlConn);
-        }
-
-        await setActiveConnection(value);
-
-        // Load databases
-        try {
-          const dbs = await mysqlListDatabases(value);
-          setDatabases(dbs);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.mysql.listDatabases",
-            message: "Failed to load MySQL databases after switching connection"
-          });
-          setDatabases([]);
-        }
-        setTablesByDb({});
-        setExpandedDatabase(null);
-        setSidebarExpandedTablesDatabase(null);
-        setSelectedDatabase(undefined);
-        setSelectedTable(undefined);
-        setOpenedTables([]);
-        setActiveOpenedTableKey(null);
-
-        markConnectionSuccess(value);
-        setIsWorkspaceSuspended(false);
-        await navigate("/mysql/tables");
-      } else if (profile.engine === "redis") {
-        const redisConn = getRedisConnectionById(value);
-        if (!redisConn) throw new Error("CONNECTION_FAILED");
-
-        if (shouldValidate) {
-          await redisConnect(redisConn);
-        }
-
-        await setActiveConnection(value);
-        resetRedisWorkspace();
-        try {
-          const dbs = await redisListDatabases(value);
-          setRedisDatabases(dbs);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.redis.listDatabases",
-            message: "Failed to load Redis databases after switching connection"
-          });
-          setRedisDatabases([]);
-        }
-        setSelectedRedisDatabase(redisConn.database ?? 0);
-        setRedisScannedKeys([]);
-        setRedisNextCursor("0");
-        setRedisHasMoreKeys(false);
-        setRedisSelectedKey(null);
-        setRedisSelectedKeyDetail(null);
-
-        markConnectionSuccess(value);
-        setIsWorkspaceSuspended(false);
-        await navigate("/redis/browser");
-      } else {
-        // ES connection flow
-        const connection = getConnectionById(value);
-        if (!connection) throw new Error("CONNECTION_FAILED");
-
-        if (shouldValidate) {
-          await pingCluster(connection);
-        }
-
-        await setActiveConnection(value);
-        if (shouldValidate) {
-          await refreshIndices(connection);
-        }
-        markConnectionSuccess(value);
-        setIsWorkspaceSuspended(false);
-        await navigate("/data");
-      }
-      return true;
-    } catch (error) {
-      logError(error, {
-        source: "app.connection.change",
-        message: `Failed to activate connection ${value}`
-      });
-      setConnectionStatusById((prev) => ({
-        ...prev,
-        [value]: "failed"
-      }));
-      setIsWorkspaceSuspended(true);
-      await navigate("/", { replace: true });
-      setConnectionActionError(t("connections.connectionFailedSimple"));
-      return false;
-    } finally {
-      setIsConnectionActionPending(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    if (isConnectionActionPending) return;
-    if (!activeConnectionId) return;
-
-    setIsConnectionActionPending(true);
-    setContextMenu(null);
-    const currentId = activeConnectionId;
-    const currentProfile = state.profiles.find((p) => p.id === currentId);
-
-    try {
-      // Disconnect MySQL pool if applicable
-      if (currentProfile?.engine === "mysql") {
-        try {
-          await mysqlDisconnect(currentId);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.mysql.disconnect",
-            message: `Failed to disconnect MySQL connection ${currentId}`
-          });
-        }
-      }
-      if (currentProfile?.engine === "redis") {
-        try {
-          await redisDisconnect(currentId);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.redis.disconnect",
-            message: `Failed to disconnect Redis connection ${currentId}`
-          });
-        }
-      }
-
-      await disconnectActiveConnection();
-      setIsWorkspaceSuspended(false);
-      resetMysqlWorkspace();
-      resetRedisWorkspace();
-      setConnectionStatusById((prev) => ({
-        ...prev,
-        [currentId]: "idle"
-      }));
-      await navigate("/", { replace: true });
-    } finally {
-      setIsConnectionActionPending(false);
-    }
-  };
-
-  const toggleLanguage = () => {
-    const newLang = i18n.language === "zh" ? "en" : "zh";
-    i18n.changeLanguage(newLang);
-  };
-
-  const handleConnectionContextMenu = (event: MouseEvent<HTMLElement>, connectionId: string) => {
-    event.preventDefault();
-    setFocusedConnectionId(connectionId);
-    setContextMenu({ connectionId, x: event.clientX, y: event.clientY });
-  };
-
-  const handleDeleteConnection = async (connectionId: string) => {
-    setContextMenu(null);
-    setConnectionStatusById((prev) => {
-      const next = { ...prev };
-      delete next[connectionId];
-      return next;
-    });
-    await deleteConnection(connectionId);
-  };
-
-  const ensureMysqlConnectionReady = async (connectionId: string) => {
-    const profile = state.profiles.find((item) => item.id === connectionId);
-    if (profile?.engine !== "mysql") {
-      return false;
-    }
-
-    const status = connectionStatusById[connectionId] ?? "idle";
-    if (activeConnectionId === connectionId && status === "success" && !isWorkspaceSuspended) {
-      return true;
-    }
-
-    return await handleConnectionChange(connectionId, { forceValidate: true });
-  };
-
-  const refreshMysqlDatabases = async () => {
-    if (!activeConnectionId) return;
-    const profile = state.profiles.find((p) => p.id === activeConnectionId);
-    if (profile?.engine !== "mysql") return;
-
-    try {
-      const dbs = await mysqlListDatabases(activeConnectionId);
-      setDatabases(dbs);
-    } catch (error) {
-      logError(error, {
-        source: "app.mysql.refreshDatabases",
-        message: "Failed to refresh MySQL databases from sidebar"
-      });
-      setDatabases([]);
-    }
-  };
-
-  const loadMysqlTables = async (database: string) => {
-    if (!activeConnectionId) return;
-    const profile = state.profiles.find((p) => p.id === activeConnectionId);
-    if (profile?.engine !== "mysql") return;
-
-    try {
-      const tables = await mysqlListTables(activeConnectionId, database);
-      setTablesByDb((prev) => ({
-        ...prev,
-        [database]: tables
-      }));
-    } catch (error) {
-      logError(error, {
-        source: "app.mysql.listTables",
-        message: `Failed to load tables for database ${database}`
-      });
-      setTablesByDb((prev) => ({
-        ...prev,
-        [database]: []
-      }));
-    }
-  };
-
-  const handleMysqlSelectDatabase = (database: string) => {
-    setSelectedDatabase(database);
-    setSelectedTable(undefined);
-  };
-
-  const handleMysqlOpenDatabase = async (database: string) => {
-    setExpandedDatabase(database);
-    setSelectedDatabase(database);
-    setSelectedTable(undefined);
-    if (!tablesByDb[database]) {
-      await loadMysqlTables(database);
-    }
-    await navigate("/mysql/tables");
-  };
-
-  const handleMysqlCloseDatabase = async (database: string) => {
-    if (expandedDatabase === database) {
-      setExpandedDatabase(null);
-      setSelectedTable(undefined);
-      setSidebarExpandedTablesDatabase((prev) => (prev === database ? null : prev));
-      const remainingTables = openedTables.filter((item) => item.database !== database);
-      setOpenedTables(remainingTables);
-      const nextActive = activeOpenedTableKey
-        ? remainingTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey)
-          ?? remainingTables[remainingTables.length - 1]
-          ?? null
-        : null;
-      setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableKey(nextActive.database, nextActive.table) : null);
-      await navigate("/mysql/tables");
-    }
-  };
-
-  const handleMysqlToggleSidebarTables = async (database: string) => {
-    setSelectedDatabase(database);
-
-    if (expandedDatabase !== database) {
-      await handleMysqlOpenDatabase(database);
-    } else if (!tablesByDb[database]) {
-      await loadMysqlTables(database);
-    }
-
-    setSidebarExpandedTablesDatabase((prev) => (prev === database ? null : database));
-  };
-
-  const handleMysqlSelectSidebarTable = async (database: string, table: string) => {
-    setSelectedDatabase(database);
-    setSelectedTable(table);
-    if (location.pathname === "/mysql/table") {
-      return;
-    }
-    if (location.pathname !== "/mysql/tables") {
-      await navigate("/mysql/tables");
-    }
-  };
-
-  const handleMysqlOpenSidebarTable = async (database: string, table: string) => {
-    const nextKey = getMysqlOpenedTableKey(database, table);
-    setSelectedDatabase(database);
-    setSelectedTable(table);
-    setOpenedTables((prev) => {
-      const existing = prev.find((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey);
-      if (existing) {
-        return prev.map((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey ? { ...item, view: "data" } : item);
-      }
-      return [...prev, { database, table, view: "data" }];
-    });
-    setActiveOpenedTableKey(nextKey);
-    await navigate("/mysql/table");
-  };
-
-  const handleActivateMysqlOpenedTable = async (database: string, table: string) => {
-    const nextKey = getMysqlOpenedTableKey(database, table);
-    setSelectedDatabase(database);
-    setSelectedTable(table);
-    setActiveOpenedTableKey(nextKey);
-    await navigate("/mysql/table");
-  };
-
-  const handleCloseMysqlOpenedTable = async (database: string, table: string) => {
-    const targetKey = getMysqlOpenedTableKey(database, table);
-    const remainingTables = openedTables.filter((item) => getMysqlOpenedTableKey(item.database, item.table) !== targetKey);
-    setOpenedTables(remainingTables);
-
-    if (selectedDatabase === database && selectedTable === table) {
-      setSelectedTable(undefined);
-    }
-
-    if (activeOpenedTableKey === targetKey) {
-      const nextActive = remainingTables[remainingTables.length - 1] ?? null;
-      if (!nextActive) {
-        setActiveOpenedTableKey(null);
-        await navigate("/mysql/tables");
-        return;
-      }
-
-      setActiveOpenedTableKey(getMysqlOpenedTableKey(nextActive.database, nextActive.table));
-      setSelectedDatabase(nextActive.database);
-      setSelectedTable(nextActive.table);
-      await navigate(`/mysql/table${location.search || "?tab=data"}`);
-      return;
-    }
-
-    const nextActiveKey = activeOpenedTableKey && remainingTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey)
-      ? activeOpenedTableKey
-      : null;
-    setActiveOpenedTableKey(nextActiveKey);
-  };
-
-  const handleMysqlTabContextMenu = (event: MouseEvent<HTMLButtonElement>, key: string) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setMysqlTabContextMenu({ key, x: event.clientX, y: event.clientY });
-  };
-
-  const closeCurrentMysqlTab = async (key: string) => {
-    const target = openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === key);
-    setMysqlTabContextMenu(null);
-    if (!target) return;
-    await handleCloseMysqlOpenedTable(target.database, target.table);
-  };
-
-  const closeOtherMysqlTabs = async (key: string) => {
-    const keep = openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === key) ?? null;
-    setMysqlTabContextMenu(null);
-    if (!keep) return;
-
-    setOpenedTables([keep]);
-    setActiveOpenedTableKey(key);
-    setSelectedDatabase(keep.database);
-    setSelectedTable(keep.table);
-    if (location.pathname === "/mysql/table") {
-      await navigate("/mysql/table");
-    }
-  };
-
-  const closeAllMysqlTabs = async () => {
-    setMysqlTabContextMenu(null);
-    setOpenedTables([]);
-    setActiveOpenedTableKey(null);
-    if (location.pathname === "/mysql/table") {
-      await navigate("/mysql/tables");
-    }
-  };
-
-  const handleMysqlDatabaseContextMenu = (event: MouseEvent<HTMLDivElement>, database: string) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setSelectedDatabase(database);
-    setMysqlDatabaseContextMenu({ database, x: event.clientX, y: event.clientY });
-  };
-
-  const handleCreateMysqlDatabase = async (connectionId: string) => {
-    const ready = await ensureMysqlConnectionReady(connectionId);
-    if (!ready) {
-      setContextMenu(null);
-      return;
-    }
-
-    const nextName = window.prompt(t("mysql.tableManager.createDatabasePrompt"), "new_database")?.trim();
-    if (!nextName) {
-      setContextMenu(null);
-      return;
-    }
-
-    try {
-      await mysqlQuery(connectionId, `CREATE DATABASE \`${nextName}\``);
-      await refreshMysqlDatabases();
-      setSelectedDatabase(nextName);
-    } catch (error) {
-      logError(error, {
-        source: "app.mysql.createDatabase",
-        message: `Failed to create database ${nextName}`
-      });
-      setConnectionActionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setContextMenu(null);
-    }
-  };
-
-  const handleDropMysqlDatabase = async (database: string) => {
-    if (!activeConnectionId) return;
-    if (!window.confirm(t("mysql.tableManager.dropDatabaseConfirm", { name: database }))) return;
-
-    try {
-      await mysqlQuery(activeConnectionId, `DROP DATABASE \`${database}\``);
-      if (expandedDatabase === database) {
-        setExpandedDatabase(null);
-      }
-      setSidebarExpandedTablesDatabase((prev) => (prev === database ? null : prev));
-      if (selectedDatabase === database) {
-        setSelectedDatabase(undefined);
-        setSelectedTable(undefined);
-      }
-      const remainingTables = openedTables.filter((item) => item.database !== database);
-      const didRemoveActiveTable = Boolean(activeOpenedTableKey && openedTables.some((item) => item.database === database && getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey));
-      setOpenedTables(remainingTables);
-      if (didRemoveActiveTable) {
-        const nextActive = remainingTables[remainingTables.length - 1] ?? null;
-        setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableKey(nextActive.database, nextActive.table) : null);
-        if (!nextActive && location.pathname === "/mysql/table") {
-          await navigate("/mysql/tables");
-        }
-      }
-      setTablesByDb((prev) => {
-        const next = { ...prev };
-        delete next[database];
-        return next;
-      });
-      await refreshMysqlDatabases();
-    } catch (error) {
-      logError(error, {
-        source: "app.mysql.dropDatabase",
-        message: `Failed to drop database ${database}`
-      });
-      setConnectionActionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setMysqlDatabaseContextMenu(null);
-    }
-  };
-
-  useEffect(() => {
-    if (!contextMenu && !mysqlDatabaseContextMenu && !mysqlTabContextMenu) return;
-
-    const close = () => {
-      setContextMenu(null);
-      setMysqlDatabaseContextMenu(null);
-      setMysqlTabContextMenu(null);
-    };
-    window.addEventListener("click", close);
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
-
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
-    };
-  }, [contextMenu, mysqlDatabaseContextMenu, mysqlTabContextMenu]);
-
-  useEffect(() => {
-    if (!focusedConnectionId && allProfiles.length > 0) {
-      setFocusedConnectionId(allProfiles[0]?.id);
-      return;
-    }
-    if (focusedConnectionId && !allProfiles.some((item) => item.id === focusedConnectionId)) {
-      setFocusedConnectionId(allProfiles[0]?.id);
-    }
-  }, [focusedConnectionId, allProfiles]);
-
-  useEffect(() => {
-    setConnectionStatusById((prev) => {
-      const next: Record<string, ConnectionStatus> = {};
-      allProfiles.forEach((item) => {
-        next[item.id] = prev[item.id] ?? "idle";
-      });
-
-      const prevKeys = Object.keys(prev);
-      const nextKeys = Object.keys(next);
-      if (prevKeys.length !== nextKeys.length) {
-        return next;
-      }
-
-      for (const key of nextKeys) {
-        if (prev[key] !== next[key]) {
-          return next;
-        }
-      }
-
-      return prev;
-    });
-  }, [allProfiles]);
-
-  useEffect(() => {
-    if (!activeConnectionId) return;
-    markConnectionSuccess(activeConnectionId);
-  }, [activeConnectionId]);
-
-  useEffect(() => {
-    if (activeConnectionId) return;
-    if (!isWorkspaceSuspended) return;
-    setIsWorkspaceSuspended(false);
-  }, [activeConnectionId, isWorkspaceSuspended]);
-
-  const showEsConnectionsTab = location.pathname.startsWith("/connections");
   const showMysqlConnectionsTab = location.pathname.startsWith("/mysql/connections");
   const showRedisConnectionsTab = location.pathname.startsWith("/redis/connections");
-  const showConnectionsTab = showEsConnectionsTab || showMysqlConnectionsTab || showRedisConnectionsTab;
-  const canShowWorkspace = (Boolean(activeConnectionId) && !isWorkspaceSuspended) || showConnectionsTab;
+  const showConnectionsTab = showMysqlConnectionsTab || showRedisConnectionsTab;
+  const canShowWorkspace = (Boolean(connection.activeConnectionId) && !connection.isWorkspaceSuspended) || showConnectionsTab;
+  const isEsWorkspace = connection.activeEngine === "elasticsearch";
+  const isMysqlWorkspace = connection.activeEngine === "mysql" || showMysqlConnectionsTab;
+  const isRedisWorkspace = connection.activeEngine === "redis" || showRedisConnectionsTab;
 
-  const isEsWorkspace = activeEngine === "elasticsearch" || showEsConnectionsTab;
-  const isMysqlWorkspace = activeEngine === "mysql" || showMysqlConnectionsTab;
-  const isRedisWorkspace = activeEngine === "redis" || showRedisConnectionsTab;
-
-  // Shared connection tree item renderer
   const renderConnectionItem = (profile: ConnectionProfile) => {
-    const status = connectionStatusById[profile.id] ?? "idle";
+    const status = connection.connectionStatusById[profile.id] ?? "idle";
+
     return (
       <div
         key={profile.id}
-        className={`mdb-tree-item mdb-connection-item ${focusedConnectionId === profile.id ? "active" : ""}`}
+        className={`mdb-tree-item mdb-connection-item ${connection.focusedConnectionId === profile.id ? "active" : ""}`}
         onClick={() => {
-          setFocusedConnectionId(profile.id);
-          if (activeConnectionId === profile.id) {
-            if (isWorkspaceSuspended) {
-              handleConnectionChange(profile.id, { forceValidate: false });
+          connection.setFocusedConnectionId(profile.id);
+          if (connection.activeConnectionId === profile.id) {
+            if (connection.isWorkspaceSuspended) {
+              void connection.handleConnectionChange(profile.id, { forceValidate: false });
             }
             return;
           }
+
           if (status === "success") {
-            handleConnectionChange(profile.id, { forceValidate: false });
+            void connection.handleConnectionChange(profile.id, { forceValidate: false });
           }
         }}
         onDoubleClick={() => {
-          if (activeConnectionId === profile.id) {
-            if (isWorkspaceSuspended) {
-              handleConnectionChange(profile.id, { forceValidate: false });
+          if (connection.activeConnectionId === profile.id) {
+            if (connection.isWorkspaceSuspended) {
+              void connection.handleConnectionChange(profile.id, { forceValidate: false });
             }
             return;
           }
+
           if (status !== "success") {
-            handleConnectionChange(profile.id, { forceValidate: true });
+            void connection.handleConnectionChange(profile.id, { forceValidate: true });
           }
         }}
-        onContextMenu={(event) => handleConnectionContextMenu(event, profile.id)}
+        onContextMenu={(event) => connection.handleConnectionContextMenu(event, profile.id)}
         role="button"
         tabIndex={0}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            if (activeConnectionId === profile.id) {
-              if (isWorkspaceSuspended) {
-                handleConnectionChange(profile.id, { forceValidate: false });
-              }
-              return;
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          if (connection.activeConnectionId === profile.id) {
+            if (connection.isWorkspaceSuspended) {
+              void connection.handleConnectionChange(profile.id, { forceValidate: false });
             }
-            if (status === "success") {
-              handleConnectionChange(profile.id, { forceValidate: false });
-            }
+            return;
+          }
+
+          if (status === "success") {
+            void connection.handleConnectionChange(profile.id, { forceValidate: false });
           }
         }}
       >
         <span className="mdb-connection-main">
           <span className={`mdb-status-dot status-${status}`} />
-          <span className="mdb-connection-name">
-            {profile.name}
-          </span>
+          <span className="mdb-connection-name">{profile.name}</span>
         </span>
-        {activeConnectionId === profile.id && (
-          <span className="mdb-connection-badge">
-            {t("connections.currentInUse")}
-          </span>
-        )}
+        {connection.activeConnectionId === profile.id ? (
+          <span className="mdb-connection-badge">{t("connections.currentInUse")}</span>
+        ) : null}
       </div>
     );
   };
 
-  return (
-    <div className="mdb-layout">
-      <header className="mdb-topbar">
-        <div className="mdb-topbar-left">
-          <button
-            type="button"
-            className="mdb-chrome-button"
-            onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-          >
-            {isSidebarCollapsed ? "▶" : "◀"}
-          </button>
-          <div className="mdb-brand-block">
-            <div className="mdb-brand">{t("sidebar.brand")}</div>
-            <div className="mdb-window-hint">
-              {activeProfile ? `${activeEngineLabel} / ${activeProfile.name}` : t("sidebar.notConnected")}
-            </div>
-          </div>
-        </div>
-        <div className="mdb-topbar-right">
-          {activeProfile && (
-            <span className={`mdb-window-chip status-${activeConnectionStatus}`}>
-              {activeEngineLabel}
-            </span>
-          )}
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={toggleLanguage}
-            title={t("app.switchLanguageTitle", {
-              language: i18n.language === "zh" ? t("common.english") : t("common.chinese")
-            })}
-          >
-            {i18n.language === "zh" ? "EN" : "中"}
-          </button>
-        </div>
-      </header>
+  const topbarRight = (
+    <>
+      {connection.activeProfile ? (
+        <span className={`mdb-window-chip status-${connection.activeConnectionStatus}`}>
+          {connection.activeEngineLabel}
+        </span>
+      ) : null}
+      <button
+        className="btn btn-sm btn-ghost"
+        onClick={() => {
+          void i18n.changeLanguage(i18n.language === "zh" ? "en" : "zh");
+        }}
+        title={t("app.switchLanguageTitle", {
+          language: i18n.language === "zh" ? t("common.english") : t("common.chinese"),
+        })}
+      >
+        {i18n.language === "zh" ? "EN" : "中"}
+      </button>
+    </>
+  );
 
-      <div className={`mdb-main ${isSidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
-        <aside className={`mdb-sidebar ${isSidebarCollapsed ? "is-hidden" : ""}`}>
-          <div className="mdb-sidebar-body">
-            <div className="mdb-sidebar-title">
-              <span>{t("sidebar.connection")}</span>
-              <span className="muted">{allProfiles.length}</span>
-            </div>
-
-          {/* Elasticsearch connections */}
-          <div className="mdb-tree-group">
-            <div className="mdb-tree-label mdb-tree-header">
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost mdb-tree-toggle"
-                onClick={() => setEsExpanded((prev) => !prev)}
-              >
-                <span>{esExpanded ? "▾" : "▸"}</span>
-                <span>Elasticsearch</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost mdb-tree-action"
-                onClick={() => void openConnectionConfig("elasticsearch", "add")}
-                title={t("connections.createConnection")}
-              >
-                +
-              </button>
-            </div>
-
-            {esExpanded && (
-              <div className="mdb-tree-items mdb-tree-stack">
-                {esProfiles.map(renderConnectionItem)}
-                {esProfiles.length === 0 && <div className="mdb-tree-empty">{t("connections.noConnections")}</div>}
-              </div>
-            )}
-          </div>
-
-          {/* MySQL connections */}
-          <div className="mdb-tree-group mdb-tree-group-spaced">
-            <div className="mdb-tree-label mdb-tree-header">
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost mdb-tree-toggle"
-                onClick={() => setMysqlExpanded((prev) => !prev)}
-              >
-                <span>{mysqlExpanded ? "▾" : "▸"}</span>
-                <span>MySQL</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost mdb-tree-action"
-                onClick={() => void openConnectionConfig("mysql", "add")}
-                title={t("connections.createConnection")}
-              >
-                +
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost mdb-tree-action"
-                onClick={refreshMysqlDatabases}
-                title={t("common.refresh")}
-              >
-                ↻
-              </button>
-            </div>
-
-            {mysqlExpanded && (
-              <div className="mdb-tree-items mdb-tree-stack">
-                {mysqlProfiles.map((profile) => {
-                  const isActiveMysql = activeConnectionId === profile.id && profile.engine === "mysql";
-
-                  return (
-                    <div key={profile.id}>
-                      {renderConnectionItem(profile)}
-                      {isActiveMysql && databases.length > 0 && (
-                        <div className="mdb-tree-nested">
-                          {databases.map((database) => {
-                            const isOpened = expandedDatabase === database;
-                            const isSelected = selectedDatabase === database;
-                            const showChildren = isOpened || isSelected;
-                            const tablesVisible = sidebarExpandedTablesDatabase === database;
-                            const tables = tablesByDb[database] ?? [];
-                            const tableCount = tablesByDb[database]?.length;
-
-                            return (
-                              <div key={`${profile.id}-${database}`}>
-                                <div
-                                  className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${isSelected ? "is-selected" : ""}`}
-                                  onClick={() => handleMysqlSelectDatabase(database)}
-                                  onDoubleClick={() => handleMysqlOpenDatabase(database)}
-                                  onContextMenu={(event) => handleMysqlDatabaseContextMenu(event, database)}
-                                >
-                                  <span className="mdb-tree-row-main">
-                                    <span>{showChildren ? "▾" : "▸"}</span>
-                                    <span className={`mdb-status-dot ${isOpened ? "status-success" : "status-idle"}`} />
-                                    <span className="mdb-tree-row-label">{database}</span>
-                                  </span>
-                                  <span className="muted mdb-tree-count">
-                                    {typeof tableCount === "number" ? tableCount : ""}
-                                  </span>
-                                </div>
-
-                                {showChildren && (
-                                  <div className="mdb-tree-nested">
-                                    <div
-                                      className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${tablesVisible ? "is-soft-selected" : ""}`}
-                                      onClick={() => {
-                                        void handleMysqlToggleSidebarTables(database);
-                                      }}
-                                    >
-                                      <span className="mdb-tree-row-main">
-                                        <span>{tablesVisible ? "▾" : "▸"}</span>
-                                        <span>🗂</span>
-                                        <span>{t("mysql.tableManager.tables")}</span>
-                                      </span>
-                                      <span className="muted mdb-tree-count">
-                                        {typeof tableCount === "number" ? tableCount : ""}
-                                      </span>
-                                    </div>
-
-                                    {tablesVisible && (
-                                      <div className="mdb-tree-nested mdb-tree-nested-deep">
-                                        {tables.map((table) => (
-                                          <div
-                                            key={`${profile.id}-${database}-${table}`}
-                                            className={`mdb-tree-item mdb-tree-item-compact ${selectedDatabase === database && selectedTable === table ? "is-selected" : ""}`}
-                                            onClick={() => {
-                                              void handleMysqlSelectSidebarTable(database, table);
-                                            }}
-                                            onDoubleClick={() => {
-                                              void handleMysqlOpenSidebarTable(database, table);
-                                            }}
-                                            title={table}
-                                          >
-                                            <span className="mdb-tree-row-main">
-                                              <span className="mdb-tree-table-icon">▤</span>
-                                              <span className="mdb-tree-row-label">{table}</span>
-                                            </span>
-                                          </div>
-                                        ))}
-                                        {tables.length === 0 && <div className="mdb-tree-empty">{t("mysql.data.noTables")}</div>}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {mysqlProfiles.length === 0 && <div className="mdb-tree-empty">{t("connections.noConnections")}</div>}
-              </div>
-            )}
-          </div>
-
-          {/* Redis connections */}
-          <div className="mdb-tree-group mdb-tree-group-spaced">
-            <div className="mdb-tree-label mdb-tree-header">
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost mdb-tree-toggle"
-                onClick={() => setRedisExpanded((prev) => !prev)}
-              >
-                <span>{redisExpanded ? "▾" : "▸"}</span>
-                <span>Redis</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost mdb-tree-action"
-                onClick={() => void openConnectionConfig("redis", "add")}
-                title={t("connections.createConnection")}
-              >
-                +
-              </button>
-            </div>
-
-            {redisExpanded && (
-              <div className="mdb-tree-items mdb-tree-stack">
-                {redisProfiles.map((profile) => (
-                  <div key={profile.id}>{renderConnectionItem(profile)}</div>
-                ))}
-                {redisProfiles.length === 0 && <div className="mdb-tree-empty">{t("connections.noConnections")}</div>}
-              </div>
-            )}
-          </div>
-
-          {/* Connection action error */}
-          {connectionActionError && (
-            <div className="text-danger mdb-sidebar-error">
-              {connectionActionError}
-            </div>
-          )}
-
-          </div>
-
-          <div className="mdb-sidebar-footer">
-            <button
-              type="button"
-              className="mdb-sidebar-footer-button"
-              onClick={() => setIsErrorLogOpen(true)}
-              title={t("errorLog.open")}
-            >
-              <span>{t("errorLog.button")}</span>
-              <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
-            </button>
-          </div>
-        </aside>
-
-        <main className="mdb-workspace">
-          <div className="mdb-workspace-shell" style={{ display: canShowWorkspace ? "flex" : "none" }}>
-            {/* ES tabs */}
-            <div className="mdb-tabs" style={{ display: isEsWorkspace ? "flex" : "none" }}>
-              <NavLink to="/data" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("sidebar.dataBrowser")}
-              </NavLink>
-              <NavLink to="/sql" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("sidebar.sqlQuery")}
-              </NavLink>
-              <NavLink to="/rest" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("sidebar.restConsole")}
-              </NavLink>
-              <NavLink to="/indices" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("sidebar.indexManager")}
-              </NavLink>
-              {showEsConnectionsTab && (
-                <NavLink to="/connections" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                  {t("sidebar.connections")}
-                </NavLink>
-              )}
-            </div>
-
-            {/* MySQL tabs */}
-            <div className="mdb-tabs" style={{ display: isMysqlWorkspace ? "flex" : "none" }}>
-              <NavLink to="/mysql/tables" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("mysql.sidebar.tableManager")}
-              </NavLink>
-              {openedTables.map((item) => {
-                const tabKey = getMysqlOpenedTableKey(item.database, item.table);
-                const isActiveTab = location.pathname === "/mysql/table" && activeOpenedTableKey === tabKey;
-
-                return (
-                  <button
-                    key={tabKey}
-                    type="button"
-                    className={`mdb-tab mdb-tab-button ${isActiveTab ? "active" : ""}`}
-                    onClick={() => {
-                      void handleActivateMysqlOpenedTable(item.database, item.table);
-                    }}
-                    onContextMenu={(event) => handleMysqlTabContextMenu(event, tabKey)}
-                  >
-                    <span className="mdb-tab-label">{item.database}.{item.table}</span>
-                    <span
-                      className="mdb-tab-close"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleCloseMysqlOpenedTable(item.database, item.table);
-                      }}
-                    >
-                      ×
-                    </span>
-                  </button>
-                );
-              })}
-              <NavLink to="/mysql/sql" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("mysql.sidebar.sqlQuery")}
-              </NavLink>
-              {showMysqlConnectionsTab && (
-                <NavLink to="/mysql/connections" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                  {t("sidebar.connections")}
-                </NavLink>
-              )}
-            </div>
-
-            {/* Redis tabs */}
-            <div className="mdb-tabs" style={{ display: isRedisWorkspace ? "flex" : "none" }}>
-              <NavLink to="/redis/browser" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("redis.sidebar.browser")}
-              </NavLink>
-              <NavLink to="/redis/console" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                {t("redis.sidebar.console")}
-              </NavLink>
-              {showRedisConnectionsTab && (
-                <NavLink to="/redis/connections" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-                  {t("sidebar.connections")}
-                </NavLink>
-              )}
-            </div>
-
-            <section className="mdb-content">
-              {/* Routes for redirects and connection pages */}
-              <Routes>
-                <Route path="/" element={<Navigate to="/data" replace />} />
-                <Route path="/connections" element={<EsConnectionsPage />} />
-                <Route path="/connections/es" element={<Navigate to="/connections?action=add" replace />} />
-                <Route path="/mysql" element={<Navigate to="/mysql/tables" replace />} />
-                <Route path="/mysql/connections" element={<MysqlConnectionsPage />} />
-                <Route path="/mysql/table" element={null} />
-                <Route path="/redis" element={<Navigate to="/redis/browser" replace />} />
-                <Route path="/redis/connections" element={<RedisConnectionsPage />} />
-                <Route path="*" element={null} />
-              </Routes>
-
-              {/* ES pages - always mounted, display toggled */}
-              <div style={{ display: location.pathname === "/data" ? undefined : "none" }}>
-                <DataBrowser />
-              </div>
-              <div style={{ display: location.pathname === "/sql" ? undefined : "none" }}>
-                <SqlQuery />
-              </div>
-              <div style={{ display: location.pathname === "/rest" ? undefined : "none" }}>
-                <RestConsole />
-              </div>
-              <div style={{ display: location.pathname === "/indices" ? undefined : "none" }}>
-                <IndexManager />
-              </div>
-
-              {/* MySQL pages - always mounted, display toggled */}
-              <div style={{ display: location.pathname === "/mysql/sql" ? undefined : "none" }}>
-                <MysqlSqlQuery />
-              </div>
-              <div style={{ display: location.pathname === "/mysql/tables" || location.pathname === "/mysql/table" ? undefined : "none" }}>
-                <MysqlTableManager />
-              </div>
-
-              {/* Redis pages - always mounted, display toggled */}
-              <div style={{ display: location.pathname === "/redis/browser" ? undefined : "none" }}>
-                <RedisBrowserPage />
-              </div>
-              <div style={{ display: location.pathname === "/redis/console" ? undefined : "none" }}>
-                <RedisConsolePage />
-              </div>
-            </section>
-          </div>
-
-          {!canShowWorkspace && (
-            <section className="mdb-content mdb-content-empty">
-              <div className="card mdb-empty-state-card">
-                <span className="muted">{t("sidebar.notConnected")}</span>
-              </div>
-            </section>
-          )}
-        </main>
+  const sidebarContent = (
+    <>
+      <div className="mdb-sidebar-title">
+        <span>{t("sidebar.connection")}</span>
+        <span className="muted">{connection.allProfiles.length}</span>
       </div>
 
-      {contextMenu && (
-        <div
-          style={{
-            position: "fixed",
-            left: `${contextMenu.x}px`,
-            top: `${contextMenu.y}px`,
-            zIndex: 1200,
-            minWidth: "128px",
-            background: "#fff",
-            border: "1px solid #d1d1d6",
-            borderRadius: "8px",
-            boxShadow: "0 8px 20px rgba(0, 0, 0, 0.12)",
-            padding: "4px"
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {activeConnectionId === contextMenu.connectionId ? (
+      <EsSidebarSection
+        expanded={esExpanded}
+        onToggle={() => setEsExpanded((prev) => !prev)}
+        emptyText={t("connections.noConnections")}
+        createConnectionTitle={t("connections.createConnection")}
+        hasConnections={connection.esProfiles.length > 0}
+      >
+        {connection.esProfiles.map(renderConnectionItem)}
+      </EsSidebarSection>
+
+      <MysqlSidebarSection
+        expanded={mysqlExpanded}
+        profiles={connection.mysqlProfiles}
+        activeConnectionId={connection.activeConnectionId}
+        databases={mysql.databases}
+        expandedDatabase={mysql.expandedDatabase}
+        selectedDatabase={mysql.selectedDatabase}
+        selectedTable={mysql.selectedTable}
+        sidebarExpandedTablesDatabase={mysql.sidebarExpandedTablesDatabase}
+        tablesByDb={mysql.tablesByDb}
+        tablesLabel={t("mysql.tableManager.tables")}
+        emptyText={t("connections.noConnections")}
+        noTablesText={t("mysql.data.noTables")}
+        createConnectionTitle={t("connections.createConnection")}
+        refreshTitle={t("common.refresh")}
+        renderConnectionItem={renderConnectionItem}
+        onToggle={() => setMysqlExpanded((prev) => !prev)}
+        onCreateConnection={() => {
+          void connection.openConnectionConfig("mysql", "add");
+        }}
+        onRefresh={() => {
+          void mysql.refreshMysqlDatabases();
+        }}
+        onSelectDatabase={mysql.handleMysqlSelectDatabase}
+        onOpenDatabase={(database) => {
+          void mysql.handleMysqlOpenDatabase(database);
+        }}
+        onDatabaseContextMenu={mysql.handleMysqlDatabaseContextMenu}
+        onToggleSidebarTables={(database) => {
+          void mysql.handleMysqlToggleSidebarTables(database);
+        }}
+        onSelectSidebarTable={(database, table) => {
+          void mysql.handleMysqlSelectSidebarTable(database, table);
+        }}
+        onOpenSidebarTable={(database, table) => {
+          void mysql.handleMysqlOpenSidebarTable(database, table);
+        }}
+        onTableContextMenu={mysql.handleMysqlTableContextMenu}
+      />
+
+      <RedisSidebarSection
+        expanded={redisExpanded}
+        onToggle={() => setRedisExpanded((prev) => !prev)}
+        onCreateConnection={() => {
+          void connection.openConnectionConfig("redis", "add");
+        }}
+        emptyText={t("connections.noConnections")}
+        createConnectionTitle={t("connections.createConnection")}
+        hasConnections={connection.redisProfiles.length > 0}
+      >
+        {connection.redisProfiles.map((profile) => (
+          <div key={profile.id}>{renderConnectionItem(profile)}</div>
+        ))}
+      </RedisSidebarSection>
+
+      {connection.connectionActionError ? (
+        <div className="text-danger mdb-sidebar-error">{connection.connectionActionError}</div>
+      ) : null}
+    </>
+  );
+
+  const sidebarFooter = (
+    <button
+      type="button"
+      className="mdb-sidebar-footer-button"
+      onClick={() => setIsErrorLogOpen(true)}
+      title={t("errorLog.open")}
+    >
+      <span>{t("errorLog.button")}</span>
+      <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
+    </button>
+  );
+
+  const workspace = (
+    <>
+      <EsWorkspaceTabs
+        visible={isEsWorkspace}
+        dataBrowserLabel={t("sidebar.dataBrowser")}
+        sqlQueryLabel={t("sidebar.sqlQuery")}
+        restConsoleLabel={t("sidebar.restConsole")}
+        indexManagerLabel={t("sidebar.indexManager")}
+      />
+
+      <MysqlWorkspaceTabs
+        visible={isMysqlWorkspace}
+        openedTables={mysql.openedTables}
+        activeOpenedTableKey={mysql.activeOpenedTableKey}
+        locationPathname={location.pathname}
+        tableManagerLabel={t("mysql.sidebar.tableManager")}
+        sqlQueryLabel={t("mysql.sidebar.sqlQuery")}
+        connectionsLabel={t("sidebar.connections")}
+        showConnectionsTab={showMysqlConnectionsTab}
+        onActivateTable={(database, table) => {
+          void mysql.handleActivateMysqlOpenedTable(database, table);
+        }}
+        onCloseTable={(database, table) => {
+          void mysql.handleCloseMysqlOpenedTable(database, table);
+        }}
+        onTableContextMenu={mysql.handleMysqlTabContextMenu}
+      />
+
+      <RedisWorkspaceTabs
+        visible={isRedisWorkspace}
+        browserLabel={t("redis.sidebar.browser")}
+        consoleLabel={t("redis.sidebar.console")}
+        connectionsLabel={t("sidebar.connections")}
+        showConnectionsTab={showRedisConnectionsTab}
+      />
+
+      <section className="mdb-content">
+        <Suspense fallback={<WorkspaceLoadingFallback />}>
+          <Routes>
+            <Route path="/" element={null} />
+            <Route path="/data" element={<EsDataBrowserPage />} />
+            <Route path="/sql" element={<EsSqlQueryPage />} />
+            <Route path="/rest" element={<EsRestConsolePage />} />
+            <Route path="/indices" element={<EsIndexManagerPage />} />
+            <Route path="/mysql" element={<Navigate to="/mysql/tables" replace />} />
+            <Route path="/mysql/connections" element={<MysqlConnectionsPage />} />
+            <Route path="/mysql/sql" element={<MysqlSqlQueryPage />} />
+            <Route path="/mysql/tables" element={<MysqlTableManagerPage />} />
+            <Route path="/mysql/table" element={<MysqlTableManagerPage />} />
+            <Route path="/redis" element={<Navigate to="/redis/browser" replace />} />
+            <Route path="/redis/browser" element={<RedisBrowserPage />} />
+            <Route path="/redis/console" element={<RedisConsolePage />} />
+            <Route path="/redis/connections" element={<RedisConnectionsPage />} />
+            <Route path="*" element={null} />
+          </Routes>
+        </Suspense>
+      </section>
+    </>
+  );
+
+  const emptyState = (
+    <section className="mdb-content mdb-content-empty">
+      <div className="card mdb-empty-state-card">
+        <span className="muted">{t("sidebar.notConnected")}</span>
+      </div>
+    </section>
+  );
+
+  return (
+    <>
+      <WorkspaceChrome
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+        brand={t("sidebar.brand")}
+        windowHint={connection.activeProfile ? `${connection.activeEngineLabel} / ${connection.activeProfile.name}` : t("sidebar.notConnected")}
+        topbarRight={topbarRight}
+        sidebarContent={sidebarContent}
+        sidebarFooter={sidebarFooter}
+        workspace={workspace}
+        emptyState={emptyState}
+        canShowWorkspace={canShowWorkspace}
+      />
+
+      {connection.contextMenu ? (
+        <FloatingMenu x={connection.contextMenu.x} y={connection.contextMenu.y} minWidth={128}>
+          {connection.activeConnectionId === connection.contextMenu.connectionId ? (
             <button
               type="button"
               className="btn btn-sm btn-ghost"
               style={{ width: "100%", justifyContent: "flex-start" }}
-              disabled={isConnectionActionPending}
+              disabled={connection.isConnectionActionPending}
               onClick={() => {
-                setContextMenu(null);
-                handleDisconnect();
+                connection.closeConnectionContextMenu();
+                void connection.handleDisconnect();
               }}
             >
               {t("connections.disconnect")}
@@ -1214,96 +367,143 @@ function AppLayout() {
               type="button"
               className="btn btn-sm btn-ghost"
               style={{ width: "100%", justifyContent: "flex-start" }}
-              disabled={isConnectionActionPending}
+              disabled={connection.isConnectionActionPending}
               onClick={() => {
-                setContextMenu(null);
-                const status = connectionStatusById[contextMenu.connectionId] ?? "idle";
-                handleConnectionChange(contextMenu.connectionId, { forceValidate: status !== "success" });
+                const contextMenu = connection.contextMenu;
+                if (!contextMenu) {
+                  return;
+                }
+
+                const status = connection.connectionStatusById[contextMenu.connectionId] ?? "idle";
+                connection.closeConnectionContextMenu();
+                void connection.handleConnectionChange(contextMenu.connectionId, { forceValidate: status !== "success" });
               }}
             >
               {t("connections.connect")}
             </button>
           )}
 
-          <div style={{ height: "1px", background: "#e5e5ea", margin: "4px 0" }} />
+          <FloatingMenuDivider />
 
-          {state.profiles.find((p) => p.id === contextMenu.connectionId)?.engine === "mysql" && (
+          {connection.getProfileById(connection.contextMenu.connectionId)?.engine === "mysql" ? (
             <>
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
                 style={{ width: "100%", justifyContent: "flex-start" }}
                 onClick={() => {
-                  void handleCreateMysqlDatabase(contextMenu.connectionId);
+                  const connectionId = connection.contextMenu?.connectionId;
+                  connection.closeConnectionContextMenu();
+                  if (connectionId) {
+                    void mysql.handleCreateMysqlDatabase(connectionId);
+                  }
                 }}
               >
                 {t("mysql.tableManager.createDatabase")}
               </button>
-              <div style={{ height: "1px", background: "#e5e5ea", margin: "4px 0" }} />
+              <FloatingMenuDivider />
             </>
-          )}
+          ) : null}
 
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
-            onClick={() => {
-              const profile = state.profiles.find((p) => p.id === contextMenu.connectionId);
-              const engine = profile?.engine ?? "elasticsearch";
-              setContextMenu(null);
-              void openConnectionConfig(engine, "edit", contextMenu.connectionId);
-            }}
-          >
-            {t("common.edit")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
-            onClick={() => {
-              const profile = state.profiles.find((p) => p.id === contextMenu.connectionId);
-              const engine = profile?.engine ?? "elasticsearch";
-              setContextMenu(null);
-              void openConnectionConfig(engine, "copy", contextMenu.connectionId);
-            }}
-          >
-            {t("common.copy")}
-          </button>
+          {(() => {
+            const profile = connection.getProfileById(connection.contextMenu.connectionId);
+            if (profile?.engine !== "mysql" && profile?.engine !== "redis") {
+              return null;
+            }
+
+            return (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => {
+                    const connectionId = connection.contextMenu?.connectionId;
+                    connection.closeConnectionContextMenu();
+                    if (connectionId) {
+                      void connection.openConnectionConfig(profile.engine === "mysql" ? "mysql" : "redis", "edit", connectionId);
+                    }
+                  }}
+                >
+                  {t("common.edit")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => {
+                    const connectionId = connection.contextMenu?.connectionId;
+                    connection.closeConnectionContextMenu();
+                    if (connectionId) {
+                      void connection.openConnectionConfig(profile.engine === "mysql" ? "mysql" : "redis", "copy", connectionId);
+                    }
+                  }}
+                >
+                  {t("common.copy")}
+                </button>
+              </>
+            );
+          })()}
+
           <button
             type="button"
             className="btn btn-sm btn-ghost text-danger"
             style={{ width: "100%", justifyContent: "flex-start" }}
-            onClick={() => handleDeleteConnection(contextMenu.connectionId)}
+            onClick={() => {
+              const connectionId = connection.contextMenu?.connectionId;
+              if (connectionId) {
+                void connection.handleDeleteConnection(connectionId);
+              }
+            }}
           >
             {t("common.delete")}
           </button>
-        </div>
-      )}
+        </FloatingMenu>
+      ) : null}
 
-      {mysqlDatabaseContextMenu && (
-        <div
-          style={{
-            position: "fixed",
-            left: `${mysqlDatabaseContextMenu.x}px`,
-            top: `${mysqlDatabaseContextMenu.y}px`,
-            zIndex: 1200,
-            minWidth: "148px",
-            background: "#fff",
-            border: "1px solid #d1d1d6",
-            borderRadius: "8px",
-            boxShadow: "0 8px 20px rgba(0, 0, 0, 0.12)",
-            padding: "4px"
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
+      {mysql.mysqlDatabaseContextMenu ? (
+        <FloatingMenu x={mysql.mysqlDatabaseContextMenu.x} y={mysql.mysqlDatabaseContextMenu.y} minWidth={148}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => {
+              void mysql.handleMysqlImportDatabase(mysql.mysqlDatabaseContextMenu!.database);
+            }}
+          >
+            {t("mysql.tableManager.importSql")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => {
+              void mysql.handleMysqlExportDatabase(mysql.mysqlDatabaseContextMenu!.database, false);
+            }}
+          >
+            {t("mysql.tableManager.exportStructure")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => {
+              void mysql.handleMysqlExportDatabase(mysql.mysqlDatabaseContextMenu!.database, true);
+            }}
+          >
+            {t("mysql.tableManager.exportStructureAndData")}
+          </button>
+          <FloatingMenuDivider />
           <button
             type="button"
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={async () => {
-              const database = mysqlDatabaseContextMenu.database;
-              setMysqlDatabaseContextMenu(null);
-              await handleMysqlOpenDatabase(database);
+              const database = mysql.mysqlDatabaseContextMenu?.database;
+              mysql.setMysqlDatabaseContextMenu(null);
+              if (database) {
+                await mysql.handleMysqlOpenDatabase(database);
+              }
             }}
           >
             {t("mysql.tableManager.openDatabase")}
@@ -1312,49 +512,89 @@ function AppLayout() {
             type="button"
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
-            disabled={expandedDatabase !== mysqlDatabaseContextMenu.database}
+            disabled={mysql.expandedDatabase !== mysql.mysqlDatabaseContextMenu.database}
             onClick={async () => {
-              const database = mysqlDatabaseContextMenu.database;
-              setMysqlDatabaseContextMenu(null);
-              await handleMysqlCloseDatabase(database);
+              const database = mysql.mysqlDatabaseContextMenu?.database;
+              mysql.setMysqlDatabaseContextMenu(null);
+              if (database) {
+                await mysql.handleMysqlCloseDatabase(database);
+              }
             }}
           >
             {t("mysql.tableManager.closeDatabase")}
           </button>
-          <div style={{ height: "1px", background: "#e5e5ea", margin: "4px 0" }} />
+          <FloatingMenuDivider />
           <button
             type="button"
             className="btn btn-sm btn-ghost text-danger"
             style={{ width: "100%", justifyContent: "flex-start" }}
-            onClick={() => handleDropMysqlDatabase(mysqlDatabaseContextMenu.database)}
+            onClick={() => {
+              void mysql.handleDropMysqlDatabase(mysql.mysqlDatabaseContextMenu!.database);
+            }}
           >
             {t("mysql.tableManager.dropDatabase")}
           </button>
-        </div>
-      )}
+        </FloatingMenu>
+      ) : null}
 
-      {mysqlTabContextMenu && (
-        <div
-          style={{
-            position: "fixed",
-            left: `${mysqlTabContextMenu.x}px`,
-            top: `${mysqlTabContextMenu.y}px`,
-            zIndex: 1200,
-            minWidth: "148px",
-            background: "#fff",
-            border: "1px solid #d1d1d6",
-            borderRadius: "8px",
-            boxShadow: "0 8px 20px rgba(0, 0, 0, 0.12)",
-            padding: "4px"
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
+      {mysql.mysqlTableContextMenu ? (
+        <FloatingMenu x={mysql.mysqlTableContextMenu.x} y={mysql.mysqlTableContextMenu.y} minWidth={180}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={async () => {
+              const target = mysql.mysqlTableContextMenu;
+              mysql.setMysqlTableContextMenu(null);
+              if (target) {
+                await mysql.handleMysqlOpenSidebarTable(target.database, target.table);
+              }
+            }}
+          >
+            {t("mysql.tableManager.openTable")}
+          </button>
+          <FloatingMenuDivider />
           <button
             type="button"
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
-              void closeCurrentMysqlTab(mysqlTabContextMenu.key);
+              void mysql.handleMysqlImportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table);
+            }}
+          >
+            {t("mysql.tableManager.importSql")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => {
+              void mysql.handleMysqlExportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table, false);
+            }}
+          >
+            {t("mysql.tableManager.exportStructure")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => {
+              void mysql.handleMysqlExportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table, true);
+            }}
+          >
+            {t("mysql.tableManager.exportStructureAndData")}
+          </button>
+        </FloatingMenu>
+      ) : null}
+
+      {mysql.mysqlTabContextMenu ? (
+        <FloatingMenu x={mysql.mysqlTabContextMenu.x} y={mysql.mysqlTabContextMenu.y} minWidth={148}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => {
+              void mysql.closeCurrentMysqlTab(mysql.mysqlTabContextMenu!.key);
             }}
           >
             {t("mysql.tableManager.closeCurrentTab")}
@@ -1364,7 +604,7 @@ function AppLayout() {
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
-              void closeOtherMysqlTabs(mysqlTabContextMenu.key);
+              void mysql.closeOtherMysqlTabs(mysql.mysqlTabContextMenu!.key);
             }}
           >
             {t("mysql.tableManager.closeOtherTabs")}
@@ -1374,16 +614,16 @@ function AppLayout() {
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
-              void closeAllMysqlTabs();
+              void mysql.closeAllMysqlTabs();
             }}
           >
             {t("mysql.tableManager.closeAllTabs")}
           </button>
-        </div>
-      )}
+        </FloatingMenu>
+      ) : null}
 
-      <ErrorLogModal open={isErrorLogOpen} onClose={() => setIsErrorLogOpen(false)} />
-    </div>
+      {isErrorLogOpen ? <ErrorLogModal open={isErrorLogOpen} onClose={() => setIsErrorLogOpen(false)} /> : null}
+    </>
   );
 }
 
