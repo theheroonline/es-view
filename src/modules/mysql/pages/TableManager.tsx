@@ -3310,7 +3310,7 @@ export default function MysqlTableManager() {
                               }
                             }}
                           />
-                          {col.field}
+                          <span>{col.field}</span>
                         </label>
                       ))}
                     </div>

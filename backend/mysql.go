@@ -283,10 +283,18 @@ func (m *MysqlModule) MysqlListDatabases(connectionID string) ([]string, error) 
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}
 
+	// System databases that should be filtered out
+	systemDatabases := map[string]bool{
+		"information_schema": true,
+		"performance_schema": true,
+		"mysql":              true,
+		"sys":                true,
+	}
+
 	databases := make([]string, 0, len(data))
 	for _, row := range data {
 		dbName := getNullStringValueByIndex(columns, row, 0)
-		if dbName.Valid {
+		if dbName.Valid && !systemDatabases[dbName.String] {
 			databases = append(databases, dbName.String)
 		}
 	}

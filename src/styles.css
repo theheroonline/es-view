@@ -1117,6 +1117,7 @@ body {
 .modal-card {
   display: flex;
   flex-direction: column;
+  max-height: 80vh;
 }
 
 .modal-card-sm {
@@ -1136,11 +1137,14 @@ body {
 }
 
 .modal-card-scroll {
-  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-card-body {
+  flex: 1;
   padding: 16px;
+  overflow-y: auto;
 }
 
 .modal-card-body-scroll {
@@ -1165,6 +1169,7 @@ body {
   gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid #e5e5ea;
+  flex-shrink: 0;
 }
 
 .modal-inline-error {
@@ -1219,7 +1224,7 @@ body {
 
 .tm-index-columns {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(auto, max-content));
   gap: 10px;
   padding: 10px;
   border: 1px solid #d8e0ea;
@@ -1236,10 +1241,12 @@ body {
   font-size: 14px;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
 }
 
 .tm-checkbox-label input[type="checkbox"] {
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .tm-actions-cell {
