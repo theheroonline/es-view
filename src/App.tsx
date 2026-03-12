@@ -472,6 +472,17 @@ function AppLayout() {
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
+              mysql.handleMysqlCreateTable(mysql.mysqlDatabaseContextMenu!.database);
+            }}
+          >
+            {t("mysql.tableManager.createTable")}
+          </button>
+          <FloatingMenuDivider />
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            onClick={() => {
               void mysql.handleMysqlImportDatabase(mysql.mysqlDatabaseContextMenu!.database);
             }}
           >

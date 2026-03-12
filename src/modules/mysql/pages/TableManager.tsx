@@ -15,7 +15,6 @@ import {
     mysqlCreateIndex,
     mysqlDescribeTable,
     mysqlDropIndex,
-    mysqlExportDatabase,
     mysqlExportTable,
     mysqlExportTables,
     mysqlImportSql,
@@ -128,6 +127,26 @@ interface ExportSelectionModalState {
   includeData: boolean;
 }
 
+interface CreateTableColumn {
+  id: string;
+  name: string;
+  type: string;
+  length?: string;
+  scale?: string;
+  nullable: boolean;
+  defaultValue: string;
+  isPrimary: boolean;
+  autoIncrement: boolean;
+}
+
+interface CreateTableModalState {
+  database: string;
+  tableName: string;
+  columns: CreateTableColumn[];
+  charset: string;
+  engine: string;
+}
+
 interface RowContextMenu {
   x: number;
   y: number;
@@ -208,6 +227,30 @@ export default function MysqlTableManager() {
   const [overviewSelectionAnchor, setOverviewSelectionAnchor] = useState<string | null>(null);
   const [exportSelectionModal, setExportSelectionModal] = useState<ExportSelectionModalState | null>(null);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
+  const [createTableModal, setCreateTableModal] = useState<CreateTableModalState | null>(null);
+  const [createTableError, setCreateTableError] = useState("");
+  const [createTableLoading, setCreateTableLoading] = useState(false);
+  const [createTableSuccess, setCreateTableSuccess] = useState<string | null>(null);
+  const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
+  const [newColumnForm, setNewColumnForm] = useState<{
+    name: string;
+    type: string;
+    length: string;
+    scale: string;
+    nullable: boolean;
+    defaultValue: string;
+    isPrimary: boolean;
+    autoIncrement: boolean;
+  }>({
+    name: "",
+    type: "varchar",
+    length: "255",
+    scale: "",
+    nullable: true,
+    defaultValue: "",
+    isPrimary: false,
+    autoIncrement: false
+  });
   const selectedOverviewTablesRef = useRef<string[]>([]);
 
   // Data browsing state
@@ -1533,12 +1576,6 @@ export default function MysqlTableManager() {
     setTreeContextMenu({ db, table, selectedTables: nextSelectedTables, x: e.clientX, y: e.clientY });
   };
 
-  const handleDatabaseContextMenu = (e: MouseEvent, database: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDatabaseContextMenu({ database, x: e.clientX, y: e.clientY });
-  };
-
   const handleRowContextMenu = (e: MouseEvent<HTMLElement>, rowIndex: number, column: string, value: unknown) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1582,44 +1619,6 @@ export default function MysqlTableManager() {
     };
   }, [columnHeaderContextMenu, databaseContextMenu, rowContextMenu, treeContextMenu]);
 
-  const handleExportDatabaseSql = async (database: string, includeData: boolean) => {
-    if (!connectionId) return;
-    try {
-      const message = await mysqlExportDatabase(connectionId, database, includeData);
-      if (message) {
-        setExportSuccessMessage(message);
-      }
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.exportDatabase",
-        message: `Failed to export database ${database}`
-      });
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDatabaseContextMenu(null);
-    }
-  };
-
-  const handleImportDatabaseSql = async (database: string) => {
-    if (!connectionId) return;
-    try {
-      const message = await mysqlImportSql(connectionId, database);
-      await refreshDatabases();
-      await refreshTablesForDb(database);
-      if (message) {
-        setExportSuccessMessage(message);
-      }
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.importDatabase",
-        message: `Failed to import SQL into database ${database}`
-      });
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDatabaseContextMenu(null);
-    }
-  };
-
   const handleExportTableSql = async (database: string, table: string, includeData: boolean) => {
     if (!connectionId) return;
     try {
@@ -1657,6 +1656,184 @@ export default function MysqlTableManager() {
       setTreeContextMenu(null);
     }
   };
+
+  const handleAddColumn = useCallback(() => {
+    if (!createTableModal) return;
+
+    const newColumn: CreateTableColumn = {
+      id: Date.now().toString(),
+      name: "",
+      type: "varchar",
+      length: "255",
+      scale: "",
+      nullable: true,
+      defaultValue: "",
+      isPrimary: false,
+      autoIncrement: false
+    };
+
+    setCreateTableModal({
+      ...createTableModal,
+      columns: [...createTableModal.columns, newColumn]
+    });
+    setEditingColumnId(newColumn.id);
+    setNewColumnForm({
+      name: "",
+      type: "varchar",
+      length: "255",
+      scale: "",
+      nullable: true,
+      defaultValue: "",
+      isPrimary: false,
+      autoIncrement: false
+    });
+  }, [createTableModal]);
+
+  const handleSaveColumn = useCallback((columnId: string) => {
+    if (!createTableModal) return;
+
+    const { name } = newColumnForm;
+    if (!name.trim()) {
+      setCreateTableError("Column name cannot be empty");
+      return;
+    }
+
+    const updatedColumns = createTableModal.columns.map(col =>
+      col.id === columnId
+        ? {
+            ...col,
+            name: name.trim(),
+            type: newColumnForm.type,
+            length: newColumnForm.length,
+            scale: newColumnForm.scale,
+            nullable: newColumnForm.nullable,
+            defaultValue: newColumnForm.defaultValue,
+            isPrimary: newColumnForm.isPrimary,
+            autoIncrement: newColumnForm.autoIncrement
+          }
+        : col
+    );
+
+    setCreateTableModal({
+      ...createTableModal,
+      columns: updatedColumns
+    });
+    setEditingColumnId(null);
+    setCreateTableError("");
+  }, [createTableModal, newColumnForm]);
+
+  const handleDeleteColumn = useCallback((columnId: string) => {
+    if (!createTableModal) return;
+
+    setCreateTableModal({
+      ...createTableModal,
+      columns: createTableModal.columns.filter(col => col.id !== columnId)
+    });
+    setEditingColumnId(null);
+  }, [createTableModal]);
+
+  const generateCreateTableSQL = useCallback((state: CreateTableModalState): string => {
+    const { tableName, columns, charset, engine, database } = state;
+
+    if (!tableName.trim() || columns.length === 0) {
+      return "";
+    }
+
+    const backtick = (str: string) => `\`${str.replace(/`/g, '``')}\``;
+    const tableFull = `${backtick(database)}.${backtick(tableName)}`;
+
+    const columnDefs = columns.map(col => {
+      let def = `${backtick(col.name)} ${col.type}`;
+
+      if (col.length && (col.type === "varchar" || col.type === "char")) {
+        def += `(${col.length})`;
+      } else if (col.length && col.scale && (col.type === "decimal" || col.type === "float" || col.type === "double")) {
+        def += `(${col.length},${col.scale})`;
+      }
+
+      if (!col.nullable) {
+        def += " NOT NULL";
+      }
+
+      if (col.defaultValue) {
+        if (col.defaultValue.toUpperCase() === "CURRENT_TIMESTAMP") {
+          def += " DEFAULT CURRENT_TIMESTAMP";
+        } else {
+          def += ` DEFAULT '${col.defaultValue.replace(/'/g, "''")}'`;
+        }
+      }
+
+      if (col.autoIncrement) {
+        def += " AUTO_INCREMENT";
+      }
+
+      if (col.isPrimary) {
+        def += " PRIMARY KEY";
+      }
+
+      return def;
+    }).join(",\n  ");
+
+    return `CREATE TABLE ${tableFull} (\n  ${columnDefs}\n) ENGINE=${engine} DEFAULT CHARSET=${charset};`;
+  }, []);
+
+  const handleCreateTable = useCallback(async () => {
+    if (!createTableModal || !connectionId) return;
+
+    const { tableName, columns, database } = createTableModal;
+
+    if (!tableName.trim()) {
+      setCreateTableError(t("connections.nameAndAddressRequired"));
+      return;
+    }
+
+    if (columns.length === 0) {
+      setCreateTableError(t("mysql.tableManager.noColumns"));
+      return;
+    }
+
+    // Check if table already exists
+    const existingTables = tablesByDb[database] ?? [];
+    if (existingTables.includes(tableName.trim())) {
+      setCreateTableError(t("mysql.tableManager.tableAlreadyExists", { name: tableName.trim(), database }));
+      return;
+    }
+
+    const sql = generateCreateTableSQL(createTableModal);
+    if (!sql) {
+      setCreateTableError("Failed to generate SQL");
+      return;
+    }
+
+    setCreateTableLoading(true);
+    setCreateTableError("");
+
+    try {
+      await mysqlQuery(connectionId, sql);
+
+      // Refresh the database tables to show new table
+      if (database) {
+        const newTables = await mysqlListTables(connectionId, database);
+        if (newTables) {
+          setTablesByDb(prev => ({
+            ...prev,
+            [database]: newTables
+          }));
+        }
+      }
+
+      setCreateTableSuccess(tableName);
+      setCreateTableModal(null);
+    } catch (err) {
+      logError(err, {
+        source: "mysqlTableManager.createTable",
+        message: `Failed to create table ${tableName}`
+      });
+      setCreateTableError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreateTableLoading(false);
+    }
+  }, [createTableModal, connectionId, generateCreateTableSQL, tablesByDb, t]);
 
   const openExportSelectionModal = useCallback((database: string, tables: string[], includeData: boolean) => {
     const availableTables = tablesByDb[database] ?? [];
@@ -1722,7 +1899,9 @@ export default function MysqlTableManager() {
 
   // ─── SQL modal ───
 
-  const openSqlModal = (prefill?: string) => {
+  // Keep this function for backward compatibility (may be used elsewhere)
+  // @ts-ignore - used by other modules
+  const _openSqlModal = (prefill?: string) => {
     setSqlModalValue(prefill ?? "");
     setSqlModalResult("");
     setSqlModalOpen(true);
@@ -2402,7 +2581,7 @@ export default function MysqlTableManager() {
 
     return (
       <>
-        <div className="card-header page-section-header" onContextMenu={(event) => handleDatabaseContextMenu(event, expandedDatabase)}>
+        <div className="card-header page-section-header">
           <div>
             <h3 className="card-title">{expandedDatabase}</h3>
             <p className="muted tm-overview-header-note">
@@ -2413,7 +2592,19 @@ export default function MysqlTableManager() {
             <button className="btn btn-sm btn-ghost" onClick={() => refreshTablesForDb(expandedDatabase)} disabled={loading}>
               {t("mysql.tableManager.refreshTables")}
             </button>
-            <button className="btn btn-sm btn-primary" onClick={() => openSqlModal(`CREATE TABLE \`${expandedDatabase}\`.\`new_table\` (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  name VARCHAR(255)\n);`)}>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                setCreateTableModal({
+                  database: expandedDatabase,
+                  tableName: "",
+                  columns: [],
+                  charset: "utf8mb4",
+                  engine: "InnoDB"
+                });
+                setCreateTableError("");
+              }}
+            >
               {t("mysql.tableManager.createTable")}
             </button>
           </div>
@@ -2458,7 +2649,7 @@ export default function MysqlTableManager() {
     if (!activeOpenedTable) {
       return (
         <div className="workspace-center-state">
-          <span className="muted">请选择表</span>
+          <span className="muted">{t("mysql.tableManager.selectTableHint")}</span>
         </div>
       );
     }
@@ -2534,47 +2725,6 @@ export default function MysqlTableManager() {
       )}
 
       {/* Tree context menu */}
-      {databaseContextMenu && (
-        <div
-          className="context-menu-panel"
-          style={{
-            position: "fixed",
-            left: `${databaseContextMenu.x}px`,
-            top: `${databaseContextMenu.y}px`,
-            minWidth: "180px"
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void handleImportDatabaseSql(databaseContextMenu.database);
-            }}
-          >
-            {t("mysql.tableManager.importSql")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void handleExportDatabaseSql(databaseContextMenu.database, false);
-            }}
-          >
-            {t("mysql.tableManager.exportStructure")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void handleExportDatabaseSql(databaseContextMenu.database, true);
-            }}
-          >
-            {t("mysql.tableManager.exportStructureAndData")}
-          </button>
-        </div>
-      )}
-
       {treeContextMenu && (
         <div
           className="context-menu-panel"
@@ -3422,6 +3572,328 @@ export default function MysqlTableManager() {
         </div>
       )}
 
+      {/* Create Table Modal */}
+      {createTableModal && (
+        <div className="modal-overlay" onClick={() => !createTableLoading && setCreateTableModal(null)}>
+          <div className="card modal-card modal-card-xl modal-card-scroll" onClick={(e) => e.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{t("mysql.tableManager.createTableModal")}</h3>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => !createTableLoading && setCreateTableModal(null)}
+                disabled={createTableLoading}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+
+            <div className="modal-card-body">
+              {createTableError && (
+                <div className="text-danger modal-card-error">{createTableError}</div>
+              )}
+
+              <div className="modal-card-grid-2">
+                <div>
+                  <label>{t("mysql.tableManager.tableName")}</label>
+                  <input
+                    className="form-control"
+                    type="text"
+                    value={createTableModal.tableName}
+                    onChange={(e) =>
+                      setCreateTableModal({
+                        ...createTableModal,
+                        tableName: e.target.value
+                      })
+                    }
+                    placeholder="my_table"
+                    disabled={createTableLoading}
+                  />
+                </div>
+
+                <div>
+                  <label>{t("mysql.tableManager.engine")}</label>
+                  <select
+                    className="form-control"
+                    value={createTableModal.engine}
+                    onChange={(e) =>
+                      setCreateTableModal({
+                        ...createTableModal,
+                        engine: e.target.value
+                      })
+                    }
+                    disabled={createTableLoading}
+                  >
+                    <option value="InnoDB">InnoDB</option>
+                    <option value="MyISAM">MyISAM</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>{t("mysql.tableManager.characterSet")}</label>
+                  <select
+                    className="form-control"
+                    value={createTableModal.charset}
+                    onChange={(e) =>
+                      setCreateTableModal({
+                        ...createTableModal,
+                        charset: e.target.value
+                      })
+                    }
+                    disabled={createTableLoading}
+                  >
+                    <option value="utf8mb4">utf8mb4 (Recommended)</option>
+                    <option value="utf8">utf8</option>
+                    <option value="latin1">latin1</option>
+                    <option value="ascii">ascii</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Columns table */}
+              <div style={{ marginTop: "24px" }}>
+                <div className="tm-structure-actions">
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handleAddColumn}
+                    disabled={createTableLoading}
+                  >
+                    + {t("mysql.tableManager.addColumn")}
+                  </button>
+                </div>
+
+                {createTableModal.columns.length === 0 ? (
+                  <div className="workspace-empty-card" style={{ marginTop: "12px" }}>
+                    <span className="muted">{t("mysql.tableManager.noColumns")}</span>
+                  </div>
+                ) : (
+                  <div className="table-wrapper" style={{ marginTop: "12px" }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Field</th>
+                          <th>Type</th>
+                          <th>Null</th>
+                          <th>Key</th>
+                          <th>Default</th>
+                          <th className="tm-table-head-actions">{t("dataBrowser.actions")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {createTableModal.columns.map((column) => (
+                          <tr key={column.id}>
+                            <td className={column.isPrimary ? "tm-table-field-primary" : undefined}>{column.name || "(Untitled)"}</td>
+                            <td><span className="pill">{column.type}{column.length ? `(${column.length})` : ""}</span></td>
+                            <td>{column.nullable ? "YES" : "NO"}</td>
+                            <td>{column.isPrimary ? <span className="pill">PRI</span> : column.autoIncrement ? <span className="pill">AI</span> : "-"}</td>
+                            <td className="muted">{column.defaultValue || "NULL"}</td>
+                            <td className="tm-actions-cell">
+                              <div className="tm-actions-row">
+                                <button
+                                  className="btn btn-sm btn-ghost"
+                                  onClick={() => setEditingColumnId(column.id)}
+                                  disabled={createTableLoading}
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-ghost text-danger"
+                                  onClick={() => handleDeleteColumn(column.id)}
+                                  disabled={createTableLoading}
+                                >
+                                  −
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Column Edit Modal (inline) */}
+              {editingColumnId !== null && createTableModal.columns.find(c => c.id === editingColumnId) && (
+                <div style={{
+                  position: "fixed",
+                  inset: 0,
+                  backgroundColor: "rgba(0, 0, 0, 0.4)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 1001
+                }}>
+                  <div className="card modal-card modal-card-lg" onClick={(e) => e.stopPropagation()}>
+                    <div className="card-header">
+                      <h3 className="card-title">{t("mysql.tableManager.editColumn")}</h3>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => setEditingColumnId(null)}
+                        disabled={createTableLoading}
+                      >
+                        {t("common.close")}
+                      </button>
+                    </div>
+
+                    <div className="modal-card-body modal-card-grid-2">
+                      <div>
+                        <label>{t("mysql.tableManager.columnName")}</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          value={newColumnForm.name}
+                          onChange={(e) => setNewColumnForm({ ...newColumnForm, name: e.target.value })}
+                          placeholder="column_name"
+                          disabled={createTableLoading}
+                        />
+                      </div>
+
+                      <div>
+                        <label>{t("mysql.tableManager.columnType")}</label>
+                        <select
+                          className="form-control"
+                          value={newColumnForm.type}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              type: e.target.value,
+                              length: "",
+                              scale: ""
+                            })
+                          }
+                          disabled={createTableLoading}
+                        >
+                          {mysqlColumnTypeOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {newColumnForm.type !== "custom" &&
+                        newColumnForm.type !== "text" &&
+                        newColumnForm.type !== "longtext" &&
+                        newColumnForm.type !== "date" &&
+                        newColumnForm.type !== "datetime" &&
+                        newColumnForm.type !== "timestamp" &&
+                        newColumnForm.type !== "time" &&
+                        newColumnForm.type !== "json" && (
+                        <>
+                          <div>
+                            <label>{t("mysql.tableManager.columnLength")}</label>
+                            <input
+                              className="form-control"
+                              type="text"
+                              value={newColumnForm.length}
+                              onChange={(e) => setNewColumnForm({ ...newColumnForm, length: e.target.value })}
+                              placeholder="255"
+                              disabled={createTableLoading}
+                            />
+                          </div>
+
+                          {(newColumnForm.type === "decimal" || newColumnForm.type === "float" || newColumnForm.type === "double") && (
+                            <div>
+                              <label>{t("mysql.tableManager.columnScale")}</label>
+                              <input
+                                className="form-control"
+                                type="text"
+                                value={newColumnForm.scale}
+                                onChange={(e) => setNewColumnForm({ ...newColumnForm, scale: e.target.value })}
+                                placeholder="2"
+                                disabled={createTableLoading}
+                              />
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      <div>
+                        <label>{t("mysql.tableManager.defaultValue")}</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          value={newColumnForm.defaultValue}
+                          onChange={(e) => setNewColumnForm({ ...newColumnForm, defaultValue: e.target.value })}
+                          placeholder="NULL, CURRENT_TIMESTAMP, or value"
+                          disabled={createTableLoading}
+                        />
+                      </div>
+
+                      <div style={{ gridColumn: "1 / -1", display: "flex", gap: "24px" }}>
+                        <label className="tm-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={newColumnForm.nullable}
+                            onChange={(e) => setNewColumnForm({ ...newColumnForm, nullable: e.target.checked })}
+                            disabled={createTableLoading}
+                          />
+                          <span>{t("mysql.tableManager.nullable")}</span>
+                        </label>
+
+                        <label className="tm-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={newColumnForm.isPrimary}
+                            onChange={(e) => setNewColumnForm({ ...newColumnForm, isPrimary: e.target.checked })}
+                            disabled={createTableLoading}
+                          />
+                          <span>{t("mysql.tableManager.primaryKey")}</span>
+                        </label>
+
+                        <label className="tm-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={newColumnForm.autoIncrement}
+                            onChange={(e) => setNewColumnForm({ ...newColumnForm, autoIncrement: e.target.checked })}
+                            disabled={createTableLoading || !["tinyint", "smallint", "mediumint", "int", "bigint"].includes(newColumnForm.type)}
+                          />
+                          <span>{t("mysql.tableManager.autoIncrement")}</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="modal-card-footer">
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => setEditingColumnId(null)}
+                        disabled={createTableLoading}
+                      >
+                        {t("common.cancel")}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={() => handleSaveColumn(editingColumnId)}
+                        disabled={createTableLoading}
+                      >
+                        {t("common.save")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-card-footer">
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setCreateTableModal(null)}
+                disabled={createTableLoading}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={handleCreateTable}
+                disabled={createTableLoading || !createTableModal.tableName.trim() || createTableModal.columns.length === 0}
+              >
+                {createTableLoading ? t("common.loading") : t("mysql.tableManager.createTable")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {exportSuccessMessage && (
         <div className="export-success-overlay" onClick={() => setExportSuccessMessage(null)}>
           <div className="export-success-modal" onClick={(e) => e.stopPropagation()}>
@@ -3434,6 +3906,25 @@ export default function MysqlTableManager() {
               type="button"
               className="export-success-button"
               onClick={() => setExportSuccessMessage(null)}
+            >
+              {t("common.ok")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {createTableSuccess && (
+        <div className="export-success-overlay" onClick={() => setCreateTableSuccess(null)}>
+          <div className="export-success-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="export-success-icon">✨</div>
+            <h3 className="export-success-title">{t("mysql.tableManager.createTableSuccess")}</h3>
+            <p className="export-success-message">
+              {t("mysql.tableManager.tableCreatedWithName", { name: createTableSuccess })}
+            </p>
+            <button
+              type="button"
+              className="export-success-button"
+              onClick={() => setCreateTableSuccess(null)}
             >
               {t("common.ok")}
             </button>

@@ -466,6 +466,16 @@ export function useMysqlSidebarWorkspace({
     }
   };
 
+  const handleMysqlCreateTable = async (database: string) => {
+    if (!activeConnectionId) {
+      return;
+    }
+    setMysqlDatabaseContextMenu(null);
+    // Navigate to Table Manager and open the database
+    setExpandedDatabase(database);
+    navigate("/mysql/tables");
+  };
+
   return {
     databases,
     tablesByDb,
@@ -500,6 +510,7 @@ export function useMysqlSidebarWorkspace({
     handleMysqlImportDatabase,
     handleMysqlExportTable,
     handleMysqlImportTable,
+    handleMysqlCreateTable,
     setMysqlDatabaseContextMenu,
     setMysqlTableContextMenu,
     setMysqlTabContextMenu,
