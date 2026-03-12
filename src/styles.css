@@ -207,16 +207,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 12px;
+  gap: 8px;
+  padding: 6px 10px;
   border: 1px solid #c9d5e2;
-  border-radius: 10px;
+  border-radius: 8px;
   background: linear-gradient(180deg, #ffffff 0%, #eef3f8 100%);
   color: #2c3b4d;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(34, 54, 78, 0.05);
+  box-shadow: 0 4px 12px rgba(34, 54, 78, 0.04);
 }
 
 .mdb-sidebar-footer-button:hover {
@@ -225,16 +225,17 @@ body {
 }
 
 .mdb-sidebar-footer-badge {
-  min-width: 24px;
-  height: 24px;
-  padding: 0 8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
   background: #dfe6ef;
   color: #556274;
-  font-size: 12px;
+  font-size: 10px;
+  flex-shrink: 0;
 }
 
 .mdb-sidebar-footer-badge.has-errors {
@@ -517,8 +518,8 @@ body {
   background:
     linear-gradient(180deg, rgba(240, 244, 249, 0.9) 0%, rgba(233, 238, 245, 0.94) 100%),
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.6) 0%, transparent 28%);
-  min-height: auto;
-  height: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .mdb-content-empty {
@@ -996,8 +997,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--content-gap);
-  height: auto;
-  min-height: auto;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
 }
 
 .page-header {
@@ -1228,7 +1230,8 @@ body {
 .tm-shell {
   display: flex;
   gap: 12px;
-  height: calc(100vh - 160px);
+  flex: 1;
+  min-height: 0;
 }
 
 .tm-main-card {

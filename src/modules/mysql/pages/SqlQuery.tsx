@@ -786,6 +786,7 @@ export default function MysqlSqlQuery() {
               className="json-editor"
               style={{
                 width: "100%",
+                height: "100px",
                 minHeight: "80px",
                 fontFamily: "monospace",
                 fontSize: "13px",

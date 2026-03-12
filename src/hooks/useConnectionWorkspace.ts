@@ -195,6 +195,31 @@ export function useConnectionWorkspace() {
     setConnectionActionError("");
     setContextMenu(null);
 
+    // 立即断开前一个连接，清理状态，防止竞态条件
+    if (activeConnectionId) {
+      const previousProfile = getProfileById(activeConnectionId);
+      if (previousProfile?.engine === "mysql") {
+        try {
+          await mysqlDisconnect(activeConnectionId);
+        } catch (error) {
+          logError(error, {
+            source: "app.connection.change.cleanup",
+            message: `Failed to cleanup previous MySQL connection ${activeConnectionId}`,
+          });
+        }
+      }
+      if (previousProfile?.engine === "redis") {
+        try {
+          await redisDisconnect(activeConnectionId);
+        } catch (error) {
+          logError(error, {
+            source: "app.connection.change.cleanup",
+            message: `Failed to cleanup previous Redis connection ${activeConnectionId}`,
+          });
+        }
+      }
+    }
+
     const profile = getProfileById(connectionId);
     if (!profile) {
       setIsConnectionActionPending(false);
@@ -213,7 +238,15 @@ export function useConnectionWorkspace() {
         }
 
         if (shouldValidate) {
-          await mysqlConnect(mysqlConnection);
+          try {
+            await mysqlConnect(mysqlConnection);
+          } catch (error) {
+            logError(error, {
+              source: "app.connection.mysql.connect",
+              message: `Failed to connect to MySQL database ${mysqlConnection.name}`,
+            });
+            throw error;
+          }
         }
 
         await setActiveConnection(connectionId);

@@ -242,16 +242,7 @@ function AppLayout() {
   );
 
   const sidebarFooter = (
-    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-      <button
-        type="button"
-        className="mdb-sidebar-footer-button"
-        onClick={() => setIsErrorLogOpen(true)}
-        title={t("errorLog.open")}
-      >
-        <span>{t("errorLog.button")}</span>
-        <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
-      </button>
+    <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
       <button
         className="btn btn-sm btn-ghost"
         onClick={() => {
@@ -260,9 +251,19 @@ function AppLayout() {
         title={t("app.switchLanguageTitle", {
           language: i18n.language === "zh" ? t("common.english") : t("common.chinese"),
         })}
-        style={{ width: "100%" }}
+        style={{ flex: "0 0 auto", minWidth: "40px" }}
       >
         {i18n.language === "zh" ? "EN" : "中"}
+      </button>
+      <button
+        type="button"
+        className="mdb-sidebar-footer-button"
+        onClick={() => setIsErrorLogOpen(true)}
+        title={t("errorLog.open")}
+        style={{ flex: 1, minWidth: 0 }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("errorLog.button")}</span>
+        <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
       </button>
     </div>
   );
