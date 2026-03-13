@@ -190,6 +190,7 @@ interface ColumnEditForm {
   nullable: boolean;
   defaultValue: string;
   extra: string;
+  autoIncrement: boolean;
 }
 
 export default function MysqlTableManager() {
@@ -274,8 +275,9 @@ export default function MysqlTableManager() {
   const [selectedCells, setSelectedCells] = useState<SelectedCell[]>([]);
   const [selectionAnchor, setSelectionAnchor] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
   const [editError, setEditError] = useState("");
-  const [newRowDraft, setNewRowDraft] = useState<{ json: string; isEditing: boolean } | null>(null);
-  const [newRowError, setNewRowError] = useState("");
+  const [addRowModalOpen, setAddRowModalOpen] = useState(false);
+  const [addRowFormData, setAddRowFormData] = useState<Record<string, string>>({});
+  const [addRowError, setAddRowError] = useState("");
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [sortModalOpen, setSortModalOpen] = useState(false);
   const [columnMenuOpen, setColumnMenuOpen] = useState(false);
@@ -306,7 +308,8 @@ export default function MysqlTableManager() {
     customType: "",
     nullable: true,
     defaultValue: "",
-    extra: ""
+    extra: "",
+    autoIncrement: false
   });
   const [columnEditLoading, setColumnEditLoading] = useState(false);
   const [columnEditError, setColumnEditError] = useState("");
@@ -1499,67 +1502,74 @@ export default function MysqlTableManager() {
 
   const handleAddNewRow = () => {
     if (!selectedTableInfo) return;
-    // Initialize empty row with all columns set to null
-    const newRow: Record<string, unknown> = {};
-    dataState.columns.forEach((col) => {
-      newRow[col] = null;
+    // Initialize form with column defaults
+    const formData: Record<string, string> = {};
+    selectedTableInfo.columns?.forEach((col) => {
+      // Use default value if available, otherwise empty string
+      if (col.default !== null && col.default !== undefined && col.default !== "") {
+        formData[col.field] = String(col.default);
+      } else {
+        formData[col.field] = "";
+      }
     });
-    setNewRowDraft({
-      json: JSON.stringify(newRow, null, 2),
-      isEditing: true
-    });
-    setNewRowError("");
+    setAddRowFormData(formData);
+    setAddRowError("");
+    setAddRowModalOpen(true);
   };
 
   const handleSaveNewRow = async () => {
-    if (!newRowDraft || !connectionId || !selectedTableInfo) return;
+    if (!connectionId || !selectedTableInfo) return;
     const { database: db, table } = selectedTableInfo;
 
     try {
-      const data = JSON.parse(newRowDraft.json) as Record<string, unknown>;
-
-      // Filter out null values - let database use defaults
+      // Filter out empty values - let database use defaults
       const insertColumns: string[] = [];
       const insertValues: string[] = [];
 
-      for (const [col, val] of Object.entries(data)) {
-        if (val === null) {
-          continue; // Skip null values to use database defaults
+      for (const [col, val] of Object.entries(addRowFormData)) {
+        // Skip empty values to use database defaults
+        if (val === "" || val === null) {
+          continue;
         }
 
         insertColumns.push(`\`${col}\``);
-        if (typeof val === "number") {
+        // Try to detect if value is a number
+        if (!isNaN(Number(val)) && val !== "") {
           insertValues.push(String(val));
-        } else if (typeof val === "boolean") {
-          insertValues.push(val ? "1" : "0");
+        } else if (val.toLowerCase() === "true" || val === "1") {
+          insertValues.push("1");
+        } else if (val.toLowerCase() === "false" || val === "0") {
+          insertValues.push("0");
         } else {
           insertValues.push(`'${String(val).replace(/'/g, "''")}'`);
         }
       }
 
       if (insertColumns.length === 0) {
-        // If all values are null, use default INSERT for one column
+        // If all values are empty, use default INSERT for one column
         insertColumns.push(`\`${dataState.columns[0] ?? "id"}\``);
         insertValues.push("DEFAULT");
       }
 
       const sql = `INSERT INTO \`${db}\`.\`${table}\` (${insertColumns.join(", ")}) VALUES (${insertValues.join(", ")})`;
       await mysqlQuery(connectionId, sql);
-      setNewRowDraft(null);
-      setNewRowError("");
+      setAddRowModalOpen(false);
+      setAddRowFormData({});
+      setAddRowError("");
       await fetchData();
     } catch (err) {
       logError(err, {
         source: "mysqlTableManager.addNewRow",
         message: `Failed to insert row into ${selectedTableInfo.database}.${selectedTableInfo.table}`
       });
-      setNewRowError(err instanceof Error ? err.message : String(err));
+      setAddRowError(err instanceof Error ? err.message : String(err));
     }
   };
 
   const handleCancelNewRow = () => {
-    setNewRowDraft(null);
-    setNewRowError("");
+    setAddRowModalOpen(false);
+    setAddRowFormData({});
+    setAddRowError("");
   };
 
   // ─── Table operations ───
@@ -2122,7 +2132,8 @@ export default function MysqlTableManager() {
       customType: "",
       nullable: true,
       defaultValue: "",
-      extra: ""
+      extra: "",
+      autoIncrement: false
     });
     setColumnEditError("");
     setColumnEditOpen(true);
@@ -2137,7 +2148,8 @@ export default function MysqlTableManager() {
       ...parsedType,
       nullable: column.null === "YES",
       defaultValue: column.default ?? "",
-      extra: column.extra ?? ""
+      extra: column.extra ?? "",
+      autoIncrement: column.extra?.includes("auto_increment") ?? false
     });
     setColumnEditError("");
     setColumnEditOpen(true);
@@ -2166,7 +2178,18 @@ export default function MysqlTableManager() {
 
     const field = columnEditForm.field.trim();
     const type = buildColumnType(columnEditForm).trim();
-    const extra = columnEditForm.extra.trim();
+    let extra = columnEditForm.extra.trim();
+
+    // Handle auto_increment
+    if (columnEditForm.autoIncrement) {
+      if (!extra.toUpperCase().includes("AUTO_INCREMENT")) {
+        extra = extra ? `${extra} AUTO_INCREMENT` : "AUTO_INCREMENT";
+      }
+    } else {
+      // Remove AUTO_INCREMENT if unchecked
+      extra = extra.replace(/AUTO_INCREMENT/gi, "").trim();
+    }
+
     if (!field || !type) {
       setColumnEditError(t("connections.nameAndAddressRequired"));
       return;
@@ -2205,7 +2228,8 @@ export default function MysqlTableManager() {
       ...parsedType,
       nullable: column.null === "YES",
       defaultValue: column.default ?? "",
-      extra: column.extra ?? ""
+      extra: column.extra ?? "",
+      autoIncrement: column.extra?.includes("auto_increment") ?? false
     }).trim();
     const nullClause = column.null === "YES" ? " NULL" : " NOT NULL";
     const defaultClause = buildDefaultClause(column.default ?? "");
@@ -2653,39 +2677,10 @@ export default function MysqlTableManager() {
                   </td>
                 </tr>
               )}
-              {newRowDraft?.isEditing && (
-                <tr key="new-row-draft" className="tm-new-row-editing">
-                  <td colSpan={visibleDataColumns.length + 2}>
-                    <div className="tm-new-row-editor">
-                      <textarea
-                        className="form-control tm-new-row-textarea"
-                        value={newRowDraft.json}
-                        onChange={(e) => setNewRowDraft({ ...newRowDraft, json: e.target.value })}
-                        placeholder={t("mysql.tableManager.enterRowDataJson")}
-                        rows={Math.max(3, newRowDraft.json.split("\n").length)}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
 
-        {/* New row error */}
-        {newRowError && (
-          <div className="text-danger tm-inline-error">
-            {newRowError}
-          </div>
-        )}
-
-        {/* New row actions */}
-        {newRowDraft?.isEditing && (
-          <div className="tm-new-row-actions">
-            <button className="btn btn-sm btn-ghost" onClick={handleCancelNewRow}>{t("common.cancel")}</button>
-            <button className="btn btn-sm btn-primary" onClick={handleSaveNewRow}>{t("common.save")}</button>
-          </div>
-        )}
         <div className="tm-pagination">
           <div className="tm-pagination-group">
             <span>{t("dataBrowser.pageSize")}:</span>
@@ -3295,6 +3290,17 @@ export default function MysqlTableManager() {
           >
             {t("mysql.tableManager.batchEditSelectedCells")}
           </button>
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost context-menu-button text-danger"
+            onClick={() => {
+              void handleDeleteRow(rowContextMenu.rowIndex);
+              setRowContextMenu(null);
+            }}
+          >
+            {t("common.delete")}
+          </button>
         </div>
       )}
 
@@ -3564,6 +3570,15 @@ export default function MysqlTableManager() {
                   onChange={(event) => setColumnEditForm((prev) => ({ ...prev, unsigned: event.target.checked }))}
                 />
                 <label htmlFor="column-unsigned">{t("mysql.tableManager.unsigned")}</label>
+              </div>
+              <div className="tm-inline-checkbox">
+                <input
+                  id="column-auto-increment"
+                  type="checkbox"
+                  checked={columnEditForm.autoIncrement}
+                  onChange={(event) => setColumnEditForm((prev) => ({ ...prev, autoIncrement: event.target.checked }))}
+                />
+                <label htmlFor="column-auto-increment">{t("mysql.tableManager.autoIncrement")}</label>
               </div>
             </div>
             {columnEditError && (
@@ -3903,15 +3918,16 @@ export default function MysqlTableManager() {
                   <table className="table mysql-create-table">
                     <thead>
                       <tr>
-                        <th style={{ width: "20%" }}>{t("mysql.tableManager.columnField")}</th>
-                        <th style={{ width: "15%" }}>{t("mysql.tableManager.columnType")}</th>
-                        <th style={{ width: "8%" }}>长度</th>
-                        <th style={{ width: "8%" }}>小数点</th>
-                        <th style={{ width: "8%" }}>{t("mysql.tableManager.columnNull")}</th>
-                        <th style={{ width: "8%" }}>主键</th>
-                        <th style={{ width: "15%" }}>{t("mysql.tableManager.columnDefault")}</th>
-                        <th style={{ width: "12%" }}>备注</th>
-                        <th className="tm-table-head-actions" style={{ width: "8%" }}>{t("dataBrowser.actions")}</th>
+                        <th style={{ width: "18%" }}>{t("mysql.tableManager.columnField")}</th>
+                        <th style={{ width: "13%" }}>{t("mysql.tableManager.columnType")}</th>
+                        <th style={{ width: "7%" }}>长度</th>
+                        <th style={{ width: "7%" }}>小数点</th>
+                        <th style={{ width: "7%" }}>{t("mysql.tableManager.columnNull")}</th>
+                        <th style={{ width: "7%" }}>主键</th>
+                        <th style={{ width: "7%" }}>{t("mysql.tableManager.autoIncrement")}</th>
+                        <th style={{ width: "12%" }}>{t("mysql.tableManager.columnDefault")}</th>
+                        <th style={{ width: "10%" }}>备注</th>
+                        <th className="tm-table-head-actions" style={{ width: "7%" }}>{t("dataBrowser.actions")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3951,6 +3967,21 @@ export default function MysqlTableManager() {
                                   ...createTableModal,
                                   columns: createTableModal.columns.map(col =>
                                     col.id === column.id ? { ...col, isPrimary: e.target.checked } : col
+                                  )
+                                });
+                              }}
+                              disabled={createTableLoading}
+                            />
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            <input
+                              type="checkbox"
+                              checked={column.autoIncrement}
+                              onChange={(e) => {
+                                setCreateTableModal({
+                                  ...createTableModal,
+                                  columns: createTableModal.columns.map(col =>
+                                    col.id === column.id ? { ...col, autoIncrement: e.target.checked } : col
                                   )
                                 });
                               }}
@@ -4071,6 +4102,14 @@ export default function MysqlTableManager() {
                               disabled={createTableLoading}
                             />
                           </td>
+                          <td style={{ textAlign: "center" }}>
+                            <input
+                              type="checkbox"
+                              checked={row.autoIncrement}
+                              onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, autoIncrement: e.target.checked } : r))}
+                              disabled={createTableLoading}
+                            />
+                          </td>
                           <td>
                             <input
                               className="form-control"
@@ -4170,6 +4209,84 @@ export default function MysqlTableManager() {
                   {createTableLoading ? t("common.loading") : "💾 " + t("common.save")}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add row modal */}
+      {addRowModalOpen && selectedTableInfo?.columns && (
+        <div className="modal-overlay" onClick={() => handleCancelNewRow()}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+            <div className="modal-card-body" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+              {addRowError && (
+                <div className="alert alert-danger" style={{ marginBottom: "12px" }}>
+                  {addRowError}
+                </div>
+              )}
+
+              {/* Column input table */}
+              <table className="form-table" style={{ width: "100%" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", fontWeight: "600", fontSize: "12px", color: "#666", paddingBottom: "8px" }}>
+                      {t("mysql.tableManager.columnName")}
+                    </th>
+                    <th style={{ textAlign: "left", fontWeight: "600", fontSize: "12px", color: "#666", paddingBottom: "8px" }}>
+                      {t("mysql.tableManager.value")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedTableInfo.columns.map((col) => (
+                    <tr key={col.field} style={{ borderBottom: "1px solid #e8e8e8" }}>
+                      <td style={{ padding: "8px 0", fontSize: "12px", color: "#333", width: "30%", paddingRight: "8px" }}>
+                        <div style={{ fontWeight: "500" }}>{col.field}</div>
+                        <div style={{ fontSize: "11px", color: "#999" }}>
+                          {col.type}
+                          {col.null === "YES" ? " (NULL)" : " (NOT NULL)"}
+                        </div>
+                      </td>
+                      <td style={{ padding: "8px 0", fontSize: "12px" }}>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={addRowFormData[col.field] || ""}
+                          onChange={(e) =>
+                            setAddRowFormData({
+                              ...addRowFormData,
+                              [col.field]: e.target.value
+                            })
+                          }
+                          placeholder={
+                            col.default !== null && col.default !== undefined
+                              ? `${col.default}`
+                              : ""
+                          }
+                          style={{ fontSize: "12px" }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-card-footer" style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={handleCancelNewRow}
+                type="button"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={handleSaveNewRow}
+                type="button"
+              >
+                {t("common.save")}
+              </button>
             </div>
           </div>
         </div>
