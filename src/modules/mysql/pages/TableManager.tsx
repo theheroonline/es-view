@@ -23,7 +23,6 @@ import { DatabaseOverviewPanel } from "./table-manager/components/DatabaseOvervi
 import { StructureTabPanel } from "./table-manager/components/StructureTabPanel";
 import { InfoTabPanel } from "./table-manager/components/InfoTabPanel";
 import { DataTabPanel } from "./table-manager/components/DataTabPanel";
-import { BatchEditModal } from "./table-manager/components/BatchEditModal";
 import { CreateTableModal } from "./table-manager/components/CreateTableModal";
 import { useExportImport } from "./table-manager/hooks/useExportImport";
 import { useCreateTable } from "./table-manager/hooks/useCreateTable";
@@ -40,7 +39,6 @@ import {
   type DatabaseContextMenu,
   type RowContextMenu,
   type ColumnHeaderContextMenu,
-  type BatchEditMode,
   type ColumnEditMode,
   defaultDataState,
   mysqlColumnTypeOptions,
@@ -115,9 +113,6 @@ export default function MysqlTableManager() {
     column: "",
     direction: "asc"
   });
-  const [batchEditOpen, setBatchEditOpen] = useState(false);
-  const [batchEditDraft, setBatchEditDraft] = useState<{ mode: BatchEditMode; value: string }>({ mode: "text", value: "" });
-  const [batchEditError, setBatchEditError] = useState("");
 
   // SQL execution modal state
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
@@ -860,11 +855,6 @@ export default function MysqlTableManager() {
     return cells;
   };
 
-  const getContextTargetCells = (context: RowContextMenu): SelectedCell[] => {
-    const currentCell = createSelectedCell(context.rowIndex, context.columnIndex);
-    return selectedCellKeySet.has(currentCell.key) ? selectedCells : [currentCell];
-  };
-
   const handleCellClick = (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => {
     const currentCell = createSelectedCell(rowIndex, columnIndex);
     if (!currentCell.column) return;
@@ -1015,45 +1005,6 @@ export default function MysqlTableManager() {
     }
   }, [connectionId, dataColumnMeta, dataState.columns, dataState.rows, fetchData, selectedTableInfo]);
 
-  const applyValueToCells = useCallback(async (cells: SelectedCell[], value: unknown) => {
-    const updatesByRow = new Map<number, Record<string, unknown>>();
-    cells.forEach((cell) => {
-      const existing = updatesByRow.get(cell.rowIndex) ?? {};
-      existing[cell.column] = value;
-      updatesByRow.set(cell.rowIndex, existing);
-    });
-
-    for (const [rowIndex, updates] of Array.from(updatesByRow.entries()).sort((left, right) => left[0] - right[0])) {
-      await updateRowByIndex(rowIndex, updates, { refresh: false });
-    }
-    await fetchData();
-  }, [fetchData, updateRowByIndex]);
-
-  const openBatchEditModal = (cells: SelectedCell[]) => {
-    if (cells.length === 0) return;
-    setBatchEditDraft({ mode: "text", value: "" });
-    setBatchEditError("");
-    setBatchEditOpen(true);
-  };
-
-  const handleSaveBatchEdit = async () => {
-    try {
-      const value = batchEditDraft.mode === "null"
-        ? null
-        : batchEditDraft.mode === "empty"
-          ? ""
-          : batchEditDraft.value;
-      await applyValueToCells(selectedCells, value);
-      setBatchEditOpen(false);
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.batchEditCells",
-        message: "Failed to batch edit selected cells"
-      });
-      setBatchEditError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
   // ─── Data editing ───
 
   const handleSaveCell = async (
@@ -1184,26 +1135,6 @@ export default function MysqlTableManager() {
   const handleContextMenuSortDesc = useCallback(() => {
     if (!rowContextMenu) return;
     void applySort(rowContextMenu.column, "desc");
-    setRowContextMenu(null);
-  }, [rowContextMenu]);
-
-  const handleContextMenuSetEmptyString = useCallback(() => {
-    if (!rowContextMenu) return;
-    void applyValueToCells(getContextTargetCells(rowContextMenu), "");
-    setRowContextMenu(null);
-  }, [rowContextMenu]);
-
-  const handleContextMenuSetNull = useCallback(() => {
-    if (!rowContextMenu) return;
-    void applyValueToCells(getContextTargetCells(rowContextMenu), null);
-    setRowContextMenu(null);
-  }, [rowContextMenu]);
-
-  const handleContextMenuBatchEdit = useCallback(() => {
-    if (!rowContextMenu) return;
-    const targetCells = getContextTargetCells(rowContextMenu);
-    setSelectedCells(targetCells);
-    openBatchEditModal(targetCells);
     setRowContextMenu(null);
   }, [rowContextMenu]);
 
@@ -1398,7 +1329,7 @@ export default function MysqlTableManager() {
   useEffect(() => {
     setSelectedCells([]);
     setSelectionAnchor(null);
-  }, [activeOpenedTableKey, dataState.columns, dataState.page, dataState.pageSize, dataState.rows]);
+  }, [activeOpenedTableKey, dataState.page, dataState.pageSize]);
 
   // Close context menu on outside click / scroll / resize
   useEffect(() => {
@@ -1721,7 +1652,6 @@ export default function MysqlTableManager() {
         selectedTableInfo={selectedTableInfo}
         dataState={dataState}
         visibleDataColumns={visibleDataColumns}
-        selectedCells={selectedCells}
         selectedCellKeySet={selectedCellKeySet}
         expandedRow={expandedRow}
         selectedRowIndex={selectedRowIndex}
@@ -1748,7 +1678,6 @@ export default function MysqlTableManager() {
         onVisibleColumnToggle={handleVisibleColumnToggle}
         onSelectAllVisibleColumns={handleSelectAllVisibleColumns}
         onFetchData={fetchData}
-        onBatchEditSelectedCells={openBatchEditModal}
         onOpenSortModal={() => {
           setSortDraft({
             column: activeOpenedTable?.sortColumn ?? dataState.columns[0] ?? "",
@@ -2143,28 +2072,6 @@ export default function MysqlTableManager() {
           <div className="context-menu-separator" />
           <button
             type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={handleContextMenuSetEmptyString}
-          >
-            {t("mysql.tableManager.setEmptyString")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={handleContextMenuSetNull}
-          >
-            {t("mysql.tableManager.setNull")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={handleContextMenuBatchEdit}
-          >
-            {t("mysql.tableManager.batchEditSelectedCells")}
-          </button>
-          <div className="context-menu-separator" />
-          <button
-            type="button"
             className="btn btn-sm btn-ghost context-menu-button text-danger"
             onClick={handleContextMenuDelete}
           >
@@ -2249,18 +2156,6 @@ export default function MysqlTableManager() {
           </div>
         </div>
       )}
-
-      <BatchEditModal
-        isOpen={batchEditOpen}
-        selectedCellsCount={selectedCells.length}
-        batchEditMode={batchEditDraft.mode}
-        batchEditValue={batchEditDraft.value}
-        batchEditError={batchEditError}
-        onModeChange={(mode) => setBatchEditDraft((prev) => ({ ...prev, mode }))}
-        onValueChange={(value) => setBatchEditDraft((prev) => ({ ...prev, value }))}
-        onClose={() => setBatchEditOpen(false)}
-        onSave={() => void handleSaveBatchEdit()}
-      />
 
       {/* Column edit modal */}
       {columnEditOpen && (

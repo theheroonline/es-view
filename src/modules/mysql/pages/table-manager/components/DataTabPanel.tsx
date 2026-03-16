@@ -19,7 +19,6 @@ interface DataTabPanelProps {
   selectedTableInfo: TableInfo | null;
   dataState: DataState;
   visibleDataColumns: string[];
-  selectedCells: SelectedCell[];
   selectedCellKeySet: Set<string>;
   expandedRow: number | null;
   selectedRowIndex: number | null;
@@ -50,7 +49,6 @@ interface DataTabPanelProps {
   onVisibleColumnToggle: (column: string, checked: boolean) => void;
   onSelectAllVisibleColumns: () => void;
   onFetchData: () => void;
-  onBatchEditSelectedCells: (cells: SelectedCell[]) => void;
   onOpenSortModal: () => void;
 }
 
@@ -58,7 +56,6 @@ export function DataTabPanel({
   selectedTableInfo,
   dataState,
   visibleDataColumns,
-  selectedCells,
   selectedCellKeySet,
   expandedRow,
   selectedRowIndex,
@@ -86,7 +83,6 @@ export function DataTabPanel({
   onVisibleColumnToggle,
   onSelectAllVisibleColumns,
   onFetchData,
-  onBatchEditSelectedCells,
   onOpenSortModal,
 }: DataTabPanelProps) {
   const { t } = useTranslation();
@@ -371,11 +367,6 @@ export function DataTabPanel({
           >
             {t("mysql.tableManager.displayColumns")}
           </button>
-          {selectedCells.length > 0 && (
-            <button className="btn btn-sm btn-ghost" onClick={() => onBatchEditSelectedCells(selectedCells)}>
-              {t("mysql.tableManager.batchEditSelectedCells")}
-            </button>
-          )}
           <button
             className="btn btn-sm btn-ghost"
             onClick={onFetchData}
