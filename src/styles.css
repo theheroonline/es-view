@@ -1127,12 +1127,14 @@ body {
 }
 
 .context-menu-panel {
+  position: fixed;
   z-index: 1200;
   background: #fff;
   border: 1px solid #d1d1d6;
   border-radius: 8px;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
   padding: 4px;
+  /* 优化：使用 position: fixed 避免与虚拈化容器交互 */
 }
 
 .context-menu-button {
@@ -1718,19 +1720,39 @@ body {
 
 .excel-table-scroller {
   flex: 1;
-  overflow: auto;
+  overflow-y: scroll;
+  overflow-x: scroll;
   position: relative;
   background: white;
   border: 1px solid #e5e5ea;
   border-radius: 8px;
   height: 100%;
+  scrollbar-width: 12px;
+  scrollbar-gutter: stable;
+}
+
+/* 滚动条样式 */
+.excel-table-scroller::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.excel-table-scroller::-webkit-scrollbar-thumb {
+  background-color: #bbb;
+  border-radius: 6px;
+}
+
+.excel-table-scroller::-webkit-scrollbar-track {
+  background-color: transparent;
 }
 
 .excel-table {
   width: 100%;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 12px;
   background: white;
+  table-layout: fixed;  /* 固定表格布局，防止内容改变宽度 */
 }
 
 .excel-table-head {
@@ -1839,6 +1861,8 @@ body {
   background: white;
   border-bottom: 1px solid #e5e5ea;
   padding: 0;
+  border-top: 1px solid #e5e5ea;  /* 与虚拈化容器分离的视觉边界 */
+  flex-shrink: 0;  /* 不参与虚拈化高度计算 */
 }
 
 .excel-table-expanded {
@@ -1902,7 +1926,7 @@ body {
 /* ========== 行内编辑样式 ========== */
 
 .excel-table-cell-editing {
-  padding: 0;
+  padding: 8px 10px;  /* 保持与正常单元格相同的 padding */
   background-color: #fffacd;
   box-shadow: inset 0 0 0 2px #ffd700;
 }

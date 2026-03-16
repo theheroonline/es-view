@@ -20,7 +20,6 @@ interface DataTabPanelProps {
   dataState: DataState;
   visibleDataColumns: string[];
   selectedCellKeySet: Set<string>;
-  expandedRow: number | null;
   selectedRowIndex: number | null;
   filterPanelOpen: boolean;
   filterDraftTree: FilterGroupDraft | null;
@@ -34,7 +33,6 @@ interface DataTabPanelProps {
   setFilterPanelOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   setFilterDraftTree: (tree: FilterGroupDraft | null | ((prev: FilterGroupDraft | null) => FilterGroupDraft | null)) => void;
   setColumnMenuOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
-  setExpandedRow: (index: number | null) => void;
 
   // Event handlers
   onAddNewRow: () => void;
@@ -57,7 +55,6 @@ export function DataTabPanel({
   dataState,
   visibleDataColumns,
   selectedCellKeySet,
-  expandedRow,
   selectedRowIndex,
   filterPanelOpen,
   filterDraftTree,
@@ -70,7 +67,6 @@ export function DataTabPanel({
   setFilterPanelOpen,
   setFilterDraftTree,
   setColumnMenuOpen,
-  setExpandedRow,
   onAddNewRow,
   onPageChange,
   onPageSizeChange,
@@ -443,14 +439,12 @@ export function DataTabPanel({
         columns={visibleDataColumns}
         data={dataState.rows}
         selectedCellKeySet={selectedCellKeySet}
-        expandedRow={expandedRow}
         selectedRowIndex={selectedRowIndex}
         loading={dataState.loading}
         tableKey={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
         onCellClick={onCellClick}
         onRowContextMenu={onRowContextMenu}
         onSaveCell={onSaveCell}
-        onExpandedRowChange={setExpandedRow}
       />
 
       <div className="tm-pagination">

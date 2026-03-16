@@ -24,6 +24,7 @@ import { StructureTabPanel } from "./table-manager/components/StructureTabPanel"
 import { InfoTabPanel } from "./table-manager/components/InfoTabPanel";
 import { DataTabPanel } from "./table-manager/components/DataTabPanel";
 import { CreateTableModal } from "./table-manager/components/CreateTableModal";
+import { BatchEditModal } from "./table-manager/components/BatchEditModal";
 import { useExportImport } from "./table-manager/hooks/useExportImport";
 import { useCreateTable } from "./table-manager/hooks/useCreateTable";
 import {
@@ -98,10 +99,16 @@ export default function MysqlTableManager() {
   // Data browsing state
   const [dataState, setDataState] = useState<DataState>(defaultDataState);
   const [dataColumnMeta, setDataColumnMeta] = useState<ColumnMeta[]>([]);
-  const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [selectedCells, setSelectedCells] = useState<SelectedCell[]>([]);
   const [selectionAnchor, setSelectionAnchor] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
+
+  // 批量编辑状态
+  const [batchEditModalOpen, setBatchEditModalOpen] = useState(false);
+  const [batchEditMode, setBatchEditMode] = useState<"text" | "null" | "empty">("text");
+  const [batchEditValue, setBatchEditValue] = useState("");
+  const [batchEditError, setBatchEditError] = useState("");
+
   const [addRowModalOpen, setAddRowModalOpen] = useState(false);
   const [addRowFormData, setAddRowFormData] = useState<Record<string, string>>({});
   const [addRowError, setAddRowError] = useState("");
@@ -1000,10 +1007,26 @@ export default function MysqlTableManager() {
     if (setParts.length === 0 || whereParts.length === 0) return;
     const sql = `UPDATE \`${db}\`.\`${table}\` SET ${setParts.join(", ")} WHERE ${whereParts.join(" AND ")} LIMIT 1`;
     await mysqlQuery(connectionId, sql);
-    if (options?.refresh !== false) {
+
+    // 优化：如果不需要完整刷新，则只更新当前行数据
+    if (options?.refresh === false) {
+      // 增量更新：只更新被修改的行
+      const updatedRow = [...originalRow];
+      Object.entries(updates).forEach(([col, val]) => {
+        const colIndex = dataState.columns.indexOf(col);
+        if (colIndex >= 0) {
+          updatedRow[colIndex] = val;
+        }
+      });
+      setDataState((prev) => ({
+        ...prev,
+        rows: prev.rows.map((row, i) => (i === rowIndex ? updatedRow : row))
+      }));
+    } else {
+      // 默认行为：完整刷新表格数据
       await fetchData();
     }
-  }, [connectionId, dataColumnMeta, dataState.columns, dataState.rows, fetchData, selectedTableInfo]);
+  }, [connectionId, dataColumnMeta, dataState.columns, dataState.rows, fetchData, selectedTableInfo, mysqlQuery]);
 
   // ─── Data editing ───
 
@@ -1016,8 +1039,16 @@ export default function MysqlTableManager() {
     if (!connectionId || !selectedTableInfo) return;
 
     try {
-      // 构建包含所有列的更新对象，只更新指定列
+      // 获取旧值
       const row = dataState.rows[rowIndex];
+      const oldValue = row[columnIndex];
+
+      // 如果数据未改变，直接返回，不刷新
+      if (oldValue === (newValue === "" ? null : newValue)) {
+        return;
+      }
+
+      // 构建包含所有列的更新对象，只更新指定列
       const updateData: Record<string, unknown> = {};
       dataState.columns.forEach((col, i) => {
         if (i === columnIndex) {
@@ -1029,7 +1060,8 @@ export default function MysqlTableManager() {
         }
       });
 
-      await updateRowByIndex(rowIndex, updateData);
+      // 只更新该行，不刷新整个表格（设置 refresh: false）
+      await updateRowByIndex(rowIndex, updateData, { refresh: false });
     } catch (err) {
       logError(err, {
         source: "mysqlTableManager.saveCell",
@@ -1039,7 +1071,7 @@ export default function MysqlTableManager() {
     }
   };
 
-  const handleDeleteRow = async (index: number) => {
+  const handleDeleteRow = useCallback(async (index: number) => {
     if (!connectionId || !selectedTableInfo) return;
     const { database: db, table } = selectedTableInfo;
 
@@ -1085,7 +1117,7 @@ export default function MysqlTableManager() {
         error: err instanceof Error ? err.message : String(err)
       }));
     }
-  };
+  }, [connectionId, selectedTableInfo, dataState.rows, dataState.columns, dataColumnMeta, mysqlQuery, fetchData, t]);
 
   // ─── Context menu handlers (useCallback 包裹以避免闪烁) ───
 
@@ -1142,9 +1174,88 @@ export default function MysqlTableManager() {
     if (!rowContextMenu) return;
     void handleDeleteRow(rowContextMenu.rowIndex);
     setRowContextMenu(null);
-  }, [rowContextMenu]);
+  }, [rowContextMenu, handleDeleteRow]);
 
-  // ─── Add new row ───
+  // 快速编辑: 设置为 NULL
+  const handleContextMenuSetNull = useCallback(() => {
+    if (!rowContextMenu) return;
+    void updateRowByIndex(rowContextMenu.rowIndex, {
+      [rowContextMenu.column]: null
+    }, { refresh: false });  // 优化：仅更新行，不重新加载整个表格
+    setRowContextMenu(null);
+  }, [rowContextMenu, updateRowByIndex]);
+
+  // 快速编辑: 设置为空字符串
+  const handleContextMenuSetEmptyString = useCallback(() => {
+    if (!rowContextMenu) return;
+    void updateRowByIndex(rowContextMenu.rowIndex, {
+      [rowContextMenu.column]: ""
+    }, { refresh: false });  // 优化：仅更新行，不重新加载整个表格
+    setRowContextMenu(null);
+  }, [rowContextMenu, updateRowByIndex]);
+
+  // 批量编辑: 打开modal
+  const handleContextMenuBatchEdit = useCallback(() => {
+    if (selectedCells.length === 0) return;
+    setBatchEditMode("text");
+    setBatchEditValue("");
+    setBatchEditError("");
+    setBatchEditModalOpen(true);
+    setRowContextMenu(null);
+  }, [selectedCells]);
+
+  // 批量编辑: 保存
+  const handleBatchEditSave = async () => {
+    if (!connectionId || !selectedTableInfo || selectedCells.length === 0) return;
+    setBatchEditError("");
+
+    try {
+      // 准备批量更新的映射
+      const updates: Record<number, Record<string, unknown>> = {};
+      selectedCells.forEach((cell) => {
+        if (!updates[cell.rowIndex]) {
+          updates[cell.rowIndex] = {};
+        }
+        const columnName = dataState.columns[cell.columnIndex];
+
+        let value: unknown;
+        if (batchEditMode === "null") {
+          value = null;
+        } else if (batchEditMode === "empty") {
+          value = "";
+        } else {
+          value = batchEditValue;
+        }
+        updates[cell.rowIndex][columnName] = value;
+      });
+
+      // 逐行执行更新
+      for (const [rowIndex, updateMap] of Object.entries(updates)) {
+        await updateRowByIndex(Number(rowIndex), updateMap);
+      }
+
+      // 清除状态
+      setBatchEditModalOpen(false);
+      setSelectedCells([]);
+      setSelectionAnchor(null);
+
+      // 刷新数据
+      if (activeOpenedTable) {
+        await fetchData(
+          activeOpenedTable.database,
+          activeOpenedTable.table,
+          dataState.page,
+          dataState.pageSize
+        );
+      }
+    } catch (err) {
+      logError(err, {
+        source: "batchEditSave",
+        message: "Failed to save batch edits"
+      });
+      setBatchEditError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const handleAddNewRow = () => {
     if (!selectedTableInfo) return;
@@ -1315,7 +1426,10 @@ export default function MysqlTableManager() {
   const handleRowContextMenu = (e: MouseEvent<HTMLElement>, rowIndex: number, column: string, value: unknown) => {
     e.preventDefault();
     e.stopPropagation();
-    setSelectedRowIndex(rowIndex);
+    // 优化：不立即更新 selectedRowIndex，避免所有行的样式重计算
+    // selectedRowIndex 仅在表格实际选中行时更新（如用户点击行来展开）
+    // setSelectedRowIndex(rowIndex);
+
     const columnIndex = dataState.columns.indexOf(column);
     const selectedCell = createSelectedCell(rowIndex, columnIndex);
     if (selectedCell.column && !selectedCellKeySet.has(selectedCell.key)) {
@@ -1326,20 +1440,19 @@ export default function MysqlTableManager() {
   };
 
 
+  // 仅在表切换时清除选中状态，避免分页/其他状态变化触发闪烁
   useEffect(() => {
     setSelectedCells([]);
     setSelectionAnchor(null);
-  }, [activeOpenedTableKey, dataState.page, dataState.pageSize]);
+  }, [activeOpenedTableKey]);
 
   // Close context menu on outside click / scroll / resize
+  // 优化：只在 rowContextMenu 改变时运行，避免其他菜单的频繁更新导致副作用重新运行
   useEffect(() => {
-    if (!databaseContextMenu && !treeContextMenu && !rowContextMenu && !columnHeaderContextMenu) return;
+    if (!rowContextMenu) return;
 
-    const closeMenus = () => {
-      setDatabaseContextMenu(null);
-      setTreeContextMenu(null);
+    const closeMenu = () => {
       setRowContextMenu(null);
-      setColumnHeaderContextMenu(null);
     };
 
     const handleClickOutside = (e: Event) => {
@@ -1347,12 +1460,12 @@ export default function MysqlTableManager() {
       // 检查点击是否在菜单内部
       const isInContextMenu = target.closest(".context-menu-panel");
       if (!isInContextMenu) {
-        closeMenus();
+        closeMenu();
       }
     };
 
-    const handleResize = () => closeMenus();
-    const handleScroll = () => closeMenus();
+    const handleResize = () => closeMenu();
+    const handleScroll = () => closeMenu();
 
     // 使用 useCapture 捕获阶段监听，确保能捕获所有点击事件
     document.addEventListener("click", handleClickOutside, true);
@@ -1364,7 +1477,49 @@ export default function MysqlTableManager() {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("scroll", handleScroll, true);
     };
-  }, [columnHeaderContextMenu, databaseContextMenu, rowContextMenu, treeContextMenu]);
+  }, [rowContextMenu]);
+
+  // 为其他菜单类型单独建立 effect
+  useEffect(() => {
+    if (!databaseContextMenu && !treeContextMenu && !columnHeaderContextMenu) return;
+
+    const handleClickOutside = (e: Event) => {
+      const target = e.target as HTMLElement;
+      // 检查点击是否在任何菜单内部
+      const isInContextMenu = target.closest(".context-menu-panel");
+      // 如果不在菜单内，关闭菜单
+      if (!isInContextMenu) {
+        setDatabaseContextMenu(null);
+        setTreeContextMenu(null);
+        setColumnHeaderContextMenu(null);
+      }
+    };
+
+    const handleResize = () => {
+      setDatabaseContextMenu(null);
+      setTreeContextMenu(null);
+      setColumnHeaderContextMenu(null);
+    };
+
+    const handleScroll = () => {
+      setDatabaseContextMenu(null);
+      setTreeContextMenu(null);
+      setColumnHeaderContextMenu(null);
+    };
+
+    // 使用 useCapture 捕获阶段监听
+    document.addEventListener("click", handleClickOutside, true);
+    document.addEventListener("mousedown", handleClickOutside, true);
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      document.removeEventListener("click", handleClickOutside, true);
+      document.removeEventListener("mousedown", handleClickOutside, true);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, []);
 
   // Wrapper to close context menu after export
   const handleExportTableSqlWrapper = useCallback(
@@ -1653,7 +1808,6 @@ export default function MysqlTableManager() {
         dataState={dataState}
         visibleDataColumns={visibleDataColumns}
         selectedCellKeySet={selectedCellKeySet}
-        expandedRow={expandedRow}
         selectedRowIndex={selectedRowIndex}
         filterPanelOpen={filterPanelOpen}
         filterDraftTree={filterDraftTree}
@@ -1665,7 +1819,6 @@ export default function MysqlTableManager() {
         setFilterPanelOpen={setFilterPanelOpen}
         setFilterDraftTree={setFilterDraftTree}
         setColumnMenuOpen={setColumnMenuOpen}
-        setExpandedRow={setExpandedRow}
         onAddNewRow={handleAddNewRow}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
@@ -2072,6 +2225,29 @@ export default function MysqlTableManager() {
           <div className="context-menu-separator" />
           <button
             type="button"
+            className="btn btn-sm btn-ghost context-menu-button"
+            onClick={handleContextMenuSetNull}
+          >
+            {t("mysql.tableManager.setNull")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost context-menu-button"
+            onClick={handleContextMenuSetEmptyString}
+          >
+            {t("mysql.tableManager.setEmptyString")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost context-menu-button"
+            onClick={handleContextMenuBatchEdit}
+            disabled={selectedCells.length === 0}
+          >
+            {t("mysql.tableManager.batchEdit")} ({selectedCells.length})
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            type="button"
             className="btn btn-sm btn-ghost context-menu-button text-danger"
             onClick={handleContextMenuDelete}
           >
@@ -2122,6 +2298,21 @@ export default function MysqlTableManager() {
             {t("mysql.tableManager.clearSort")}
           </button>
         </div>
+      )}
+
+      {/* 批量编辑 Modal */}
+      {batchEditModalOpen && (
+        <BatchEditModal
+          isOpen={batchEditModalOpen}
+          selectedCellsCount={selectedCells.length}
+          batchEditMode={batchEditMode}
+          batchEditValue={batchEditValue}
+          batchEditError={batchEditError}
+          onModeChange={setBatchEditMode}
+          onValueChange={setBatchEditValue}
+          onClose={() => setBatchEditModalOpen(false)}
+          onSave={() => void handleBatchEditSave()}
+        />
       )}
 
       {sortModalOpen && (

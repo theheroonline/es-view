@@ -26,7 +26,6 @@ import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 interface UseExcelTableProps {
   columns: string[];
   data: any[][];
-  expandedRow: number | null;
   tableKey?: string; // 用于 localStorage 的唯一键，格式：database:table
 }
 
@@ -86,7 +85,6 @@ function saveColumnConfig(
 export function useExcelTable({
   columns,
   data,
-  expandedRow,
   tableKey,
 }: UseExcelTableProps): UseExcelTableReturn {
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -151,6 +149,9 @@ export function useExcelTable({
     }));
   }, [data, columns, orderedColumns]);
 
+  // expanded 状态必须稳定，避免触发 table 重新计算
+  const expandedState = useMemo(() => ({}), []);
+
   // 创建 TanStack Table instance
   const table = useReactTable({
     data: tableData,
@@ -158,14 +159,14 @@ export function useExcelTable({
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     state: {
-      expanded: expandedRow !== null ? { [expandedRow]: true } : {},
+      expanded: expandedState,
     },
   });
 
   // 获取所有行
   const rows = table.getRowModel().rows;
 
-  // 虚拟滚动器
+  // 虚拟滚动器（固定行高，禁用动态测量以防止闪烁）
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => tableContainerRef.current as any,
@@ -208,24 +209,6 @@ export function isCellSelected(
   selectedCellKeySet: Set<string>
 ): boolean {
   return selectedCellKeySet.has(`${rowIndex}:${columnIndex}`);
-}
-
-/**
- * 渲染 JSON 展开行
- * 用于显示完整的行数据
- */
-export function renderExpandedRowJSON(
-  rowData: any,
-  columns: string[]
-): string {
-  try {
-    const json = Object.fromEntries(
-      columns.map((col, idx) => [col, rowData[idx]])
-    );
-    return JSON.stringify(json, null, 2);
-  } catch {
-    return "Error rendering row data";
-  }
 }
 
 /**
