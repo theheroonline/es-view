@@ -1,4 +1,4 @@
-import { Fragment, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
@@ -22,6 +22,9 @@ import {
   mysqlQuery,
 } from "../services/client";
 import type { ColumnMeta, IndexMeta } from "../types";
+import { DatabaseOverviewPanel } from "./table-manager/components/DatabaseOverviewPanel";
+import { StructureTabPanel } from "./table-manager/components/StructureTabPanel";
+import { InfoTabPanel } from "./table-manager/components/InfoTabPanel";
 import {
   type FilterConditionDraft,
   type FilterGroupDraft,
@@ -51,7 +54,6 @@ import {
   formatInfoDate,
   formatInfoText,
   toSafeNumber,
-  formatBytes,
   getSingleResultRow,
   createFilterCondition,
   createFilterGroup,
@@ -1954,78 +1956,15 @@ export default function MysqlTableManager() {
   }
 
   const renderStructureTab = () => {
-    if (!selectedTableInfo) return null;
-
-    if (selectedTableInfo.loading) {
-      return (
-        <div className="workspace-empty-card">
-          <span className="muted">{t("common.loading")}</span>
-        </div>
-      );
-    }
-
-    if (!selectedTableInfo.columns) {
-      return (
-        <div className="workspace-empty-card">
-          <span className="muted">{t("common.noData")}</span>
-        </div>
-      );
-    }
-
-    const columns = selectedTableInfo.columns;
-
     return (
-      <div className="table-wrapper">
-        <div className="tm-structure-actions">
-          <button className="btn btn-sm btn-primary" onClick={openAddColumnModal}>
-            {t("mysql.tableManager.addColumn")}
-          </button>
-          <button className="btn btn-sm btn-ghost" onClick={openIndexModal}>
-            📑 {t("mysql.tableManager.manageIndexes")}
-          </button>
-        </div>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Field</th>
-              <th>Type</th>
-              <th>Null</th>
-              <th>Key</th>
-              <th>Default</th>
-              <th>Extra</th>
-              <th className="tm-table-head-actions">{t("dataBrowser.actions")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {columns.map((col, index) => (
-              <tr key={col.field}>
-                <td className={col.key === "PRI" ? "tm-table-field-primary" : undefined}>{col.field}</td>
-                <td><span className="pill">{col.type}</span></td>
-                <td>{col.null}</td>
-                <td>{col.key && <span className="pill">{col.key}</span>}</td>
-                <td className="muted">{col.default ?? "NULL"}</td>
-                <td className="muted">{col.extra}</td>
-                <td className="tm-actions-cell">
-                  <div className="tm-actions-row">
-                    <button className="btn btn-sm btn-ghost" onClick={() => void handleMoveColumn(col, "up")} disabled={index === 0}>
-                      {t("mysql.tableManager.moveColumnUp")}
-                    </button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => void handleMoveColumn(col, "down")} disabled={index === columns.length - 1}>
-                      {t("mysql.tableManager.moveColumnDown")}
-                    </button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => openEditColumnModal(col)}>
-                      {t("mysql.tableManager.editStructure")}
-                    </button>
-                    <button className="btn btn-sm btn-ghost text-danger" onClick={() => handleDropColumn(col)}>
-                      {t("mysql.tableManager.dropColumn")}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <StructureTabPanel
+        selectedTableInfo={selectedTableInfo}
+        onAddColumn={openAddColumnModal}
+        onManageIndexes={openIndexModal}
+        onMoveColumn={(col, dir) => void handleMoveColumn(col, dir)}
+        onEditColumn={openEditColumnModal}
+        onDropColumn={handleDropColumn}
+      />
     );
   };
 
@@ -2363,164 +2302,30 @@ export default function MysqlTableManager() {
   };
 
   const renderInfoTab = () => {
-    if (!selectedTableInfo) return null;
-
-    if (selectedTableInfo.loading) {
-      return (
-        <div className="workspace-empty-card">
-          <span className="muted">{t("common.loading")}</span>
-        </div>
-      );
-    }
-
-    const info = selectedTableInfo.info;
-    if (!info) {
-      return (
-        <div className="workspace-empty-card">
-          <span className="muted">{t("common.noData")}</span>
-        </div>
-      );
-    }
-
-    const detailItems = [
-      { label: t("mysql.tableManager.tableType"), value: t("mysql.tableManager.baseTable") },
-      { label: t("mysql.tableManager.engine"), value: info.engine },
-      { label: t("mysql.tableManager.databaseLabel"), value: selectedTableInfo.database },
-      { label: t("mysql.tableManager.rowCountLabel"), value: info.tableRows.toLocaleString() },
-      { label: t("mysql.tableManager.autoIncrement"), value: info.autoIncrement },
-      { label: t("mysql.tableManager.rowFormat"), value: info.rowFormat },
-      { label: t("mysql.tableManager.createTime"), value: info.createTime },
-      { label: t("mysql.tableManager.updateTime"), value: info.updateTime },
-      { label: t("mysql.tableManager.checkTime"), value: info.checkTime },
-      { label: t("mysql.tableManager.collation"), value: info.collation },
-      { label: t("mysql.tableManager.indexLength"), value: formatBytes(info.indexLength) },
-      { label: t("mysql.tableManager.dataLength"), value: formatBytes(info.dataLength) },
-      { label: t("mysql.tableManager.maxDataLength"), value: formatBytes(info.maxDataLength) },
-      { label: t("mysql.tableManager.dataFree"), value: formatBytes(info.dataFree) },
-      { label: t("mysql.tableManager.avgRowLength"), value: formatBytes(info.avgRowLength) },
-      { label: t("mysql.tableManager.createOptions"), value: info.createOptions },
-      { label: t("mysql.tableManager.tableComment"), value: info.comment }
-    ];
-
-    return (
-      <div className="tm-info-pane">
-        <div className="tm-info-stack">
-          <div className="tm-info-title-block">
-            <div className="tm-info-title">{selectedTableInfo.table}</div>
-            <div className="muted tm-info-subtitle">{selectedTableInfo.database}</div>
-          </div>
-
-          <div className="tm-info-grid">
-            {detailItems.map((item) => (
-              <Fragment key={item.label}>
-                <div className="muted tm-info-label">{item.label}</div>
-                <div className="tm-info-value">{item.value}</div>
-              </Fragment>
-            ))}
-          </div>
-
-          <div className="tm-info-section">
-            <div className="muted tm-info-label">{t("mysql.tableManager.createSql")}</div>
-            <pre className="tm-sql-preview">
-              {info.createSql}
-            </pre>
-          </div>
-        </div>
-      </div>
-    );
+    return <InfoTabPanel selectedTableInfo={selectedTableInfo} />;
   };
 
   const renderDatabaseOverview = () => {
-    if (!expandedDatabase) {
-      return (
-        <div className="workspace-center-state">
-          <span className="muted">{t("mysql.tableManager.openDatabaseHint")}</span>
-        </div>
-      );
-    }
-
-    const tables = tablesByDb[expandedDatabase] ?? [];
-    const selectedTableSet = new Set(selectedOverviewTables);
+    const tables = tablesByDb[expandedDatabase ?? ""] ?? [];
 
     return (
-      <>
-        <div className="card-header page-section-header">
-          <div>
-            <h3 className="card-title">{expandedDatabase}</h3>
-            <p className="muted tm-overview-header-note">
-              {t("mysql.tableManager.tableCount", { count: tables.length })}
-            </p>
-          </div>
-          <div className="tm-overview-actions">
-            <button className="btn btn-sm btn-ghost" onClick={() => refreshTablesForDb(expandedDatabase)} disabled={loading}>
-              {t("mysql.tableManager.refreshTables")}
-            </button>
-            <button
-              className="btn btn-sm btn-primary"
-              onClick={() => {
-                setCreateTableModal({
-                  database: expandedDatabase,
-                  tableName: "",
-                  columns: [],
-                  charset: "utf8mb4",
-                  engine: "InnoDB"
-                });
-                setCreateTableError("");
-                setSelectedEditingRowId(null);
-                setEditingRows([{
-                  id: Date.now().toString(),
-                  name: "",
-                  type: "varchar",
-                  length: "255",
-                  scale: "",
-                  nullable: true,
-                  defaultValue: "",
-                  isPrimary: false,
-                  autoIncrement: false,
-                  comment: "",
-                  timestampDefault: "none",
-                  timestampOnUpdate: false,
-                  extraAttributes: ""
-                }]);
-              }}
-            >
-              {t("mysql.tableManager.createTable")}
-            </button>
-          </div>
-        </div>
-
-        <div className="tm-overview-content">
-          {tables.length > 0 ? (
-            <div className="mysql-table-grid">
-              {tables.map((table) => (
-                <div
-                  key={table}
-          className={`mysql-table-card ${selectedTableSet.has(table) ? "selected" : ""} ${selectedTable === table ? "active" : ""}`}
-          onClick={(event) => handleOverviewTableClick(event, expandedDatabase, table)}
-                  onDoubleClick={() => {
-                    void handleBrowseData(expandedDatabase, table);
-                  }}
-                  onContextMenu={(event) => handleTableContextMenu(event, expandedDatabase, table)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      void handleBrowseData(expandedDatabase, table);
-                    }
-                  }}
-                >
-                  <div className="mysql-table-card-name" title={table}>{table}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="card workspace-empty-card">
-              <span className="muted">{t("mysql.data.noTables")}</span>
-            </div>
-          )}
-        </div>
-      </>
+      <DatabaseOverviewPanel
+        expandedDatabase={expandedDatabase ?? null}
+        tables={tables}
+        selectedTable={selectedTable}
+        selectedOverviewTables={selectedOverviewTables}
+        loading={loading}
+        onTableClick={handleOverviewTableClick}
+        onBrowseTable={handleBrowseData}
+        onTableContextMenu={handleTableContextMenu}
+        onRefreshTables={refreshTablesForDb}
+        onCreateTableClick={(modalState, editingRows) => {
+          setCreateTableModal(modalState);
+          setCreateTableError("");
+          setSelectedEditingRowId(null);
+          setEditingRows(editingRows);
+        }}
+      />
     );
   };
 
