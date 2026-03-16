@@ -10,7 +10,6 @@ node_modules
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
-方案.md
 
 # Frontend build
 dist

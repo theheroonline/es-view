@@ -1,0 +1,361 @@
+import { type MouseEvent, useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { useExcelTable, isCellSelected, renderExpandedRowJSON, DEFAULT_COLUMN_WIDTH } from "../hooks/useExcelTable";
+import { useInlineEditor } from "../hooks/useInlineEditor";
+
+/**
+ * ExcelLikeTable 组件
+ *
+ * MySQL 专用的 Excel 式表格实现
+ * 基于 TanStack Table + React Virtual 虚拟滚动
+ *
+ * 功能：
+ * - 虚拟滚动渲染（支持百万行数据）
+ * - 单元格选中和多选
+ * - 行展开 JSON 显示
+ * - 固定列宽和可见列控制
+ * - 右键菜单支持
+ * - 操作按钮（编辑、删除）
+ *
+ * 注意：此组件完全独立实现，不借鉴其他模块（ES、Redis）
+ */
+
+interface ExcelLikeTableProps {
+  columns: string[];
+  data: any[][];
+  selectedCellKeySet: Set<string>;
+  expandedRow: number | null;
+  selectedRowIndex: number | null;
+  pageSize: number;
+  pageNumber: number;
+  loading?: boolean;
+  tableKey?: string; // 用于持久化列配置
+
+  // Event handlers
+  onCellClick: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
+  onRowContextMenu: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, column: string, cell: unknown) => void;
+  onSaveCell: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>;
+  onDeleteRow: (index: number) => void;
+  onExpandedRowChange: (index: number | null) => void;
+}
+
+export function ExcelLikeTable({
+  columns,
+  data,
+  selectedCellKeySet,
+  expandedRow,
+  selectedRowIndex,
+  pageSize,
+  pageNumber,
+  loading = false,
+  tableKey,
+  onCellClick,
+  onRowContextMenu,
+  onSaveCell,
+  onDeleteRow,
+  onExpandedRowChange,
+}: ExcelLikeTableProps) {
+  const { t } = useTranslation();
+
+  // 拖拽状态
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
+  const [resizeStartX, setResizeStartX] = useState<number>(0);
+
+  // 行内编辑状态
+  const { editingCell, startEditing, updateEditValue, saveEdit, cancelEdit, handleKeyDown } = useInlineEditor();
+  const editInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  // 当编辑单元格时，自动聚焦输入框
+  useEffect(() => {
+    if (editingCell && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingCell]);
+
+  // 使用 Hook 获取虚拟滚动和表格实例
+  const {
+    table,
+    virtualRows,
+    rows,
+    tableContainerRef,
+    columnOrder,
+    columnWidths,
+    setColumnOrder,
+    setColumnWidth,
+  } = useExcelTable({
+    columns,
+    data,
+    expandedRow,
+    tableKey,
+  });
+
+  // 获取表头
+  const headerGroups = table.getHeaderGroups();
+
+  // ==================== 列拖拽处理 ====================
+
+  const handleHeaderDragStart = (e: React.DragEvent<HTMLTableCellElement>, columnName: string) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", columnName);
+    setDraggedColumn(columnName);
+  };
+
+  const handleHeaderDragOver = (e: React.DragEvent<HTMLTableCellElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleHeaderDrop = (e: React.DragEvent<HTMLTableCellElement>, targetColumnName: string) => {
+    e.preventDefault();
+    const sourceColumnName = e.dataTransfer.getData("text/plain");
+
+    if (sourceColumnName !== targetColumnName) {
+      const sourceIndex = columnOrder.indexOf(sourceColumnName);
+      const targetIndex = columnOrder.indexOf(targetColumnName);
+
+      if (sourceIndex !== -1 && targetIndex !== -1) {
+        const newOrder = [...columnOrder];
+        newOrder.splice(sourceIndex, 1);
+        newOrder.splice(targetIndex, 0, sourceColumnName);
+        setColumnOrder(newOrder);
+      }
+    }
+
+    setDraggedColumn(null);
+  };
+
+  const handleHeaderDragLeave = () => {
+    setDraggedColumn(null);
+  };
+
+  // ==================== 列宽调整处理 ====================
+
+  const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>, columnName: string) => {
+    e.preventDefault();
+    setResizeStartX(e.clientX);
+
+    const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
+      const delta = moveEvent.clientX - resizeStartX;
+      const currentWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
+      const newWidth = Math.max(50, currentWidth + delta);
+      setColumnWidth(columnName, newWidth);
+      setResizeStartX(moveEvent.clientX);
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  // 如果没有数据
+  if (data.length === 0 && !loading) {
+    return (
+      <div className="excel-table-empty">
+        <div className="excel-table-empty-message">{t("common.noData")}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="excel-table-wrapper">
+      {/* 表格滚动容器 */}
+      <div ref={tableContainerRef} className="excel-table-scroller">
+        <table className="excel-table">
+          {/* 表头 - 始终固定显示 */}
+          <thead className="excel-table-head" style={{ position: "sticky", top: 0, zIndex: 10 }}>
+            {headerGroups.map((headerGroup) => (
+              <tr key={headerGroup.id} className="excel-table-header-row">
+                {/* 行号列 */}
+                <th className="excel-table-header-cell excel-table-cell-rownum">#</th>
+
+                {/* 数据列 */}
+                {headerGroup.headers.map((header) => {
+                  const columnName = header.column.columnDef.header?.toString() || "";
+                  const columnWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
+                  const isDragging = draggedColumn === columnName;
+
+                  return (
+                    <th
+                      key={header.id}
+                      className={`excel-table-header-cell ${isDragging ? "excel-table-header-cell-dragging" : ""}`}
+                      draggable
+                      onDragStart={(e) => handleHeaderDragStart(e, columnName)}
+                      onDragOver={handleHeaderDragOver}
+                      onDrop={(e) => handleHeaderDrop(e, columnName)}
+                      onDragLeave={handleHeaderDragLeave}
+                      style={{ width: columnWidth }}
+                    >
+                      <div className="excel-table-header-content">
+                        <span>{columnName}</span>
+                        {/* 列宽调整分隔符 */}
+                        <div
+                          className="excel-table-column-resizer"
+                          onMouseDown={(e) => handleResizeStart(e, columnName)}
+                          title="拖拽调整列宽"
+                        />
+                      </div>
+                    </th>
+                  );
+                })}
+
+                {/* 操作列 */}
+                <th className="excel-table-header-cell excel-table-cell-actions">{t("dataBrowser.actions")}</th>
+              </tr>
+            ))}
+          </thead>
+
+          {/* 表体 - 虚拟滚动 */}
+          <tbody className="excel-table-body">
+            {/* 虚拟行渲染 */}
+            {virtualRows.length > 0 ? (
+              virtualRows.map((virtualItem) => {
+                const row = rows[virtualItem.index];
+                if (!row) return null;
+
+                const rowIndex = row.original._rowIndex;
+                const isRowSelected = selectedRowIndex === rowIndex;
+
+                return (
+                  <tr
+                    key={`row-${rowIndex}`}
+                    className={`excel-table-row ${isRowSelected ? "excel-table-row-selected" : ""}`}
+                    onClick={() => onExpandedRowChange(expandedRow === rowIndex ? null : rowIndex)}
+                  >
+                    {/* 行号 */}
+                    <td className="excel-table-cell excel-table-cell-rownum">
+                      {(pageNumber - 1) * pageSize + rowIndex + 1}
+                    </td>
+
+                    {/* 数据单元格 */}
+                    {columnOrder.filter((col) => columns.includes(col)).map((columnName) => {
+                      const columnIndex = columns.indexOf(columnName);
+                      const cellValue = data[rowIndex]?.[columnIndex];
+                      const isSelected = isCellSelected(rowIndex, columnIndex, selectedCellKeySet);
+                      const columnWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
+                      const isEditing =
+                        editingCell?.rowIndex === rowIndex &&
+                        editingCell?.columnIndex === columnIndex;
+
+                      return (
+                        <td
+                          key={`cell-${rowIndex}-${columnName}`}
+                          className={`excel-table-cell ${isSelected ? "excel-table-cell-selected" : ""} ${
+                            isEditing ? "excel-table-cell-editing" : ""
+                          }`}
+                          title={cellValue === null ? "NULL" : String(cellValue)}
+                          style={{ width: columnWidth, padding: isEditing ? 0 : undefined }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCellClick(e, rowIndex, columnIndex);
+                          }}
+                          onDoubleClick={() => {
+                            startEditing(rowIndex, columnIndex, columnName, cellValue);
+                          }}
+                          onContextMenu={(e) => {
+                            e.stopPropagation();
+                            onRowContextMenu(e, rowIndex, columnName, cellValue);
+                          }}
+                        >
+                          {isEditing ? (
+                            <input
+                              ref={editInputRef as any}
+                              type="text"
+                              className="excel-table-cell-input"
+                              value={editingCell.editValue}
+                              onChange={(e) => updateEditValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                const baseHandler = (ev: React.KeyboardEvent<HTMLInputElement>) => {
+                                  handleKeyDown(ev);
+                                  if (ev.key === "Enter") {
+                                    saveEdit(onSaveCell);
+                                  } else if (ev.key === "Escape") {
+                                    cancelEdit();
+                                  }
+                                };
+                                baseHandler(e);
+                              }}
+                              onBlur={() => {
+                                // 失焦时自动保存
+                                saveEdit(onSaveCell);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : cellValue === null ? (
+                            <span className="excel-table-cell-null">NULL</span>
+                          ) : (
+                            String(cellValue)
+                          )}
+                        </td>
+                      );
+                    })}
+
+                    {/* 操作列 */}
+                    <td className="excel-table-cell excel-table-cell-actions">
+                      <div className="flex-gap justify-end table-action-group-tight">
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          title={expandedRow === rowIndex ? "收起" : "展开"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onExpandedRowChange(expandedRow === rowIndex ? null : rowIndex);
+                          }}
+                        >
+                          {expandedRow === rowIndex ? "▲" : "▼"}
+                        </button>
+                        <button
+                          className="btn btn-sm btn-ghost text-danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteRow(rowIndex);
+                          }}
+                        >
+                          {t("common.delete")}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={columns.length + 2} className="excel-table-cell" style={{ textAlign: "center", padding: "20px" }}>
+                  {loading ? t("common.loading") : t("common.noData")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        {/* 展开行显示 - 在主表格下方 */}
+        {expandedRow !== null && data[expandedRow] && (
+          <div className="excel-table-expanded-container">
+            <table className="excel-table excel-table-expanded">
+              <tbody>
+                <tr className="excel-table-expanded-row">
+                  <td colSpan={columns.length + 2}>
+                    <div className="excel-table-expanded-header">展开详情</div>
+                    <pre className="excel-table-expanded-json">
+                      {renderExpandedRowJSON(data[expandedRow], columns)}
+                    </pre>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 加载指示 */}
+      {loading && (
+        <div className="excel-table-loading">
+          <span>{t("common.loading")}</span>
+        </div>
+      )}
+    </div>
+  );
+}

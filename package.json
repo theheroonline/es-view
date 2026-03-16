@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.22",
     "antd": "^6.2.3",
     "dayjs": "^1.11.19",
     "i18next": "^25.8.3",

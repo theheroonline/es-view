@@ -40,7 +40,6 @@ import {
   type DatabaseContextMenu,
   type RowContextMenu,
   type ColumnHeaderContextMenu,
-  type CellEditorState,
   type BatchEditMode,
   type ColumnEditMode,
   defaultDataState,
@@ -103,11 +102,8 @@ export default function MysqlTableManager() {
   const [dataColumnMeta, setDataColumnMeta] = useState<ColumnMeta[]>([]);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
-  const [editingRow, setEditingRow] = useState<{ index: number; json: string } | null>(null);
-  const [editingCell, setEditingCell] = useState<CellEditorState | null>(null);
   const [selectedCells, setSelectedCells] = useState<SelectedCell[]>([]);
   const [selectionAnchor, setSelectionAnchor] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
-  const [editError, setEditError] = useState("");
   const [addRowModalOpen, setAddRowModalOpen] = useState(false);
   const [addRowFormData, setAddRowFormData] = useState<Record<string, string>>({});
   const [addRowError, setAddRowError] = useState("");
@@ -1058,54 +1054,37 @@ export default function MysqlTableManager() {
     }
   };
 
-  const handleEditCell = (rowIndex: number, column: string, value: unknown) => {
-    setEditingCell({
-      rowIndex,
-      column,
-      value: value === null ? "" : String(value)
-    });
-    setEditError("");
-  };
-
-  const handleSaveCellEdit = async () => {
-    if (!editingCell) return;
-    try {
-      await updateRowByIndex(editingCell.rowIndex, { [editingCell.column]: editingCell.value });
-      setEditingCell(null);
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.saveCellEdit",
-        message: `Failed to update cell ${editingCell.column}`
-      });
-      setEditError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
   // ─── Data editing ───
 
-  const handleEditRow = (index: number) => {
-    const row = dataState.rows[index];
-    const obj: Record<string, unknown> = {};
-    dataState.columns.forEach((col, i) => {
-      obj[col] = row[i];
-    });
-    setEditingRow({ index, json: JSON.stringify(obj, null, 2) });
-    setEditError("");
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editingRow || !connectionId || !selectedTableInfo) return;
+  const handleSaveCell = async (
+    rowIndex: number,
+    columnIndex: number,
+    columnName: string,
+    newValue: string
+  ) => {
+    if (!connectionId || !selectedTableInfo) return;
 
     try {
-      const data = JSON.parse(editingRow.json) as Record<string, unknown>;
-      await updateRowByIndex(editingRow.index, data);
-      setEditingRow(null);
+      // 构建包含所有列的更新对象，只更新指定列
+      const row = dataState.rows[rowIndex];
+      const updateData: Record<string, unknown> = {};
+      dataState.columns.forEach((col, i) => {
+        if (i === columnIndex) {
+          // 更新指定列
+          updateData[col] = newValue === "" ? null : newValue;
+        } else {
+          // 保持其他列原值
+          updateData[col] = row[i];
+        }
+      });
+
+      await updateRowByIndex(rowIndex, updateData);
     } catch (err) {
       logError(err, {
-        source: "mysqlTableManager.saveEdit",
-        message: `Failed to update row in ${selectedTableInfo.database}.${selectedTableInfo.table}`
+        source: "mysqlTableManager.saveCell",
+        message: `Failed to update cell ${columnName} in ${selectedTableInfo.database}.${selectedTableInfo.table}`
       });
-      setEditError(err instanceof Error ? err.message : String(err));
+      throw err;
     }
   };
 
@@ -1664,13 +1643,12 @@ export default function MysqlTableManager() {
         setFilterDraftTree={setFilterDraftTree}
         setColumnMenuOpen={setColumnMenuOpen}
         setExpandedRow={setExpandedRow}
-        setSelectedRowIndex={setSelectedRowIndex}
         onAddNewRow={handleAddNewRow}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
         onCellClick={handleCellClick}
         onRowContextMenu={handleRowContextMenu}
-        onEditRow={handleEditRow}
+        onSaveCell={handleSaveCell}
         onDeleteRow={handleDeleteRow}
         onClearFilter={() => void clearFilter()}
         onClearSort={() => void clearSort()}
@@ -2124,16 +2102,6 @@ export default function MysqlTableManager() {
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
             onClick={() => {
-              handleEditCell(rowContextMenu.rowIndex, rowContextMenu.column, rowContextMenu.value);
-              setRowContextMenu(null);
-            }}
-          >
-            {t("mysql.tableManager.editCell")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
               const targetCells = getContextTargetCells(rowContextMenu);
               setSelectedCells(targetCells);
               openBatchEditModal(targetCells);
@@ -2228,54 +2196,6 @@ export default function MysqlTableManager() {
               <button className="btn btn-sm btn-ghost" onClick={() => void clearSort()}>{t("mysql.tableManager.clearSort")}</button>
               <button className="btn btn-sm btn-ghost" onClick={() => setSortModalOpen(false)}>{t("common.cancel")}</button>
               <button className="btn btn-sm btn-primary" onClick={() => void applySort(sortDraft.column, sortDraft.direction)}>{t("common.save")}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit row modal */}
-      {editingRow && (
-        <div className="modal-overlay">
-          <div className="card modal-card modal-card-xl modal-card-scroll">
-            <div className="card-header page-section-header">
-              <h3 className="card-title">{t("dataBrowser.editDocument")}</h3>
-              <button className="btn btn-sm btn-ghost" onClick={() => setEditingRow(null)}>{t("common.close")}</button>
-            </div>
-            <div className="modal-card-body modal-card-body-scroll">
-              <textarea
-                className="json-editor json-editor-lg"
-                value={editingRow.json}
-                onChange={(e) => setEditingRow({ ...editingRow, json: e.target.value })}
-              />
-              {editError && <div className="text-danger modal-inline-error">{editError}</div>}
-            </div>
-            <div className="modal-card-footer">
-              <button className="btn btn-sm btn-ghost" onClick={() => setEditingRow(null)}>{t("common.cancel")}</button>
-              <button className="btn btn-sm btn-primary" onClick={handleSaveEdit}>{t("common.save")}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {editingCell && (
-        <div className="modal-overlay">
-          <div className="card modal-card modal-card-md modal-card-scroll">
-            <div className="card-header page-section-header">
-              <h3 className="card-title">{t("mysql.tableManager.cellEditorTitle", { column: editingCell.column })}</h3>
-              <button className="btn btn-sm btn-ghost" onClick={() => setEditingCell(null)}>{t("common.close")}</button>
-            </div>
-            <div className="modal-card-body modal-card-body-scroll tm-compact-grid">
-              <label>{t("mysql.tableManager.cellValue")}</label>
-              <textarea
-                className="json-editor json-editor-md"
-                value={editingCell.value}
-                onChange={(event) => setEditingCell((prev) => prev ? { ...prev, value: event.target.value } : prev)}
-              />
-              {editError && <div className="text-danger">{editError}</div>}
-            </div>
-            <div className="modal-card-footer">
-              <button className="btn btn-sm btn-ghost" onClick={() => setEditingCell(null)}>{t("common.cancel")}</button>
-              <button className="btn btn-sm btn-primary" onClick={() => void handleSaveCellEdit()}>{t("common.save")}</button>
             </div>
           </div>
         </div>
