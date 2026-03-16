@@ -4,10 +4,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import {
   getMysqlOpenedTableKey,
-  type MysqlFilterConditionNode,
-  type MysqlFilterGroupNode,
-  type MysqlFilterNode,
   type MysqlFilterOperator,
+  type MysqlFilterNode,
   type MysqlOpenedTable,
   useMysqlContext
 } from "../../../state/MysqlContext";
@@ -24,174 +22,46 @@ import {
   mysqlQuery,
 } from "../services/client";
 import type { ColumnMeta, IndexMeta } from "../types";
-
-type FilterConditionDraft = MysqlFilterConditionNode;
-type FilterGroupDraft = MysqlFilterGroupNode;
-
-interface TableInfo {
-  database: string;
-  table: string;
-  columns?: ColumnMeta[];
-  rowCount?: number;
-  info?: TableDetailInfo;
-  loading: boolean;
-}
-
-interface TableDetailInfo {
-  engine: string;
-  rowFormat: string;
-  tableRows: number;
-  autoIncrement: string;
-  createTime: string;
-  updateTime: string;
-  checkTime: string;
-  collation: string;
-  indexLength: number;
-  dataLength: number;
-  maxDataLength: number;
-  dataFree: number;
-  avgRowLength: number;
-  comment: string;
-  createOptions: string;
-  createSql: string;
-}
-
-interface DataState {
-  columns: string[];
-  rows: Array<Array<unknown>>;
-  total: number;
-  page: number;
-  pageSize: number;
-  loading: boolean;
-  error: string;
-}
-
-const defaultDataState: DataState = {
-  columns: [],
-  rows: [],
-  total: 0,
-  page: 1,
-  pageSize: 100,
-  loading: false,
-  error: ""
-};
-
-type RightPanelTab = "structure" | "data" | "info";
-
-interface MysqlColumnTypeOption {
-  value: string;
-  label: string;
-  lengthMode: "none" | "single" | "pair";
-  supportsUnsigned?: boolean;
-}
-
-const mysqlColumnTypeOptions: MysqlColumnTypeOption[] = [
-  { value: "tinyint", label: "TINYINT", lengthMode: "single", supportsUnsigned: true },
-  { value: "smallint", label: "SMALLINT", lengthMode: "single", supportsUnsigned: true },
-  { value: "mediumint", label: "MEDIUMINT", lengthMode: "single", supportsUnsigned: true },
-  { value: "int", label: "INT", lengthMode: "single", supportsUnsigned: true },
-  { value: "bigint", label: "BIGINT", lengthMode: "single", supportsUnsigned: true },
-  { value: "decimal", label: "DECIMAL", lengthMode: "pair", supportsUnsigned: true },
-  { value: "float", label: "FLOAT", lengthMode: "pair", supportsUnsigned: true },
-  { value: "double", label: "DOUBLE", lengthMode: "pair", supportsUnsigned: true },
-  { value: "char", label: "CHAR", lengthMode: "single" },
-  { value: "varchar", label: "VARCHAR", lengthMode: "single" },
-  { value: "text", label: "TEXT", lengthMode: "none" },
-  { value: "longtext", label: "LONGTEXT", lengthMode: "none" },
-  { value: "date", label: "DATE", lengthMode: "none" },
-  { value: "datetime", label: "DATETIME", lengthMode: "none" },
-  { value: "timestamp", label: "TIMESTAMP", lengthMode: "none" },
-  { value: "time", label: "TIME", lengthMode: "none" },
-  { value: "json", label: "JSON", lengthMode: "none" },
-  { value: "custom", label: "Custom", lengthMode: "none" }
-];
-
-interface TreeContextMenu {
-  db: string;
-  table: string;
-  selectedTables: string[];
-  x: number;
-  y: number;
-}
-
-interface DatabaseContextMenu {
-  database: string;
-  x: number;
-  y: number;
-}
-
-interface ExportSelectionModalState {
-  database: string;
-  availableTables: string[];
-  selectedTables: string[];
-  includeData: boolean;
-}
-
-interface CreateTableColumn {
-  id: string;
-  name: string;
-  type: string;
-  length?: string;
-  scale?: string;
-  nullable: boolean;
-  defaultValue: string;
-  isPrimary: boolean;
-  autoIncrement: boolean;
-  comment?: string;
-}
-
-interface CreateTableModalState {
-  database: string;
-  tableName: string;
-  columns: CreateTableColumn[];
-  charset: string;
-  engine: string;
-}
-
-interface RowContextMenu {
-  x: number;
-  y: number;
-  rowIndex: number;
-  columnIndex: number;
-  column: string;
-  value: unknown;
-}
-
-interface ColumnHeaderContextMenu {
-  x: number;
-  y: number;
-  column: string;
-}
-
-interface CellEditorState {
-  rowIndex: number;
-  column: string;
-  value: string;
-}
-
-interface SelectedCell {
-  key: string;
-  rowIndex: number;
-  columnIndex: number;
-  column: string;
-}
-
-type BatchEditMode = "text" | "null" | "empty";
-
-type ColumnEditMode = "add" | "edit";
-
-interface ColumnEditForm {
-  field: string;
-  typeName: string;
-  length: string;
-  scale: string;
-  unsigned: boolean;
-  customType: string;
-  nullable: boolean;
-  defaultValue: string;
-  extra: string;
-  autoIncrement: boolean;
-}
+import {
+  type FilterConditionDraft,
+  type FilterGroupDraft,
+  type TableInfo,
+  type TableDetailInfo,
+  type DataState,
+  type RightPanelTab,
+  type SelectedCell,
+  type ColumnEditForm,
+  type TreeContextMenu,
+  type DatabaseContextMenu,
+  type ExportSelectionModalState,
+  type CreateTableModalState,
+  type RowContextMenu,
+  type ColumnHeaderContextMenu,
+  type CellEditorState,
+  type BatchEditMode,
+  type ColumnEditMode,
+  defaultDataState,
+  mysqlColumnTypeOptions,
+  getColumnTypeOption,
+  escapeSqlIdentifier,
+  escapeSqlLiteral,
+  escapeSqlLikeLiteral,
+  parseColumnType,
+  buildColumnType,
+  formatInfoDate,
+  formatInfoText,
+  toSafeNumber,
+  formatBytes,
+  getSingleResultRow,
+  createFilterCondition,
+  createFilterGroup,
+  countFilterStats,
+  cloneFilterGroup,
+  updateFilterTreeNode,
+  removeFilterTreeNode,
+  sanitizeFilterNode,
+  operatorNeedsValue
+} from "./table-manager/utils";
 
 export default function MysqlTableManager() {
   const { t } = useTranslation();
@@ -333,139 +203,6 @@ export default function MysqlTableManager() {
     ? openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey) ?? null
     : null;
 
-  const escapeSqlIdentifier = (value: string) => `\`${value.replace(/`/g, "``")}\``;
-
-  const escapeSqlLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
-
-  const escapeSqlLikeLiteral = (value: string) => value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/'/g, "''");
-
-  const getColumnTypeOption = (value: string) => mysqlColumnTypeOptions.find((option) => option.value === value);
-
-  const parseColumnType = (type: string): Pick<ColumnEditForm, "typeName" | "length" | "scale" | "unsigned" | "customType"> => {
-    const normalized = type.trim().toLowerCase();
-    const match = normalized.match(/^([a-z]+)(?:\(([^)]*)\))?(?:\s+(unsigned))?$/i);
-    if (!match) {
-      return {
-        typeName: "custom",
-        length: "",
-        scale: "",
-        unsigned: false,
-        customType: type
-      };
-    }
-
-    const [, baseTypeRaw, paramsRaw = "", unsignedRaw] = match;
-    const baseType = baseTypeRaw.toLowerCase();
-    if (!getColumnTypeOption(baseType)) {
-      return {
-        typeName: "custom",
-        length: "",
-        scale: "",
-        unsigned: false,
-        customType: type
-      };
-    }
-
-    const [length = "", scale = ""] = paramsRaw.split(",").map((item) => item.trim());
-    return {
-      typeName: baseType,
-      length,
-      scale,
-      unsigned: Boolean(unsignedRaw),
-      customType: ""
-    };
-  };
-
-  const buildColumnType = (form: ColumnEditForm) => {
-    if (form.typeName === "custom") {
-      return form.customType.trim();
-    }
-
-    const option = getColumnTypeOption(form.typeName);
-    if (!option) return "";
-
-    const length = form.length.trim();
-    const scale = form.scale.trim();
-    let type = form.typeName;
-
-    if (option.lengthMode === "single" && length) {
-      type += `(${length})`;
-    }
-
-    if (option.lengthMode === "pair") {
-      if (length && scale) {
-        type += `(${length},${scale})`;
-      } else if (length) {
-        type += `(${length})`;
-      }
-    }
-
-    if (option.supportsUnsigned && form.unsigned) {
-      type += " UNSIGNED";
-    }
-
-    return type;
-  };
-
-  const formatInfoDate = (value: unknown) => {
-    if (value === null || value === undefined || String(value).trim() === "") {
-      return "--";
-    }
-    return String(value);
-  };
-
-  const formatInfoText = (value: unknown) => {
-    if (value === null || value === undefined || String(value).trim() === "") {
-      return "--";
-    }
-    return String(value);
-  };
-
-  const toSafeNumber = (value: unknown) => {
-    const nextValue = Number(value ?? 0);
-    return Number.isFinite(nextValue) ? nextValue : 0;
-  };
-
-  const formatBytes = (value: number) => {
-    if (value <= 0) return "0 B (0)";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    let size = value;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex += 1;
-    }
-    return `${size.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]} (${value.toLocaleString()})`;
-  };
-
-  const getSingleResultRow = (columns: string[], rows: Array<Array<unknown>>) => {
-    const row = rows[0];
-    if (!row) return null;
-    return Object.fromEntries(columns.map((column, index) => [column, row[index]]));
-  };
-
-  const createFilterCondition = (column = "", operator: MysqlFilterOperator = "eq", value = ""): FilterConditionDraft => ({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    kind: "condition",
-    column,
-    operator,
-    value
-  });
-
-  const createFilterGroup = (mode: "and" | "or" = "and", children: MysqlFilterNode[] = []): FilterGroupDraft => ({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    kind: "group",
-    mode,
-    children
-  });
-
-  const createSelectedCell = (rowIndex: number, columnIndex: number): SelectedCell => ({
-    key: `${rowIndex}:${columnIndex}`,
-    rowIndex,
-    columnIndex,
-    column: dataState.columns[columnIndex] ?? ""
-  });
-
   const selectedCellKeySet = useMemo(() => new Set(selectedCells.map((cell) => cell.key)), [selectedCells]);
 
   const filterOperators: Array<{ value: MysqlFilterOperator; label: string }> = [
@@ -486,91 +223,12 @@ export default function MysqlTableManager() {
 
   const activeFilterTree = activeOpenedTable?.filterTree ?? null;
 
-  const operatorNeedsValue = (operator: MysqlFilterOperator) => !["isNull", "isNotNull", "emptyString", "notEmptyString"].includes(operator);
-
-  function countFilterStats(node: FilterGroupDraft | null): { groups: number; conditions: number } {
-    if (!node) return { groups: 0, conditions: 0 };
-    return node.children.reduce(
-      (acc, child) => {
-        if (child.kind === "group") {
-          const nested = countFilterStats(child);
-          return {
-            groups: acc.groups + 1 + nested.groups,
-            conditions: acc.conditions + nested.conditions
-          };
-        }
-        return {
-          groups: acc.groups,
-          conditions: acc.conditions + 1
-        };
-      },
-      { groups: 0, conditions: 0 }
-    );
-  }
-
-  function cloneFilterGroup(group: FilterGroupDraft, fallbackColumn: string): FilterGroupDraft {
-    return {
-      ...group,
-      children: (group.children.length > 0 ? group.children : [createFilterCondition(fallbackColumn)]).map((child) => {
-        if (child.kind === "group") {
-          return cloneFilterGroup(child, fallbackColumn);
-        }
-        return {
-          ...child,
-          kind: "condition",
-          column: child.column || fallbackColumn,
-          value: child.value ?? ""
-        };
-      })
-    };
-  }
-
-  function updateFilterTreeNode(group: FilterGroupDraft, nodeId: string, updater: (node: MysqlFilterNode) => MysqlFilterNode): FilterGroupDraft {
-    return {
-      ...group,
-      children: group.children.map((child) => {
-        if (child.id === nodeId) {
-          return updater(child);
-        }
-        if (child.kind === "group") {
-          return updateFilterTreeNode(child, nodeId, updater);
-        }
-        return child;
-      })
-    };
-  }
-
-  function removeFilterTreeNode(group: FilterGroupDraft, nodeId: string): FilterGroupDraft {
-    return {
-      ...group,
-      children: group.children
-        .filter((child) => child.id !== nodeId)
-        .map((child) => (child.kind === "group" ? removeFilterTreeNode(child, nodeId) : child))
-    };
-  }
-
-  function sanitizeFilterNode(node: MysqlFilterNode): MysqlFilterNode | null {
-    if (node.kind === "condition") {
-      if (!node.column.trim()) return null;
-      if (operatorNeedsValue(node.operator) && (node.value ?? "") === "") return null;
-      return {
-        ...node,
-        kind: "condition",
-        value: operatorNeedsValue(node.operator) ? node.value ?? "" : undefined
-      };
-    }
-
-    const children = node.children
-      .map((child) => sanitizeFilterNode(child))
-      .filter((child): child is MysqlFilterNode => Boolean(child));
-
-    if (children.length === 0) return null;
-    return {
-      ...node,
-      kind: "group",
-      children
-    };
-  }
+  const createSelectedCell = (rowIndex: number, columnIndex: number): SelectedCell => ({
+    key: `${rowIndex}:${columnIndex}`,
+    rowIndex,
+    columnIndex,
+    column: dataState.columns[columnIndex] ?? ""
+  });
 
   function buildNodeSql(node: MysqlFilterNode): string | null {
     if (node.kind === "condition") {
