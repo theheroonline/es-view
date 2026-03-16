@@ -1136,6 +1136,83 @@ export default function MysqlTableManager() {
     }
   };
 
+  // ─── Context menu handlers (useCallback 包裹以避免闪烁) ───
+
+  const handleContextMenuCopyCellValue = useCallback(() => {
+    if (!rowContextMenu) return;
+    void copyToClipboard(rowContextMenu.value === null ? "NULL" : String(rowContextMenu.value));
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuCopySqlValue = useCallback(() => {
+    if (!rowContextMenu) return;
+    void copyToClipboard(formatSqlValue(rowContextMenu.value));
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuCopyRow = useCallback(() => {
+    if (!rowContextMenu) return;
+    void copyToClipboard(JSON.stringify(getRowObject(rowContextMenu.rowIndex), null, 2));
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuCopyInsert = useCallback(() => {
+    if (!rowContextMenu) return;
+    void copyToClipboard(buildInsertSql(rowContextMenu.rowIndex));
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuFilterByValue = useCallback(() => {
+    if (!rowContextMenu) return;
+    void applyFilter(appendConditionToRootTree(
+      activeFilterTree,
+      createFilterCondition(
+        rowContextMenu.column,
+        rowContextMenu.value === null ? "isNull" : typeof rowContextMenu.value === "string" && rowContextMenu.value === "" ? "emptyString" : "eq",
+        rowContextMenu.value === null ? "" : String(rowContextMenu.value)
+      )
+    ));
+    setRowContextMenu(null);
+  }, [rowContextMenu, activeFilterTree]);
+
+  const handleContextMenuSortAsc = useCallback(() => {
+    if (!rowContextMenu) return;
+    void applySort(rowContextMenu.column, "asc");
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuSortDesc = useCallback(() => {
+    if (!rowContextMenu) return;
+    void applySort(rowContextMenu.column, "desc");
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuSetEmptyString = useCallback(() => {
+    if (!rowContextMenu) return;
+    void applyValueToCells(getContextTargetCells(rowContextMenu), "");
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuSetNull = useCallback(() => {
+    if (!rowContextMenu) return;
+    void applyValueToCells(getContextTargetCells(rowContextMenu), null);
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuBatchEdit = useCallback(() => {
+    if (!rowContextMenu) return;
+    const targetCells = getContextTargetCells(rowContextMenu);
+    setSelectedCells(targetCells);
+    openBatchEditModal(targetCells);
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
+  const handleContextMenuDelete = useCallback(() => {
+    if (!rowContextMenu) return;
+    void handleDeleteRow(rowContextMenu.rowIndex);
+    setRowContextMenu(null);
+  }, [rowContextMenu]);
+
   // ─── Add new row ───
 
   const handleAddNewRow = () => {
@@ -1326,19 +1403,35 @@ export default function MysqlTableManager() {
   // Close context menu on outside click / scroll / resize
   useEffect(() => {
     if (!databaseContextMenu && !treeContextMenu && !rowContextMenu && !columnHeaderContextMenu) return;
-    const close = () => {
+
+    const closeMenus = () => {
       setDatabaseContextMenu(null);
       setTreeContextMenu(null);
       setRowContextMenu(null);
       setColumnHeaderContextMenu(null);
     };
-    window.addEventListener("click", close);
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
+
+    const handleClickOutside = (e: Event) => {
+      const target = e.target as HTMLElement;
+      // 检查点击是否在菜单内部
+      const isInContextMenu = target.closest(".context-menu-panel");
+      if (!isInContextMenu) {
+        closeMenus();
+      }
+    };
+
+    const handleResize = () => closeMenus();
+    const handleScroll = () => closeMenus();
+
+    // 使用 useCapture 捕获阶段监听，确保能捕获所有点击事件
+    document.addEventListener("click", handleClickOutside, true);
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll, true);
+
     return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
+      document.removeEventListener("click", handleClickOutside, true);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
     };
   }, [columnHeaderContextMenu, databaseContextMenu, rowContextMenu, treeContextMenu]);
 
@@ -1649,7 +1742,6 @@ export default function MysqlTableManager() {
         onCellClick={handleCellClick}
         onRowContextMenu={handleRowContextMenu}
         onSaveCell={handleSaveCell}
-        onDeleteRow={handleDeleteRow}
         onClearFilter={() => void clearFilter()}
         onClearSort={() => void clearSort()}
         onApplyFilter={(tree) => void applyFilter(tree)}
@@ -1997,45 +2089,32 @@ export default function MysqlTableManager() {
             top: `${rowContextMenu.y}px`,
             minWidth: "180px"
           }}
-          onClick={(event) => event.stopPropagation()}
         >
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void copyToClipboard(rowContextMenu.value === null ? "NULL" : String(rowContextMenu.value));
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuCopyCellValue}
           >
             {t("mysql.tableManager.copyCellValue")}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void copyToClipboard(formatSqlValue(rowContextMenu.value));
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuCopySqlValue}
           >
             {t("mysql.tableManager.copySqlValue")}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void copyToClipboard(JSON.stringify(getRowObject(rowContextMenu.rowIndex), null, 2));
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuCopyRow}
           >
             {t("dataBrowser.copyRow")}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void copyToClipboard(buildInsertSql(rowContextMenu.rowIndex));
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuCopyInsert}
           >
             {t("mysql.tableManager.copyInsert")}
           </button>
@@ -2043,37 +2122,21 @@ export default function MysqlTableManager() {
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void applyFilter(appendConditionToRootTree(
-                activeFilterTree,
-                createFilterCondition(
-                  rowContextMenu.column,
-                  rowContextMenu.value === null ? "isNull" : typeof rowContextMenu.value === "string" && rowContextMenu.value === "" ? "emptyString" : "eq",
-                  rowContextMenu.value === null ? "" : String(rowContextMenu.value)
-                )
-              ));
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuFilterByValue}
           >
             {t("mysql.tableManager.filterByCurrentValue")}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void applySort(rowContextMenu.column, "asc");
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuSortAsc}
           >
             {t("dataBrowser.sortAscending")}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void applySort(rowContextMenu.column, "desc");
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuSortDesc}
           >
             {t("dataBrowser.sortDescending")}
           </button>
@@ -2081,32 +2144,21 @@ export default function MysqlTableManager() {
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void applyValueToCells(getContextTargetCells(rowContextMenu), "");
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuSetEmptyString}
           >
             {t("mysql.tableManager.setEmptyString")}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              void applyValueToCells(getContextTargetCells(rowContextMenu), null);
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuSetNull}
           >
             {t("mysql.tableManager.setNull")}
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={() => {
-              const targetCells = getContextTargetCells(rowContextMenu);
-              setSelectedCells(targetCells);
-              openBatchEditModal(targetCells);
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuBatchEdit}
           >
             {t("mysql.tableManager.batchEditSelectedCells")}
           </button>
@@ -2114,10 +2166,7 @@ export default function MysqlTableManager() {
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button text-danger"
-            onClick={() => {
-              void handleDeleteRow(rowContextMenu.rowIndex);
-              setRowContextMenu(null);
-            }}
+            onClick={handleContextMenuDelete}
           >
             {t("common.delete")}
           </button>

@@ -1605,21 +1605,100 @@ body {
 .tm-pagination {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 10px 16px;
   border-top: 1px solid #e5e5ea;
+  background: linear-gradient(180deg, #f8fafb 0%, #f3f6fa 100%);
   flex-shrink: 0;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .tm-pagination-group {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 12px;
+  color: #31445a;
+  font-weight: 500;
 }
 
-.tm-page-size-select {
-  width: 80px;
+.tm-page-size-input {
+  width: 60px;
+  padding: 4px 8px;
+  border: 1px solid #c5d0d8;
+  border-radius: 4px;
+  background: white;
+  font-size: 12px;
+  color: #31445a;
+  cursor: text;
+  transition: all 0.2s ease;
+}
+
+.tm-page-size-input:hover {
+  border-color: #a8b5c0;
+  background: #fafbfc;
+}
+
+.tm-page-size-input:focus {
+  outline: none;
+  border-color: #215f9b;
+  box-shadow: 0 0 0 2px rgba(33, 95, 155, 0.1);
+}
+
+.tm-page-input {
+  width: 50px;
+  padding: 4px 6px;
+  border: 1px solid #c5d0d8;
+  border-radius: 4px;
+  background: white;
+  font-size: 12px;
+  color: #31445a;
+  cursor: text;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.tm-page-input:hover {
+  border-color: #a8b5c0;
+  background: #fafbfc;
+}
+
+.tm-page-input:focus {
+  outline: none;
+  border-color: #215f9b;
+  box-shadow: 0 0 0 2px rgba(33, 95, 155, 0.1);
+}
+
+.tm-pagination-info {
+  font-size: 12px;
+  color: #617284;
+  min-width: 40px;
+}
+
+/* 分页按钮美化 */
+.tm-pagination .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.tm-pagination .btn-ghost {
+  border: 1px solid #d1d5db;
+  color: #31445a;
+}
+
+.tm-pagination .btn-ghost:hover:not(:disabled) {
+  background: #eef4ff;
+  border-color: #215f9b;
+  color: #215f9b;
+  box-shadow: 0 1px 3px rgba(33, 95, 155, 0.15);
+}
+
+.tm-pagination .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ============================================
@@ -1673,6 +1752,7 @@ body {
   white-space: nowrap;
   border-right: 1px solid #e5e5ea;
   user-select: none;
+  height: 40px;
 }
 
 .excel-table-header-cell:last-child {
@@ -1693,6 +1773,7 @@ body {
 
 .excel-table-row {
   border-bottom: 1px solid #f0f0f0;
+  height: 32px;
 }
 
 .excel-table-row:hover {
@@ -1711,6 +1792,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: cell;
+  height: 32px;
 }
 
 .excel-table-cell:last-child {
@@ -1782,13 +1864,6 @@ body {
 /* ========== 列拖拽和列宽调整样式 ========== */
 
 .excel-table-header-cell {
-  padding: 10px;
-  text-align: left;
-  font-weight: 600;
-  color: #31445a;
-  white-space: nowrap;
-  border-right: 1px solid #e5e5ea;
-  user-select: none;
   position: relative;
   cursor: grab;
   transition: background-color 0.15s ease;

@@ -1,4 +1,4 @@
-import { type MouseEvent, useState, useRef, useEffect } from "react";
+import { type MouseEvent, useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useExcelTable, isCellSelected, renderExpandedRowJSON, DEFAULT_COLUMN_WIDTH } from "../hooks/useExcelTable";
 import { useInlineEditor } from "../hooks/useInlineEditor";
@@ -26,8 +26,6 @@ interface ExcelLikeTableProps {
   selectedCellKeySet: Set<string>;
   expandedRow: number | null;
   selectedRowIndex: number | null;
-  pageSize: number;
-  pageNumber: number;
   loading?: boolean;
   tableKey?: string; // 用于持久化列配置
 
@@ -35,7 +33,6 @@ interface ExcelLikeTableProps {
   onCellClick: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
   onRowContextMenu: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, column: string, cell: unknown) => void;
   onSaveCell: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>;
-  onDeleteRow: (index: number) => void;
   onExpandedRowChange: (index: number | null) => void;
 }
 
@@ -45,14 +42,11 @@ export function ExcelLikeTable({
   selectedCellKeySet,
   expandedRow,
   selectedRowIndex,
-  pageSize,
-  pageNumber,
   loading = false,
   tableKey,
   onCellClick,
   onRowContextMenu,
   onSaveCell,
-  onDeleteRow,
   onExpandedRowChange,
 }: ExcelLikeTableProps) {
   const { t } = useTranslation();
@@ -72,6 +66,67 @@ export function ExcelLikeTable({
       editInputRef.current.select();
     }
   }, [editingCell]);
+
+  // 使用 useCallback 包裹处理函数，避免每次渲染都创建新函数
+  const handleCellClick = useCallback(
+    (e: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => {
+      e.stopPropagation();
+      onCellClick(e, rowIndex, columnIndex);
+    },
+    [onCellClick]
+  );
+
+  const handleCellDoubleClick = useCallback(
+    (rowIndex: number, columnIndex: number, columnName: string, cellValue: unknown) => {
+      startEditing(rowIndex, columnIndex, columnName, cellValue);
+    },
+    [startEditing]
+  );
+
+  const handleCellContextMenu = useCallback(
+    (e: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnName: string, cellValue: unknown) => {
+      e.stopPropagation();
+      onRowContextMenu(e, rowIndex, columnName, cellValue);
+    },
+    [onRowContextMenu]
+  );
+
+  const handleRowClick = useCallback(
+    (rowIndex: number) => {
+      onExpandedRowChange(expandedRow === rowIndex ? null : rowIndex);
+    },
+    [expandedRow, onExpandedRowChange]
+  );
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      updateEditValue(e.target.value);
+    },
+    [updateEditValue]
+  );
+
+  const handleInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>, onSaveCellFn: typeof onSaveCell) => {
+      handleKeyDown(e);
+      if (e.key === "Enter") {
+        saveEdit(onSaveCellFn);
+      } else if (e.key === "Escape") {
+        cancelEdit();
+      }
+    },
+    [handleKeyDown, saveEdit, cancelEdit]
+  );
+
+  const handleInputBlur = useCallback(
+    (onSaveCellFn: typeof onSaveCell) => {
+      saveEdit(onSaveCellFn);
+    },
+    [saveEdit]
+  );
+
+  const handleInputClick = useCallback((e: React.MouseEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+  }, []);
 
   // 使用 Hook 获取虚拟滚动和表格实例
   const {
@@ -170,9 +225,6 @@ export function ExcelLikeTable({
           <thead className="excel-table-head" style={{ position: "sticky", top: 0, zIndex: 10 }}>
             {headerGroups.map((headerGroup) => (
               <tr key={headerGroup.id} className="excel-table-header-row">
-                {/* 行号列 */}
-                <th className="excel-table-header-cell excel-table-cell-rownum">#</th>
-
                 {/* 数据列 */}
                 {headerGroup.headers.map((header) => {
                   const columnName = header.column.columnDef.header?.toString() || "";
@@ -202,9 +254,6 @@ export function ExcelLikeTable({
                     </th>
                   );
                 })}
-
-                {/* 操作列 */}
-                <th className="excel-table-header-cell excel-table-cell-actions">{t("dataBrowser.actions")}</th>
               </tr>
             ))}
           </thead>
@@ -222,15 +271,10 @@ export function ExcelLikeTable({
 
                 return (
                   <tr
-                    key={`row-${rowIndex}`}
+                    key={virtualItem.key}
                     className={`excel-table-row ${isRowSelected ? "excel-table-row-selected" : ""}`}
-                    onClick={() => onExpandedRowChange(expandedRow === rowIndex ? null : rowIndex)}
+                    onClick={() => handleRowClick(rowIndex)}
                   >
-                    {/* 行号 */}
-                    <td className="excel-table-cell excel-table-cell-rownum">
-                      {(pageNumber - 1) * pageSize + rowIndex + 1}
-                    </td>
-
                     {/* 数据单元格 */}
                     {columnOrder.filter((col) => columns.includes(col)).map((columnName) => {
                       const columnIndex = columns.indexOf(columnName);
@@ -249,17 +293,9 @@ export function ExcelLikeTable({
                           }`}
                           title={cellValue === null ? "NULL" : String(cellValue)}
                           style={{ width: columnWidth, padding: isEditing ? 0 : undefined }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onCellClick(e, rowIndex, columnIndex);
-                          }}
-                          onDoubleClick={() => {
-                            startEditing(rowIndex, columnIndex, columnName, cellValue);
-                          }}
-                          onContextMenu={(e) => {
-                            e.stopPropagation();
-                            onRowContextMenu(e, rowIndex, columnName, cellValue);
-                          }}
+                          onClick={(e) => handleCellClick(e, rowIndex, columnIndex)}
+                          onDoubleClick={() => handleCellDoubleClick(rowIndex, columnIndex, columnName, cellValue)}
+                          onContextMenu={(e) => handleCellContextMenu(e, rowIndex, columnName, cellValue)}
                         >
                           {isEditing ? (
                             <input
@@ -267,23 +303,10 @@ export function ExcelLikeTable({
                               type="text"
                               className="excel-table-cell-input"
                               value={editingCell.editValue}
-                              onChange={(e) => updateEditValue(e.target.value)}
-                              onKeyDown={(e) => {
-                                const baseHandler = (ev: React.KeyboardEvent<HTMLInputElement>) => {
-                                  handleKeyDown(ev);
-                                  if (ev.key === "Enter") {
-                                    saveEdit(onSaveCell);
-                                  } else if (ev.key === "Escape") {
-                                    cancelEdit();
-                                  }
-                                };
-                                baseHandler(e);
-                              }}
-                              onBlur={() => {
-                                // 失焦时自动保存
-                                saveEdit(onSaveCell);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
+                              onChange={handleInputChange}
+                              onKeyDown={(e) => handleInputKeyDown(e, onSaveCell)}
+                              onBlur={() => handleInputBlur(onSaveCell)}
+                              onClick={handleInputClick}
                             />
                           ) : cellValue === null ? (
                             <span className="excel-table-cell-null">NULL</span>
@@ -293,37 +316,12 @@ export function ExcelLikeTable({
                         </td>
                       );
                     })}
-
-                    {/* 操作列 */}
-                    <td className="excel-table-cell excel-table-cell-actions">
-                      <div className="flex-gap justify-end table-action-group-tight">
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          title={expandedRow === rowIndex ? "收起" : "展开"}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onExpandedRowChange(expandedRow === rowIndex ? null : rowIndex);
-                          }}
-                        >
-                          {expandedRow === rowIndex ? "▲" : "▼"}
-                        </button>
-                        <button
-                          className="btn btn-sm btn-ghost text-danger"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteRow(rowIndex);
-                          }}
-                        >
-                          {t("common.delete")}
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 );
               })
             ) : (
               <tr>
-                <td colSpan={columns.length + 2} className="excel-table-cell" style={{ textAlign: "center", padding: "20px" }}>
+                <td colSpan={columns.length} className="excel-table-cell" style={{ textAlign: "center", padding: "20px" }}>
                   {loading ? t("common.loading") : t("common.noData")}
                 </td>
               </tr>
@@ -337,7 +335,7 @@ export function ExcelLikeTable({
             <table className="excel-table excel-table-expanded">
               <tbody>
                 <tr className="excel-table-expanded-row">
-                  <td colSpan={columns.length + 2}>
+                  <td colSpan={columns.length}>
                     <div className="excel-table-expanded-header">展开详情</div>
                     <pre className="excel-table-expanded-json">
                       {renderExpandedRowJSON(data[expandedRow], columns)}

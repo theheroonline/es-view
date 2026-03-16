@@ -43,7 +43,7 @@ interface UseExcelTableReturn {
 }
 
 const ROW_HEIGHT = 32; // 固定行高
-const BUFFER_SIZE = 10; // 虚拟滚动缓冲区
+const BUFFER_SIZE = 20; // 虚拟滚动缓冲区 - 增加到 20 以减少闪烁
 const DEFAULT_COLUMN_WIDTH = 120; // 默认列宽（像素）
 const MIN_COLUMN_WIDTH = 50; // 最小列宽
 const MAX_COLUMN_WIDTH = 500; // 最大列宽

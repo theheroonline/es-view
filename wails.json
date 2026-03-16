@@ -22,5 +22,6 @@
   },
   "debug": {
     "openInspectorOnStartup": true
-  }
+  },
+  "icon": "assets/appicon.png"
 }

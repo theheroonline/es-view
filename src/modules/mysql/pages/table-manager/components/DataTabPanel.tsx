@@ -1,4 +1,4 @@
-import { type MouseEvent } from "react";
+import { type MouseEvent, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { MysqlFilterOperator, MysqlFilterNode } from "../../../../../state/MysqlContext";
 import {
@@ -44,7 +44,6 @@ interface DataTabPanelProps {
   onCellClick: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
   onRowContextMenu: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, column: string, cell: unknown) => void;
   onSaveCell: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>;
-  onDeleteRow: (index: number) => void;
   onClearFilter: () => void;
   onClearSort: () => void;
   onApplyFilter: (tree: FilterGroupDraft | null) => void;
@@ -81,7 +80,6 @@ export function DataTabPanel({
   onCellClick,
   onRowContextMenu,
   onSaveCell,
-  onDeleteRow,
   onClearFilter,
   onClearSort,
   onApplyFilter,
@@ -92,6 +90,19 @@ export function DataTabPanel({
   onOpenSortModal,
 }: DataTabPanelProps) {
   const { t } = useTranslation();
+
+  // 本地状态用于管理输入框值（避免每次输入都刷新数据）
+  const [pageSizeInput, setPageSizeInput] = useState(String(dataState.pageSize));
+  const [pageInput, setPageInput] = useState(String(dataState.page));
+
+  // 当外部数据改变时，同步输入框值
+  useEffect(() => {
+    setPageSizeInput(String(dataState.pageSize));
+  }, [dataState.pageSize]);
+
+  useEffect(() => {
+    setPageInput(String(dataState.page));
+  }, [dataState.page]);
 
   if (!selectedTableInfo) return null;
 
@@ -443,31 +454,44 @@ export function DataTabPanel({
         selectedCellKeySet={selectedCellKeySet}
         expandedRow={expandedRow}
         selectedRowIndex={selectedRowIndex}
-        pageSize={dataState.pageSize}
-        pageNumber={dataState.page}
         loading={dataState.loading}
         tableKey={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
         onCellClick={onCellClick}
         onRowContextMenu={onRowContextMenu}
         onSaveCell={onSaveCell}
-        onDeleteRow={onDeleteRow}
         onExpandedRowChange={setExpandedRow}
       />
 
       <div className="tm-pagination">
         <div className="tm-pagination-group">
           <span>{t("dataBrowser.pageSize")}:</span>
-          <select
-            className="form-control tm-page-size-select"
-            value={dataState.pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          >
-            {[50, 100, 200, 500].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <input
+            type="number"
+            className="tm-page-size-input"
+            value={pageSizeInput}
+            onChange={(e) => setPageSizeInput(e.target.value)}
+            onBlur={(e) => {
+              const val = Number(e.target.value);
+              if (val > 0 && val <= 1000) {
+                onPageSizeChange(val);
+              } else {
+                // 无效输入，恢复原值
+                setPageSizeInput(String(dataState.pageSize));
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const val = Number(pageSizeInput);
+                if (val > 0 && val <= 1000) {
+                  onPageSizeChange(val);
+                } else {
+                  setPageSizeInput(String(dataState.pageSize));
+                }
+              }
+            }}
+            min="1"
+            max="1000"
+          />
         </div>
         <div className="tm-pagination-group">
           <button
@@ -477,8 +501,36 @@ export function DataTabPanel({
           >
             {t("dataBrowser.previousPage")}
           </button>
-          <span>
-            {dataState.page} / {totalPages}
+          <span className="tm-pagination-info">
+            <input
+              type="number"
+              className="tm-page-input"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onBlur={(e) => {
+                const val = Number(e.target.value);
+                if (val > 0 && val <= totalPages) {
+                  onPageChange(val);
+                } else {
+                  // 无效输入，恢复原值
+                  setPageInput(String(dataState.page));
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const val = Number(pageInput);
+                  if (val > 0 && val <= totalPages) {
+                    onPageChange(val);
+                  } else {
+                    setPageInput(String(dataState.page));
+                  }
+                }
+              }}
+              min="1"
+              max={totalPages}
+            />
+            <span>/</span>
+            <span>{totalPages}</span>
           </span>
           <button
             className="btn btn-sm btn-ghost"
