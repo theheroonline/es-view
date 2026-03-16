@@ -26,6 +26,8 @@ import { DatabaseOverviewPanel } from "./table-manager/components/DatabaseOvervi
 import { StructureTabPanel } from "./table-manager/components/StructureTabPanel";
 import { InfoTabPanel } from "./table-manager/components/InfoTabPanel";
 import { DataTabPanel } from "./table-manager/components/DataTabPanel";
+import { BatchEditModal } from "./table-manager/components/BatchEditModal";
+import { CreateTableModal } from "./table-manager/components/CreateTableModal";
 import {
   type FilterConditionDraft,
   type FilterGroupDraft,
@@ -1427,80 +1429,6 @@ export default function MysqlTableManager() {
     });
   }, [createTableModal]);
 
-  const handleDeleteEditingRow = useCallback((rowId: string) => {
-    setEditingRows(editingRows.filter(row => row.id !== rowId));
-    if (selectedEditingRowId === rowId) {
-      setSelectedEditingRowId(null);
-    }
-  }, [editingRows, selectedEditingRowId]);
-
-  const handleMoveEditingRowUp = useCallback((rowId: string) => {
-    const index = editingRows.findIndex(row => row.id === rowId);
-    if (index <= 0) return;
-
-    const newRows = [...editingRows];
-    [newRows[index - 1], newRows[index]] = [newRows[index], newRows[index - 1]];
-    setEditingRows(newRows);
-  }, [editingRows]);
-
-  const handleMoveEditingRowDown = useCallback((rowId: string) => {
-    const index = editingRows.findIndex(row => row.id === rowId);
-    if (index < 0 || index >= editingRows.length - 1) return;
-
-    const newRows = [...editingRows];
-    [newRows[index], newRows[index + 1]] = [newRows[index + 1], newRows[index]];
-    setEditingRows(newRows);
-  }, [editingRows]);
-
-  // 列名自动切换类型和默认值
-  const getAutoTypeByColumnName = (columnName: string): { type: string; length: string; scale: string; defaultValue: string } => {
-    const lowerName = columnName.toLowerCase().trim();
-
-    // ID 类型
-    if (lowerName.includes('id') || lowerName === 'id') {
-      return { type: 'bigint', length: '', scale: '', defaultValue: '' };
-    }
-
-    // 时间戳/日期类型
-    if (lowerName.includes('time') || lowerName.includes('date') || lowerName.includes('created') || lowerName.includes('updated')) {
-      if (lowerName.includes('created') || lowerName.includes('updated')) {
-        return { type: 'timestamp', length: '', scale: '', defaultValue: 'CURRENT_TIMESTAMP' };
-      }
-      return { type: 'datetime', length: '', scale: '', defaultValue: '' };
-    }
-
-    // 布尔类型
-    if (lowerName.includes('is_') || lowerName.includes('is') || lowerName.includes('active') || lowerName.includes('flag')) {
-      return { type: 'tinyint', length: '', scale: '', defaultValue: '0' };
-    }
-
-    // 金额/价格类型
-    if (lowerName.includes('price') || lowerName.includes('amount') || lowerName.includes('fee') || lowerName.includes('cost')) {
-      return { type: 'decimal', length: '10', scale: '2', defaultValue: '0.00' };
-    }
-
-    // 数值类型
-    if (lowerName.includes('count') || lowerName.includes('number') || lowerName.includes('age') || lowerName.includes('score')) {
-      return { type: 'int', length: '', scale: '', defaultValue: '0' };
-    }
-
-    // 邮箱/URL/地址类型
-    if (lowerName.includes('email') || lowerName.includes('mail')) {
-      return { type: 'varchar', length: '255', scale: '', defaultValue: '' };
-    }
-
-    if (lowerName.includes('url') || lowerName.includes('link') || lowerName.includes('address') || lowerName.includes('addr')) {
-      return { type: 'varchar', length: '255', scale: '', defaultValue: '' };
-    }
-
-    // 长文本
-    if (lowerName.includes('description') || lowerName.includes('desc') || lowerName.includes('content') || lowerName.includes('remark')) {
-      return { type: 'text', length: '', scale: '', defaultValue: '' };
-    }
-
-    // 默认返回 varchar
-    return { type: 'varchar', length: '255', scale: '', defaultValue: '' };
-  };
 
   const generateCreateTableSQL = useCallback((state: CreateTableModalState): string => {
     const { tableName, columns, charset, engine, database } = state;
@@ -2598,40 +2526,17 @@ export default function MysqlTableManager() {
         </div>
       )}
 
-      {batchEditOpen && (
-        <div className="modal-overlay">
-          <div className="card modal-card modal-card-md modal-card-scroll">
-            <div className="card-header page-section-header">
-              <h3 className="card-title">{t("mysql.tableManager.batchEditTitle", { count: selectedCells.length })}</h3>
-              <button className="btn btn-sm btn-ghost" onClick={() => setBatchEditOpen(false)}>{t("common.close")}</button>
-            </div>
-            <div className="modal-card-body modal-card-grid">
-              <div>
-                <label>{t("mysql.tableManager.batchEditMode")}</label>
-                <select className="form-control" value={batchEditDraft.mode} onChange={(event) => setBatchEditDraft((prev) => ({ ...prev, mode: event.target.value as BatchEditMode }))}>
-                  <option value="text">{t("mysql.tableManager.batchEditUseText")}</option>
-                  <option value="null">{t("mysql.tableManager.batchEditUseNull")}</option>
-                  <option value="empty">{t("mysql.tableManager.batchEditUseEmptyString")}</option>
-                </select>
-              </div>
-              <div>
-                <label>{t("mysql.tableManager.batchEditValue")}</label>
-                <textarea
-                  className="json-editor json-editor-sm"
-                  disabled={batchEditDraft.mode !== "text"}
-                  value={batchEditDraft.value}
-                  onChange={(event) => setBatchEditDraft((prev) => ({ ...prev, value: event.target.value }))}
-                />
-              </div>
-              {batchEditError && <div className="text-danger">{batchEditError}</div>}
-            </div>
-            <div className="modal-card-footer">
-              <button className="btn btn-sm btn-ghost" onClick={() => setBatchEditOpen(false)}>{t("common.cancel")}</button>
-              <button className="btn btn-sm btn-primary" onClick={() => void handleSaveBatchEdit()}>{t("common.save")}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <BatchEditModal
+        isOpen={batchEditOpen}
+        selectedCellsCount={selectedCells.length}
+        batchEditMode={batchEditDraft.mode}
+        batchEditValue={batchEditDraft.value}
+        batchEditError={batchEditError}
+        onModeChange={(mode) => setBatchEditDraft((prev) => ({ ...prev, mode }))}
+        onValueChange={(value) => setBatchEditDraft((prev) => ({ ...prev, value }))}
+        onClose={() => setBatchEditOpen(false)}
+        onSave={() => void handleSaveBatchEdit()}
+      />
 
       {/* Column edit modal */}
       {columnEditOpen && (
@@ -2983,405 +2888,60 @@ export default function MysqlTableManager() {
       )}
 
       {/* Create Table Modal */}
-      {createTableModal && (
-        <div className="modal-overlay" onClick={() => !createTableLoading && setCreateTableModal(null)}>
-          <div className="card modal-card modal-card-fullscreen" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="card-header page-section-header">
-              <div>
-                <h3 className="card-title">💾 {t("mysql.tableManager.createTableModal")}</h3>
-                <p style={{ fontSize: "12px", color: "#666", margin: "4px 0 0 0" }}>
-                  {createTableModal.database}
-                </p>
-              </div>
-              <button
-                className="btn btn-sm btn-ghost"
-                onClick={() => !createTableLoading && setCreateTableModal(null)}
-                disabled={createTableLoading}
-              >
-                {t("common.close")}
-              </button>
-            </div>
-
-            {/* Main content */}
-            <div className="modal-card-body" style={{ display: "flex", flexDirection: "column", height: "calc(100% - 120px)" }}>
-              {createTableError && (
-                <div className="text-danger modal-card-error">{createTableError}</div>
-              )}
-
-              {/* Table Header with Basic Info */}
-              <div className="mysql-create-table-header">
-                <div className="mysql-create-table-basic-info">
-                  <div>
-                    <label>{t("mysql.tableManager.tableName")}</label>
-                    <input
-                      className="form-control"
-                      type="text"
-                      value={createTableModal.tableName}
-                      onChange={(e) =>
-                        setCreateTableModal({
-                          ...createTableModal,
-                          tableName: e.target.value
-                        })
-                      }
-                      placeholder="my_table"
-                      disabled={createTableLoading}
-                    />
-                  </div>
-                  <div>
-                    <label>{t("mysql.tableManager.engine")}</label>
-                    <select
-                      className="form-control"
-                      value={createTableModal.engine}
-                      onChange={(e) =>
-                        setCreateTableModal({
-                          ...createTableModal,
-                          engine: e.target.value
-                        })
-                      }
-                      disabled={createTableLoading}
-                    >
-                      <option value="InnoDB">InnoDB</option>
-                      <option value="MyISAM">MyISAM</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label>{t("mysql.tableManager.characterSet")}</label>
-                    <select
-                      className="form-control"
-                      value={createTableModal.charset}
-                      onChange={(e) =>
-                        setCreateTableModal({
-                          ...createTableModal,
-                          charset: e.target.value
-                        })
-                      }
-                      disabled={createTableLoading}
-                    >
-                      <option value="utf8mb4">utf8mb4</option>
-                      <option value="utf8">utf8</option>
-                      <option value="latin1">latin1</option>
-                      <option value="ascii">ascii</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Toolbar */}
-              <div className="mysql-create-table-toolbar">
-                <span style={{ color: "#666", fontSize: "13px", marginRight: "auto" }}>
-                  {createTableModal.columns.length} {createTableModal.columns.length === 1 ? "column" : "columns"}
-                </span>
-                <button
-                  className="btn btn-sm btn-primary"
-                  onClick={handleAddColumn}
-                  disabled={createTableLoading}
-                >
-                  ➕ {t("mysql.tableManager.addColumn")}
-                </button>
-              </div>
-
-              {/* Columns table */}
-              <div className="mysql-create-table-content" style={{ flex: 1, overflow: "auto" }}>
-                <div className="table-wrapper">
-                  <table className="table mysql-create-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: "18%" }}>{t("mysql.tableManager.columnField")}</th>
-                        <th style={{ width: "13%" }}>{t("mysql.tableManager.columnType")}</th>
-                        <th style={{ width: "7%" }}>长度</th>
-                        <th style={{ width: "7%" }}>小数点</th>
-                        <th style={{ width: "7%" }}>{t("mysql.tableManager.columnNull")}</th>
-                        <th style={{ width: "7%" }}>主键</th>
-                        <th style={{ width: "7%" }}>{t("mysql.tableManager.autoIncrement")}</th>
-                        <th style={{ width: "12%" }}>{t("mysql.tableManager.columnDefault")}</th>
-                        <th style={{ width: "10%" }}>备注</th>
-                        <th className="tm-table-head-actions" style={{ width: "7%" }}>{t("dataBrowser.actions")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {createTableModal.columns.map((column) => (
-                        <tr key={column.id} className={column.isPrimary ? "mysql-create-table-row-primary" : ""}>
-                          <td className="mysql-create-table-field-name">{column.name || "(Untitled)"}</td>
-                          <td>
-                            <span className="pill">{column.type}</span>
-                          </td>
-                          <td style={{ textAlign: "center", fontSize: "13px" }}>
-                            {column.length ? <span>{column.length}</span> : <span style={{ color: "#999" }}>-</span>}
-                          </td>
-                          <td style={{ textAlign: "center", fontSize: "13px" }}>
-                            {column.scale ? <span>{column.scale}</span> : <span style={{ color: "#999" }}>-</span>}
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            <input
-                              type="checkbox"
-                              checked={column.nullable}
-                              onChange={(e) => {
-                                setCreateTableModal({
-                                  ...createTableModal,
-                                  columns: createTableModal.columns.map(col =>
-                                    col.id === column.id ? { ...col, nullable: e.target.checked } : col
-                                  )
-                                });
-                              }}
-                              disabled={createTableLoading}
-                            />
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            <input
-                              type="checkbox"
-                              checked={column.isPrimary}
-                              onChange={(e) => {
-                                setCreateTableModal({
-                                  ...createTableModal,
-                                  columns: createTableModal.columns.map(col =>
-                                    col.id === column.id ? { ...col, isPrimary: e.target.checked } : col
-                                  )
-                                });
-                              }}
-                              disabled={createTableLoading}
-                            />
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            <input
-                              type="checkbox"
-                              checked={column.autoIncrement}
-                              onChange={(e) => {
-                                setCreateTableModal({
-                                  ...createTableModal,
-                                  columns: createTableModal.columns.map(col =>
-                                    col.id === column.id ? { ...col, autoIncrement: e.target.checked } : col
-                                  )
-                                });
-                              }}
-                              disabled={createTableLoading}
-                            />
-                          </td>
-                          <td style={{ color: "#999", fontSize: "12px" }}>
-                            {column.defaultValue || "NULL"}
-                          </td>
-                          <td style={{ color: "#999", fontSize: "12px" }}>
-                            -
-                          </td>
-                          <td className="tm-actions-cell">
-                            <button
-                              className="btn btn-sm btn-ghost text-danger"
-                              onClick={() => handleDeleteColumn(column.id)}
-                              disabled={createTableLoading}
-                              title={t("common.delete")}
-                            >
-                              -
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-
-                      {/* Editing rows */}
-                      {editingRows.map((row) => (
-                        <tr
-                          key={row.id}
-                          className="mysql-create-table-new-row"
-                          onClick={() => setSelectedEditingRowId(row.id)}
-                        >
-                          <td>
-                            <input
-                              className="form-control"
-                              type="text"
-                              value={row.name}
-                              onChange={(e) => {
-                                const newName = e.target.value;
-                                // 自动切换类型和默认值
-                                const autoType = getAutoTypeByColumnName(newName);
-
-                                setEditingRows(editingRows.map(r => r.id === row.id ? {
-                                  ...r,
-                                  name: newName,
-                                  type: autoType.type,
-                                  length: autoType.length,
-                                  scale: autoType.scale,
-                                  defaultValue: autoType.defaultValue
-                                } : r));
-                              }}
-                              placeholder={t("mysql.tableManager.columnName")}
-                              disabled={createTableLoading}
-                            />
-                          </td>
-                          <td>
-                            <select
-                              className="form-control"
-                              value={row.type}
-                              onChange={(e) => {
-                                const type = e.target.value;
-                                const typeOption = mysqlColumnTypeOptions.find(opt => opt.value === type);
-                                setEditingRows(editingRows.map(r => r.id === row.id ? {
-                                  ...r,
-                                  type,
-                                  length: typeOption?.lengthMode === "none" ? "" : r.length,
-                                  scale: typeOption?.lengthMode === "pair" ? r.scale : ""
-                                } : r));
-                              }}
-                              disabled={createTableLoading}
-                            >
-                              {mysqlColumnTypeOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td>
-                            {mysqlColumnTypeOptions.find(opt => opt.value === row.type)?.lengthMode !== "none" && (
-                              <input
-                                className="form-control"
-                                type="text"
-                                value={row.length}
-                                onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, length: e.target.value } : r))}
-                                placeholder="-"
-                                disabled={createTableLoading}
-                                style={{ fontSize: "12px" }}
-                              />
-                            )}
-                          </td>
-                          <td>
-                            {mysqlColumnTypeOptions.find(opt => opt.value === row.type)?.lengthMode === "pair" && (
-                              <input
-                                className="form-control"
-                                type="text"
-                                value={row.scale}
-                                onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, scale: e.target.value } : r))}
-                                placeholder="-"
-                                disabled={createTableLoading}
-                                style={{ fontSize: "12px" }}
-                              />
-                            )}
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            <input
-                              type="checkbox"
-                              checked={row.nullable}
-                              onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, nullable: e.target.checked } : r))}
-                              disabled={createTableLoading}
-                            />
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            <input
-                              type="checkbox"
-                              checked={row.isPrimary}
-                              onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, isPrimary: e.target.checked } : r))}
-                              disabled={createTableLoading}
-                            />
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            <input
-                              type="checkbox"
-                              checked={row.autoIncrement}
-                              onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, autoIncrement: e.target.checked } : r))}
-                              disabled={createTableLoading}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              className="form-control"
-                              type="text"
-                              value={row.defaultValue}
-                              onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, defaultValue: e.target.value } : r))}
-                              placeholder="NULL"
-                              disabled={createTableLoading}
-                              style={{ fontSize: "12px" }}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              className="form-control"
-                              type="text"
-                              value={row.comment}
-                              onChange={(e) => setEditingRows(editingRows.map(r => r.id === row.id ? { ...r, comment: e.target.value } : r))}
-                              placeholder="-"
-                              disabled={createTableLoading}
-                              style={{ fontSize: "12px" }}
-                            />
-                          </td>
-                          <td className="tm-actions-cell">
-                            <button
-                              className="btn btn-sm btn-ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMoveEditingRowUp(row.id);
-                              }}
-                              disabled={createTableLoading || editingRows.findIndex(r => r.id === row.id) === 0}
-                              title="上移"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              className="btn btn-sm btn-ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMoveEditingRowDown(row.id);
-                              }}
-                              disabled={createTableLoading || editingRows.findIndex(r => r.id === row.id) === editingRows.length - 1}
-                              title="下移"
-                            >
-                              ↓
-                            </button>
-                            <button
-                              className="btn btn-sm btn-ghost text-danger"
-                              onClick={() => handleDeleteEditingRow(row.id)}
-                              disabled={createTableLoading}
-                              title="删除"
-                            >
-                              -
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="modal-card-footer" style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-              {/* Extra attributes input on the left */}
-              {selectedEditingRowId && editingRows.find(r => r.id === selectedEditingRowId) && (
-                <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center" }}>
-                  <label style={{ fontSize: "12px", color: "#666", whiteSpace: "nowrap" }}>额外属性:</label>
-                  <input
-                    className="form-control"
-                    type="text"
-                    value={(editingRows.find(r => r.id === selectedEditingRowId) as any)?.extraAttributes || ""}
-                    onChange={(e) => setEditingRows(editingRows.map(r =>
-                      r.id === selectedEditingRowId ? { ...r, extraAttributes: e.target.value } as any : r
-                    ))}
-                    placeholder="e.g., DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
-                    disabled={createTableLoading}
-                    style={{ fontSize: "12px", flex: 1 }}
-                  />
-                </div>
-              )}
-
-              {/* Buttons on the right */}
-              <div style={{ display: "flex", gap: "8px", marginLeft: "auto" }}>
-                <button
-                  className="btn btn-sm btn-ghost"
-                  onClick={() => setCreateTableModal(null)}
-                  disabled={createTableLoading}
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  className="btn btn-sm btn-primary"
-                  onClick={handleCreateTable}
-                  disabled={createTableLoading || !createTableModal.tableName.trim() || (createTableModal.columns.length === 0 && editingRows.filter(r => r.name.trim()).length === 0)}
-                >
-                  {createTableLoading ? t("common.loading") : "💾 " + t("common.save")}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreateTableModal
+        isOpen={createTableModal !== null}
+        modalState={createTableModal}
+        editingRows={editingRows}
+        selectedEditingRowId={selectedEditingRowId}
+        isLoading={createTableLoading}
+        error={createTableError}
+        onTableNameChange={(name) => setCreateTableModal((prev) => prev ? { ...prev, tableName: name } : null)}
+        onEngineChange={(engine) => setCreateTableModal((prev) => prev ? { ...prev, engine } : null)}
+        onCharsetChange={(charset) => setCreateTableModal((prev) => prev ? { ...prev, charset } : null)}
+        onColumnNullableChange={(columnId, nullable) => setCreateTableModal((prev) => prev ? { ...prev, columns: prev.columns.map(col => col.id === columnId ? { ...col, nullable } : col) } : null)}
+        onColumnPrimaryChange={(columnId, isPrimary) => setCreateTableModal((prev) => prev ? { ...prev, columns: prev.columns.map(col => col.id === columnId ? { ...col, isPrimary } : col) } : null)}
+        onColumnAutoIncrementChange={(columnId, autoIncrement) => setCreateTableModal((prev) => prev ? { ...prev, columns: prev.columns.map(col => col.id === columnId ? { ...col, autoIncrement } : col) } : null)}
+        onDeleteColumn={(columnId) => handleDeleteColumn(columnId)}
+        onSelectEditingRow={(rowId) => setSelectedEditingRowId(rowId)}
+        onEditingRowNameChange={(rowId, name) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, name } : r))}
+        onEditingRowTypeChange={(rowId, type) => {
+          const typeOption = mysqlColumnTypeOptions.find(opt => opt.value === type);
+          setEditingRows((prev) => prev.map(r => r.id === rowId ? {
+            ...r,
+            type,
+            length: typeOption?.lengthMode === "none" ? "" : r.length,
+            scale: typeOption?.lengthMode === "pair" ? r.scale : ""
+          } : r));
+        }}
+        onEditingRowLengthChange={(rowId, length) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, length } : r))}
+        onEditingRowScaleChange={(rowId, scale) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, scale } : r))}
+        onEditingRowNullableChange={(rowId, nullable) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, nullable } : r))}
+        onEditingRowPrimaryChange={(rowId, isPrimary) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, isPrimary } : r))}
+        onEditingRowAutoIncrementChange={(rowId, autoIncrement) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, autoIncrement } : r))}
+        onEditingRowDefaultValueChange={(rowId, defaultValue) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, defaultValue } : r))}
+        onEditingRowCommentChange={(rowId, comment) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, comment } : r))}
+        onEditingRowExtraAttributesChange={(rowId, extraAttributes) => setEditingRows((prev) => prev.map(r => r.id === rowId ? { ...r, extraAttributes } as any : r))}
+        onMoveEditingRowUp={(rowId) => {
+          const index = editingRows.findIndex(r => r.id === rowId);
+          if (index > 0) {
+            const newRows = [...editingRows];
+            [newRows[index], newRows[index - 1]] = [newRows[index - 1], newRows[index]];
+            setEditingRows(newRows);
+          }
+        }}
+        onMoveEditingRowDown={(rowId) => {
+          const index = editingRows.findIndex(r => r.id === rowId);
+          if (index < editingRows.length - 1) {
+            const newRows = [...editingRows];
+            [newRows[index], newRows[index + 1]] = [newRows[index + 1], newRows[index]];
+            setEditingRows(newRows);
+          }
+        }}
+        onDeleteEditingRow={(rowId) => setEditingRows((prev) => prev.filter(r => r.id !== rowId))}
+        onClose={() => setCreateTableModal(null)}
+        onSave={() => void handleCreateTable()}
+        onAddColumn={handleAddColumn}
+      />
 
       {/* Add row modal */}
       {addRowModalOpen && selectedTableInfo?.columns && (
