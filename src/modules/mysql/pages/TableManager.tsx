@@ -13,9 +13,6 @@ import {
   mysqlCreateIndex,
   mysqlDescribeTable,
   mysqlDropIndex,
-  mysqlExportTable,
-  mysqlExportTables,
-  mysqlImportSql,
   mysqlListDatabases,
   mysqlListIndexes,
   mysqlListTables,
@@ -28,6 +25,8 @@ import { InfoTabPanel } from "./table-manager/components/InfoTabPanel";
 import { DataTabPanel } from "./table-manager/components/DataTabPanel";
 import { BatchEditModal } from "./table-manager/components/BatchEditModal";
 import { CreateTableModal } from "./table-manager/components/CreateTableModal";
+import { useExportImport } from "./table-manager/hooks/useExportImport";
+import { useCreateTable } from "./table-manager/hooks/useCreateTable";
 import {
   type FilterConditionDraft,
   type FilterGroupDraft,
@@ -39,8 +38,6 @@ import {
   type ColumnEditForm,
   type TreeContextMenu,
   type DatabaseContextMenu,
-  type ExportSelectionModalState,
-  type CreateTableModalState,
   type RowContextMenu,
   type ColumnHeaderContextMenu,
   type CellEditorState,
@@ -98,42 +95,7 @@ export default function MysqlTableManager() {
   const [columnHeaderContextMenu, setColumnHeaderContextMenu] = useState<ColumnHeaderContextMenu | null>(null);
   const [selectedOverviewTables, setSelectedOverviewTables] = useState<string[]>([]);
   const [overviewSelectionAnchor, setOverviewSelectionAnchor] = useState<string | null>(null);
-  const [exportSelectionModal, setExportSelectionModal] = useState<ExportSelectionModalState | null>(null);
-  const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
-  const [createTableModal, setCreateTableModal] = useState<CreateTableModalState | null>(null);
-  const [createTableError, setCreateTableError] = useState("");
-  const [createTableLoading, setCreateTableLoading] = useState(false);
-  const [createTableSuccess, setCreateTableSuccess] = useState<string | null>(null);
-  const [selectedEditingRowId, setSelectedEditingRowId] = useState<string | null>(null);
-  const [editingRows, setEditingRows] = useState<Array<{
-    id: string;
-    name: string;
-    type: string;
-    length: string;
-    scale: string;
-    nullable: boolean;
-    defaultValue: string;
-    isPrimary: boolean;
-    autoIncrement: boolean;
-    comment: string;
-    timestampDefault?: "none" | "current_timestamp";
-    timestampOnUpdate?: boolean;
-    extraAttributes?: string;
-  }>>([{
-    id: Date.now().toString(),
-    name: "",
-    type: "varchar",
-    length: "255",
-    scale: "",
-    nullable: true,
-    defaultValue: "",
-    isPrimary: false,
-    autoIncrement: false,
-    comment: "",
-    timestampDefault: "none",
-    timestampOnUpdate: false,
-    extraAttributes: ""
-  }]);
+
   const selectedOverviewTablesRef = useRef<string[]>([]);
 
   // Data browsing state
@@ -200,6 +162,44 @@ export default function MysqlTableManager() {
 
   const connectionId = activeMysqlConnection?.id;
   const isTableWorkspace = location.pathname === "/mysql/table";
+
+  // Export/import functionality
+  const {
+    exportSelectionModal,
+    setExportSelectionModal,
+    exportSuccessMessage,
+    setExportSuccessMessage,
+    handleExportTableSql,
+    handleImportTableSql: useExportImportHandleImportTableSql,
+    handleConfirmExportSelection
+  } = useExportImport({
+    connectionId,
+    onError: (err) => setError(err instanceof Error ? err.message : String(err))
+  });
+
+  // Create table functionality
+  const {
+    createTableModal,
+    setCreateTableModal,
+    createTableError,
+    setCreateTableError,
+    createTableLoading,
+    createTableSuccess,
+    setCreateTableSuccess,
+    selectedEditingRowId,
+    setSelectedEditingRowId,
+    editingRows,
+    setEditingRows,
+    handleAddColumn,
+    handleDeleteColumn,
+    handleCreateTable
+  } = useCreateTable({
+    connectionId,
+    tablesByDb,
+    setTablesByDb,
+    onError: (err) => setError(err instanceof Error ? err.message : String(err))
+  });
+
   const activeOpenedTable = activeOpenedTableKey
     ? openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey) ?? null
     : null;
@@ -1363,243 +1363,31 @@ export default function MysqlTableManager() {
     };
   }, [columnHeaderContextMenu, databaseContextMenu, rowContextMenu, treeContextMenu]);
 
-  const handleExportTableSql = async (database: string, table: string, includeData: boolean) => {
-    if (!connectionId) return;
-    try {
-      const message = await mysqlExportTable(connectionId, database, table, includeData);
-      if (message) {
-        setExportSuccessMessage(message);
-      }
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.exportTable",
-        message: `Failed to export table ${database}.${table}`
-      });
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
+  // Wrapper to close context menu after export
+  const handleExportTableSqlWrapper = useCallback(
+    async (database: string, table: string, includeData: boolean) => {
+      await handleExportTableSql(database, table, includeData);
       setTreeContextMenu(null);
-    }
-  };
+    },
+    [handleExportTableSql]
+  );
 
-  const handleExportSelectedTablesSql = async (database: string, tables: string[], includeData: boolean) => {
-    if (!connectionId || tables.length === 0) return false;
-    try {
-      const message = await mysqlExportTables(connectionId, database, tables, includeData);
-      if (message) {
-        setExportSuccessMessage(message);
-      }
-      return true;
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.exportSelectedTables",
-        message: `Failed to export selected tables from ${database}`
+  // Wrapper to handle import with table refresh and re-opening
+  const handleImportTableSql = useCallback(
+    async (database: string, table: string) => {
+      await useExportImportHandleImportTableSql(database, table, async (message?: string) => {
+        await refreshTablesForDb(database);
+        if (selectedTableInfo?.database === database && selectedTableInfo.table === table) {
+          await handleOpenTable(database, table, rightPanelTab);
+        }
+        if (message) {
+          window.alert(message);
+        }
       });
-      setError(err instanceof Error ? err.message : String(err));
-      return false;
-    } finally {
       setTreeContextMenu(null);
-    }
-  };
-
-  const handleAddColumn = useCallback(() => {
-    const newId = Date.now().toString();
-    setEditingRows([...editingRows, {
-      id: newId,
-      name: "",
-      type: "varchar",
-      length: "255",
-      scale: "",
-      nullable: true,
-      defaultValue: "",
-      isPrimary: false,
-      autoIncrement: false,
-      comment: "",
-      timestampDefault: "none",
-      timestampOnUpdate: false,
-      extraAttributes: ""
-    }]);
-  }, [editingRows]);
-
-  const handleDeleteColumn = useCallback((columnId: string) => {
-    if (!createTableModal) return;
-
-    setCreateTableModal({
-      ...createTableModal,
-      columns: createTableModal.columns.filter(col => col.id !== columnId)
-    });
-  }, [createTableModal]);
-
-
-  const generateCreateTableSQL = useCallback((state: CreateTableModalState): string => {
-    const { tableName, columns, charset, engine, database } = state;
-
-    if (!tableName.trim() || columns.length === 0) {
-      return "";
-    }
-
-    const backtick = (str: string) => `\`${str.replace(/`/g, '``')}\``;
-    const tableFull = `${backtick(database)}.${backtick(tableName)}`;
-
-    const columnDefs = columns.map(col => {
-      let def = `${backtick(col.name)} ${col.type}`;
-
-      if (col.length && (col.type === "varchar" || col.type === "char")) {
-        def += `(${col.length})`;
-      } else if (col.length && col.scale && (col.type === "decimal" || col.type === "float" || col.type === "double")) {
-        def += `(${col.length},${col.scale})`;
-      }
-
-      if (!col.nullable) {
-        def += " NOT NULL";
-      }
-
-      // Handle timestamp-specific properties
-      if (col.type === "timestamp" || col.type === "datetime") {
-        const tsProps = col as any;
-        if (tsProps.timestampDefault === "current_timestamp") {
-          def += " DEFAULT CURRENT_TIMESTAMP";
-        } else if (col.defaultValue) {
-          if (col.defaultValue.toUpperCase() === "CURRENT_TIMESTAMP") {
-            def += " DEFAULT CURRENT_TIMESTAMP";
-          } else {
-            def += ` DEFAULT '${col.defaultValue.replace(/'/g, "''")}'`;
-          }
-        }
-
-        if (tsProps.timestampOnUpdate) {
-          def += " ON UPDATE CURRENT_TIMESTAMP";
-        }
-      } else if (col.defaultValue) {
-        if (col.defaultValue.toUpperCase() === "CURRENT_TIMESTAMP") {
-          def += " DEFAULT CURRENT_TIMESTAMP";
-        } else {
-          def += ` DEFAULT '${col.defaultValue.replace(/'/g, "''")}'`;
-        }
-      }
-
-      if (col.autoIncrement) {
-        def += " AUTO_INCREMENT";
-      }
-
-      if (col.isPrimary) {
-        def += " PRIMARY KEY";
-      }
-
-      if (col.comment) {
-        def += ` COMMENT '${col.comment.replace(/'/g, "''")}'`;
-      }
-
-      // Add extra attributes
-      if ((col as any).extraAttributes) {
-        def += ` ${(col as any).extraAttributes}`;
-      }
-
-      return def;
-    }).join(",\n  ");
-
-    return `CREATE TABLE ${tableFull} (\n  ${columnDefs}\n) ENGINE=${engine} DEFAULT CHARSET=${charset};`;
-  }, []);
-
-  const handleCreateTable = useCallback(async () => {
-    if (!createTableModal || !connectionId) return;
-
-    const { tableName, database } = createTableModal;
-
-    if (!tableName.trim()) {
-      setCreateTableError(t("connections.nameAndAddressRequired"));
-      return;
-    }
-
-    // 汇总编辑行数据 - 过滤掉没有列名的行
-    const editingColumnsToAdd = editingRows
-      .filter(row => row.name.trim()) // 只保留有列名的行
-      .map(row => ({
-        id: row.id,
-        name: row.name.trim(),
-        type: row.type,
-        length: row.length,
-        scale: row.scale,
-        nullable: row.nullable,
-        defaultValue: row.defaultValue,
-        isPrimary: row.isPrimary,
-        autoIncrement: row.autoIncrement,
-        comment: row.comment,
-        timestampDefault: row.timestampDefault,
-        timestampOnUpdate: row.timestampOnUpdate,
-        extraAttributes: row.extraAttributes
-      } as any));
-
-    // 合并已有列和编辑行中有效的列
-    const allColumns = [...createTableModal.columns, ...editingColumnsToAdd];
-
-    if (allColumns.length === 0) {
-      setCreateTableError(t("mysql.tableManager.noColumns"));
-      return;
-    }
-
-    // Check if table already exists
-    const existingTables = tablesByDb[database] ?? [];
-    if (existingTables.includes(tableName.trim())) {
-      setCreateTableError(t("mysql.tableManager.tableAlreadyExists", { name: tableName.trim(), database }));
-      return;
-    }
-
-    // 生成建表SQL（使用汇总后的列）
-    const modalStateWithAllColumns: CreateTableModalState = {
-      ...createTableModal,
-      columns: allColumns
-    };
-    const sql = generateCreateTableSQL(modalStateWithAllColumns);
-    if (!sql) {
-      setCreateTableError("Failed to generate SQL");
-      return;
-    }
-
-    setCreateTableLoading(true);
-    setCreateTableError("");
-
-    try {
-      await mysqlQuery(connectionId, sql);
-
-      // Refresh the database tables to show new table
-      if (database) {
-        const newTables = await mysqlListTables(connectionId, database);
-        if (newTables) {
-          setTablesByDb(prev => ({
-            ...prev,
-            [database]: newTables
-          }));
-        }
-      }
-
-      setCreateTableSuccess(tableName);
-      setCreateTableModal(null);
-      setSelectedEditingRowId(null);
-      setEditingRows([{
-        id: Date.now().toString(),
-        name: "",
-        type: "varchar",
-        length: "255",
-        scale: "",
-        nullable: true,
-        defaultValue: "",
-        isPrimary: false,
-        autoIncrement: false,
-        comment: "",
-        timestampDefault: "none",
-        timestampOnUpdate: false,
-        extraAttributes: ""
-      }]);
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.createTable",
-        message: `Failed to create table ${tableName}`
-      });
-      setCreateTableError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreateTableLoading(false);
-    }
-  }, [createTableModal, connectionId, editingRows, generateCreateTableSQL, tablesByDb, t]);
+    },
+    [useExportImportHandleImportTableSql, selectedTableInfo, rightPanelTab, refreshTablesForDb, handleOpenTable]
+  );
 
   const openExportSelectionModal = useCallback((database: string, tables: string[], includeData: boolean) => {
     const availableTables = tablesByDb[database] ?? [];
@@ -1629,41 +1417,8 @@ export default function MysqlTableManager() {
     });
   }, [getOrderedSelectedTables]);
 
-  const handleConfirmExportSelection = async () => {
-    if (!exportSelectionModal) return;
-    const success = await handleExportSelectedTablesSql(
-      exportSelectionModal.database,
-      exportSelectionModal.selectedTables,
-      exportSelectionModal.includeData,
-    );
-    if (success) {
-      setExportSelectionModal(null);
-    }
-  };
-
-  const handleImportTableSql = async (database: string, table: string) => {
-    if (!connectionId) return;
-    try {
-      const message = await mysqlImportSql(connectionId, database, table);
-      await refreshTablesForDb(database);
-      if (selectedTableInfo?.database === database && selectedTableInfo.table === table) {
-        await handleOpenTable(database, table, rightPanelTab);
-      }
-      if (message) {
-        window.alert(message);
-      }
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.importTable",
-        message: `Failed to import SQL into table ${database}.${table}`
-      });
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTreeContextMenu(null);
-    }
-  };
-
   // ─── SQL modal ───
+
 
   // Keep this function for backward compatibility (may be used elsewhere)
   // @ts-ignore - used by other modules
@@ -2094,7 +1849,7 @@ export default function MysqlTableManager() {
                 className="btn btn-sm btn-ghost context-menu-button"
                 onClick={() => {
                   const { db, table } = treeContextMenu;
-                  void handleExportTableSql(db, table, false);
+                  void handleExportTableSqlWrapper(db, table, false);
                 }}
               >
                 {t("mysql.tableManager.exportStructure")}
@@ -2104,7 +1859,7 @@ export default function MysqlTableManager() {
                 className="btn btn-sm btn-ghost context-menu-button"
                 onClick={() => {
                   const { db, table } = treeContextMenu;
-                  void handleExportTableSql(db, table, true);
+                  void handleExportTableSqlWrapper(db, table, true);
                 }}
               >
                 {t("mysql.tableManager.exportStructureAndData")}
