@@ -250,13 +250,13 @@ export default function MysqlTableManager() {
 
   const buildConditionSql = useCallback((condition: FilterConditionDraft) => {
     return buildFilterConditionSql(condition);
-  }, [databaseContextMenu, treeContextMenu, columnHeaderContextMenu]);
+  }, []);
 
   const getWhereClause = useCallback((tree?: FilterGroupDraft | null) => {
     if (!tree) return "";
     const sql = buildNodeSql(tree);
     return sql ? ` WHERE ${sql}` : "";
-  }, [buildConditionSql]);
+  }, []);
 
   const syncFilterDraftFromOpenedTable = useCallback((table: MysqlOpenedTable | null, columns: string[]) => {
     const firstColumn = columns[0] ?? "";
@@ -807,7 +807,7 @@ export default function MysqlTableManager() {
     fetchData(undefined, undefined, 1, newSize);
   };
 
-  const copyToClipboard = async (value: string) => {
+  const copyToClipboard = useCallback(async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
     } catch (err) {
@@ -817,7 +817,7 @@ export default function MysqlTableManager() {
       });
       setError(err instanceof Error ? err.message : String(err));
     }
-  };
+  }, []);
 
   const getRowObject = (rowIndex: number) => {
     const row = dataState.rows[rowIndex] ?? [];
@@ -1203,19 +1203,19 @@ export default function MysqlTableManager() {
       )
     ));
     setRowContextMenu(null);
-  }, [rowContextMenu, activeFilterTree]);
+  }, [rowContextMenu, activeFilterTree, applyFilter]);
 
   const handleContextMenuSortAsc = useCallback(() => {
     if (!rowContextMenu) return;
     void applySort(rowContextMenu.column, "asc");
     setRowContextMenu(null);
-  }, [rowContextMenu]);
+  }, [rowContextMenu, applySort]);
 
   const handleContextMenuSortDesc = useCallback(() => {
     if (!rowContextMenu) return;
     void applySort(rowContextMenu.column, "desc");
     setRowContextMenu(null);
-  }, [rowContextMenu]);
+  }, [rowContextMenu, applySort]);
 
   const handleContextMenuDelete = useCallback(() => {
     if (!rowContextMenu) return;

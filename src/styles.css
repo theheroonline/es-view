@@ -2319,16 +2319,16 @@ body {
 }
 
 .tm-overview-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: clamp(180px, 16.666%, 220px);
-  max-width: 220px;
+  columns: auto;
+  column-width: 200px;
+  column-gap: 8px;
+  width: 100%;
 }
 
 .tm-overview-list-item {
   min-height: 36px;
-  width: 100%;
+  break-inside: avoid;
+  margin-bottom: 8px;
 }
 
 .tm-overview-list-item[draggable="true"] {

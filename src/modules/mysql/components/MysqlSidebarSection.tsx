@@ -55,7 +55,7 @@ export default function MysqlSidebarSection({
   onSelectDatabase: _onSelectDatabase,
   onOpenDatabase,
   onDatabaseContextMenu,
-  onToggleSidebarTables: _onToggleSidebarTables,
+  onToggleSidebarTables,
   onSelectSidebarTable,
   onOpenSidebarTable,
   onTableContextMenu,
@@ -92,7 +92,6 @@ export default function MysqlSidebarSection({
                     {databases.map((database) => {
                       const isOpened = expandedDatabases.includes(database);
                       const isSelected = selectedDatabase === database;
-                      const showChildren = isOpened || isSelected;
                       const tables = tablesByDb[database] ?? [];
                       const tableCount = tablesByDb[database]?.length;
 
@@ -100,23 +99,38 @@ export default function MysqlSidebarSection({
                         <div key={`${profile.id}-${database}`}>
                           <div
                             className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${isSelected ? "is-selected" : ""}`}
-                            onClick={() => {
-                              void onOpenDatabase(database);
-                            }}
-                            onDoubleClick={() => onOpenDatabase(database)}
                             onContextMenu={(event) => onDatabaseContextMenu(event, database)}
                             onDragOver={(event) => event.preventDefault()}
                             onDrop={(event) => onSidebarDatabaseDrop(event, database)}
                           >
                             <span className="mdb-tree-row-main">
-                              <span>{showChildren ? "▾" : "▸"}</span>
+                              <span
+                                onClick={() => {
+                                  onToggleSidebarTables(database);
+                                }}
+                                style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "20px" }}
+                                title="Click to expand/collapse"
+                              >
+                                {isOpened ? "▾" : "▸"}
+                              </span>
                               <span className={`mdb-status-dot ${isOpened ? "status-success" : "status-idle"}`} />
-                              <span className="mdb-tree-row-label">{database}</span>
+                              <span
+                                className="mdb-tree-row-label"
+                                onClick={() => {
+                                  void onOpenDatabase(database);
+                                }}
+                                onDoubleClick={() => {
+                                  onToggleSidebarTables(database);
+                                }}
+                                style={{ cursor: "pointer", flex: 1 }}
+                              >
+                                {database}
+                              </span>
                             </span>
                             <span className="muted mdb-tree-count">{typeof tableCount === "number" ? tableCount : ""}</span>
                           </div>
 
-                          {showChildren ? (
+                          {isOpened ? (
                             <div className="mdb-tree-nested mdb-tree-nested-deep">
                               {tables.map((table) => (
                                 <div
