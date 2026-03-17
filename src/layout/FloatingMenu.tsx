@@ -10,6 +10,7 @@ interface FloatingMenuProps {
 export function FloatingMenu({ x, y, minWidth, children }: FloatingMenuProps) {
   return (
     <div
+      className="floating-menu-root"
       style={{
         position: "fixed",
         left: `${x}px`,

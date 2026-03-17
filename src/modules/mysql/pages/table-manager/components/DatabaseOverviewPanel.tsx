@@ -20,8 +20,12 @@ export interface DatabaseOverviewPanelProps {
   loading: boolean;
   /** Called when a table is clicked in the overview */
   onTableClick: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
+  /** Called when selected overview tables should be cleared */
+  onClearSelection: () => void;
   /** Called when a table is double-clicked to browse */
   onBrowseTable: (database: string, table: string) => void;
+  /** Called when a table drag operation starts */
+  onTableDragStart: (event: React.DragEvent<HTMLDivElement>, database: string, table: string) => void;
   /** Called when table context menu is triggered */
   onTableContextMenu: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
   /** Called when refresh tables button is clicked */
@@ -37,7 +41,9 @@ export function DatabaseOverviewPanel({
   selectedOverviewTables,
   loading,
   onTableClick,
+  onClearSelection,
   onBrowseTable,
+  onTableDragStart,
   onTableContextMenu,
   onRefreshTables,
   onCreateTableClick
@@ -64,6 +70,11 @@ export function DatabaseOverviewPanel({
           </p>
         </div>
         <div className="tm-overview-actions">
+          {selectedOverviewTables.length > 0 ? (
+            <button className="btn btn-sm btn-ghost" onClick={onClearSelection}>
+              {t("mysql.tableManager.clearTableSelection")}
+            </button>
+          ) : null}
           <button
             className="btn btn-sm btn-ghost"
             onClick={() => onRefreshTables(expandedDatabase)}
@@ -109,32 +120,35 @@ export function DatabaseOverviewPanel({
 
       <div className="tm-overview-content">
         {tables.length > 0 ? (
-          <div className="mysql-table-grid">
-            {tables.map((table) => (
-              <div
-                key={table}
-                className={`mysql-table-card ${selectedTableSet.has(table) ? "selected" : ""} ${
-                  selectedTable === table ? "active" : ""
-                }`}
-                onClick={(event) => onTableClick(event, expandedDatabase, table)}
-                onDoubleClick={() => {
-                  onBrowseTable(expandedDatabase, table);
-                }}
-                onContextMenu={(event) => onTableContextMenu(event, expandedDatabase, table)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
+          <div className="tm-overview-shell">
+            <div className="tm-overview-list">
+              {tables.map((table) => (
+                <div
+                  key={table}
+                  className={`mdb-tree-item mdb-tree-item-compact tm-overview-list-item ${selectedTableSet.has(table) ? "is-soft-selected" : ""} ${selectedTable === table ? "is-selected" : ""}`}
+                  draggable
+                  onClick={(event) => onTableClick(event, expandedDatabase, table)}
+                  onDoubleClick={() => {
                     onBrowseTable(expandedDatabase, table);
-                  }
-                }}
-              >
-                <div className="mysql-table-card-name" title={table}>
-                  {table}
+                  }}
+                  onContextMenu={(event) => onTableContextMenu(event, expandedDatabase, table)}
+                  onDragStart={(event) => onTableDragStart(event, expandedDatabase, table)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onBrowseTable(expandedDatabase, table);
+                    }
+                  }}
+                >
+                  <span className="mdb-tree-row-main">
+                    <span className="mdb-tree-table-icon">▤</span>
+                    <span className="mdb-tree-row-label" title={table}>{table}</span>
+                  </span>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : (
           <div className="card workspace-empty-card">

@@ -12,6 +12,7 @@ import EsSidebarSection from "./modules/es/components/EsSidebarSection";
 import EsWorkspaceTabs from "./modules/es/components/EsWorkspaceTabs";
 import MysqlSidebarSection from "./modules/mysql/components/MysqlSidebarSection";
 import MysqlWorkspaceTabs from "./modules/mysql/components/MysqlWorkspaceTabs";
+import { getCharsetOption, MYSQL_CHARSET_OPTIONS } from "./modules/mysql/constants/databaseOptions";
 import { useMysqlSidebarWorkspace } from "./modules/mysql/hooks/useMysqlSidebarWorkspace";
 import RedisSidebarSection from "./modules/redis/components/RedisSidebarSection";
 import RedisWorkspaceTabs from "./modules/redis/components/RedisWorkspaceTabs";
@@ -67,6 +68,7 @@ function AppLayout() {
   const [redisExpanded, setRedisExpanded] = useState(true);
   const [isErrorLogOpen, setIsErrorLogOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(266);
 
   useFloatingMenuDismiss(
     Boolean(
@@ -185,10 +187,11 @@ function AppLayout() {
         profiles={connection.mysqlProfiles}
         activeConnectionId={connection.activeConnectionId}
         databases={mysql.databases}
-        expandedDatabase={mysql.expandedDatabase}
+        expandedDatabases={mysql.expandedSidebarDatabases}
+        selectedSidebarTables={mysql.selectedSidebarTables}
         selectedDatabase={mysql.selectedDatabase}
         selectedTable={mysql.selectedTable}
-        sidebarExpandedTablesDatabase={mysql.sidebarExpandedTablesDatabase}
+        sidebarExpandedTablesDatabases={mysql.sidebarExpandedTablesDatabases}
         tablesByDb={mysql.tablesByDb}
         tablesLabel={t("mysql.tableManager.tables")}
         emptyText={t("connections.noConnections")}
@@ -211,13 +214,15 @@ function AppLayout() {
         onToggleSidebarTables={(database) => {
           void mysql.handleMysqlToggleSidebarTables(database);
         }}
-        onSelectSidebarTable={(database, table) => {
-          void mysql.handleMysqlSelectSidebarTable(database, table);
+        onSelectSidebarTable={(event, database, table) => {
+          void mysql.handleMysqlSelectSidebarTable(event, database, table);
         }}
         onOpenSidebarTable={(database, table) => {
           void mysql.handleMysqlOpenSidebarTable(database, table);
         }}
         onTableContextMenu={mysql.handleMysqlTableContextMenu}
+        onSidebarTableDragStart={mysql.handleSidebarTableDragStart}
+        onSidebarDatabaseDrop={mysql.handleSidebarDatabaseDrop}
       />
 
       <RedisSidebarSection
@@ -341,6 +346,8 @@ function AppLayout() {
       <WorkspaceChrome
         isSidebarCollapsed={isSidebarCollapsed}
         onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+        sidebarWidth={sidebarWidth}
+        onSidebarWidthChange={setSidebarWidth}
         brand={t("sidebar.brand")}
         windowHint={connection.activeProfile ? `${connection.activeEngineLabel} / ${connection.activeProfile.name}` : t("sidebar.notConnected")}
         topbarRight={topbarRight}
@@ -527,7 +534,7 @@ function AppLayout() {
             type="button"
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
-            disabled={mysql.expandedDatabase !== mysql.mysqlDatabaseContextMenu.database}
+            disabled={!mysql.expandedSidebarDatabases.includes(mysql.mysqlDatabaseContextMenu.database)}
             onClick={async () => {
               const database = mysql.mysqlDatabaseContextMenu?.database;
               mysql.setMysqlDatabaseContextMenu(null);
@@ -635,6 +642,220 @@ function AppLayout() {
             {t("mysql.tableManager.closeAllTabs")}
           </button>
         </FloatingMenu>
+      ) : null}
+
+      {mysql.createDatabaseDialog ? (
+        <div className="modal-overlay" onClick={() => mysql.setCreateDatabaseDialog(null)}>
+          <div className="card modal-card modal-card-md modal-card-scroll" onClick={(event) => event.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{t("mysql.tableManager.createDatabaseDialog")}</h3>
+              <button className="btn btn-sm btn-ghost" onClick={() => mysql.setCreateDatabaseDialog(null)}>
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body modal-card-grid">
+              <div>
+                <label>{t("mysql.tableManager.databaseName")}</label>
+                <input
+                  className="form-control"
+                  value={mysql.createDatabaseDialog.name}
+                  onChange={(event) =>
+                    mysql.setCreateDatabaseDialog((prev) => (prev ? { ...prev, name: event.target.value } : prev))
+                  }
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label>{t("mysql.tableManager.databaseCharset")}</label>
+                <select
+                  className="form-control"
+                  value={mysql.createDatabaseDialog.charset}
+                  onChange={(event) => {
+                    const nextCharset = event.target.value;
+                    const nextOption = getCharsetOption(nextCharset);
+                    mysql.setCreateDatabaseDialog((prev) => (
+                      prev
+                        ? {
+                            ...prev,
+                            charset: nextCharset,
+                            collation: nextOption.defaultCollation,
+                          }
+                        : prev
+                    ));
+                  }}
+                >
+                  {MYSQL_CHARSET_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label>{t("mysql.tableManager.databaseCollation")}</label>
+                <select
+                  className="form-control"
+                  value={mysql.createDatabaseDialog.collation}
+                  onChange={(event) =>
+                    mysql.setCreateDatabaseDialog((prev) => (prev ? { ...prev, collation: event.target.value } : prev))
+                  }
+                >
+                  {getCharsetOption(mysql.createDatabaseDialog.charset).collations.map((collation) => (
+                    <option key={collation} value={collation}>
+                      {collation}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-card-footer">
+              <button className="btn btn-sm btn-ghost" onClick={() => mysql.setCreateDatabaseDialog(null)}>
+                {t("common.cancel")}
+              </button>
+              <button className="btn btn-sm btn-primary" onClick={() => void mysql.handleConfirmCreateMysqlDatabase()}>
+                {t("common.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {mysql.tableTransferDialog ? (
+        <div className="modal-overlay" onClick={() => mysql.setTableTransferDialog(null)}>
+          <div className="card modal-card modal-card-sm modal-card-scroll" onClick={(event) => event.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{t("mysql.tableManager.dragCopyTable")}</h3>
+              <button className="btn btn-sm btn-ghost" onClick={() => mysql.setTableTransferDialog(null)}>
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body modal-card-grid">
+              <div className="tm-transfer-summary-card">
+                {mysql.tableTransferDialog.sourceTables.length === 1
+                  ? t("mysql.tableManager.dragCopySummary", {
+                      table: mysql.tableTransferDialog.sourceTables[0],
+                      source: mysql.tableTransferDialog.sourceDatabase,
+                      target: mysql.tableTransferDialog.targetDatabase,
+                    })
+                  : t("mysql.tableManager.dragCopyBatchSummary", {
+                      source: mysql.tableTransferDialog.sourceDatabase,
+                      target: mysql.tableTransferDialog.targetDatabase,
+                      count: mysql.tableTransferDialog.sourceTables.length,
+                    })}
+              </div>
+              <div className="tm-transfer-table-list">
+                {mysql.tableTransferDialog.sourceTables.map((table) => (
+                  <span key={table} className="tm-transfer-table-chip">{table}</span>
+                ))}
+              </div>
+            </div>
+            <div className="modal-card-footer" style={{ justifyContent: "space-between" }}>
+              <button className="btn btn-sm btn-ghost" onClick={() => mysql.setTableTransferDialog(null)}>
+                {t("common.cancel")}
+              </button>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button className="btn btn-sm btn-ghost" onClick={() => void mysql.handleConfirmTableTransfer(false)}>
+                  {t("mysql.tableManager.copyStructureOnly")}
+                </button>
+                <button className="btn btn-sm btn-primary" onClick={() => void mysql.handleConfirmTableTransfer(true)}>
+                  {t("mysql.tableManager.copyStructureAndData")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {mysql.tableTransferTask ? (
+        <div className="modal-overlay" onClick={() => {
+          if (mysql.tableTransferTask?.status === "completed") {
+            mysql.setTableTransferTask(null);
+          }
+        }}>
+          <div className="card modal-card modal-card-md modal-card-scroll" onClick={(event) => event.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <div>
+                <h3 className="card-title">{t("mysql.tableManager.dragCopyTable")}</h3>
+                <p className="muted tm-modal-note">
+                  {mysql.tableTransferTask.status === "running"
+                    ? t("mysql.tableManager.transferTaskRunning")
+                    : t("mysql.tableManager.transferTaskCompleted")}
+                </p>
+              </div>
+              <button
+                className="btn btn-sm btn-ghost"
+                disabled={mysql.tableTransferTask.status !== "completed"}
+                onClick={() => mysql.setTableTransferTask(null)}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body modal-card-grid tm-transfer-task-body">
+              <div className="tm-transfer-summary-card">
+                {t("mysql.tableManager.dragCopyBatchSummary", {
+                  source: mysql.tableTransferTask.sourceDatabase,
+                  target: mysql.tableTransferTask.targetDatabase,
+                  count: mysql.tableTransferTask.sourceTables.length,
+                })}
+              </div>
+              <div className="tm-transfer-progress-card">
+                <div className="tm-transfer-progress-row">
+                  <strong>
+                    {t("mysql.tableManager.transferTaskProgress", {
+                      completed: mysql.tableTransferTask.items.filter((item) => item.status === "success" || item.status === "error").length,
+                      total: mysql.tableTransferTask.items.length,
+                    })}
+                  </strong>
+                  <span className="muted">
+                    {mysql.tableTransferTask.includeData
+                      ? t("mysql.tableManager.copyStructureAndData")
+                      : t("mysql.tableManager.copyStructureOnly")}
+                  </span>
+                </div>
+                <div className="tm-transfer-progress-track">
+                  <div
+                    className="tm-transfer-progress-bar"
+                    style={{
+                      width: `${mysql.tableTransferTask.items.length === 0 ? 0 : (mysql.tableTransferTask.items.filter((item) => item.status === "success" || item.status === "error").length / mysql.tableTransferTask.items.length) * 100}%`,
+                    }}
+                  />
+                </div>
+                <div className="tm-transfer-progress-meta muted">
+                  <span>{t("mysql.tableManager.transferTaskSuccessCount", { count: mysql.tableTransferTask.items.filter((item) => item.status === "success").length })}</span>
+                  <span>{t("mysql.tableManager.transferTaskFailedCount", { count: mysql.tableTransferTask.items.filter((item) => item.status === "error").length })}</span>
+                </div>
+              </div>
+              <div className="tm-transfer-task-list">
+                {mysql.tableTransferTask.items.map((item) => (
+                  <div key={item.table} className={`tm-transfer-task-item status-${item.status}`}>
+                    <div className="tm-transfer-task-item-main">
+                      <span className="tm-transfer-table-chip">{item.table}</span>
+                      <span className={`tm-transfer-task-status status-${item.status}`}>
+                        {item.status === "pending"
+                          ? t("mysql.tableManager.transferTaskPending")
+                          : item.status === "running"
+                            ? t("mysql.tableManager.transferTaskRunningItem")
+                            : item.status === "success"
+                              ? t("mysql.tableManager.transferTaskSuccess")
+                              : t("mysql.tableManager.transferTaskFailed")}
+                      </span>
+                    </div>
+                    {item.error ? <div className="text-danger tm-transfer-task-error">{item.error}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="modal-card-footer">
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={mysql.tableTransferTask.status !== "completed"}
+                onClick={() => mysql.setTableTransferTask(null)}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {isErrorLogOpen ? <ErrorLogModal open={isErrorLogOpen} onClose={() => setIsErrorLogOpen(false)} /> : null}

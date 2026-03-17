@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 interface WorkspaceChromeProps {
   isSidebarCollapsed: boolean;
   onToggleSidebar: () => void;
+  sidebarWidth: number;
+  onSidebarWidthChange: (width: number) => void;
   brand: string;
   windowHint: string;
   topbarRight: ReactNode;
@@ -16,6 +18,8 @@ interface WorkspaceChromeProps {
 export default function WorkspaceChrome({
   isSidebarCollapsed,
   onToggleSidebar,
+  sidebarWidth,
+  onSidebarWidthChange,
   brand,
   windowHint,
   topbarRight,
@@ -25,6 +29,37 @@ export default function WorkspaceChrome({
   emptyState,
   canShowWorkspace,
 }: WorkspaceChromeProps) {
+  const mainRef = useRef<HTMLDivElement | null>(null);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+
+  useEffect(() => {
+    if (!isResizingSidebar) {
+      return;
+    }
+
+    const handleMouseMove = (event: globalThis.MouseEvent) => {
+      const mainRect = mainRef.current?.getBoundingClientRect();
+      if (!mainRect) {
+        return;
+      }
+
+      const nextWidth = Math.min(520, Math.max(220, event.clientX - mainRect.left));
+      onSidebarWidthChange(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingSidebar, onSidebarWidthChange]);
+
   return (
     <div className="mdb-layout">
       <header className="mdb-topbar">
@@ -37,7 +72,11 @@ export default function WorkspaceChrome({
         <div className="mdb-topbar-right">{topbarRight}</div>
       </header>
 
-      <div className={`mdb-main ${isSidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
+      <div
+        ref={mainRef}
+        className={`mdb-main ${isSidebarCollapsed ? "is-sidebar-collapsed" : ""} ${isResizingSidebar ? "is-sidebar-resizing" : ""}`}
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
         <button type="button" className="mdb-sidebar-toggle-button" onClick={onToggleSidebar}>
           {isSidebarCollapsed ? "▶" : "◀"}
         </button>
@@ -45,6 +84,18 @@ export default function WorkspaceChrome({
           <div className="mdb-sidebar-body">{sidebarContent}</div>
           {sidebarFooter ? <div className="mdb-sidebar-footer">{sidebarFooter}</div> : null}
         </aside>
+        {!isSidebarCollapsed ? (
+          <div
+            className="mdb-sidebar-resizer"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              setIsResizingSidebar(true);
+            }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+          />
+        ) : null}
 
         <main className="mdb-workspace">
           <div className="mdb-workspace-shell" style={{ display: canShowWorkspace ? "flex" : "none" }}>

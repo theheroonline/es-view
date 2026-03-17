@@ -1,12 +1,12 @@
-import { useMemo, useRef, useState, useEffect } from "react";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getExpandedRowModel,
-  type ColumnDef,
-  type Row,
+    getCoreRowModel,
+    getExpandedRowModel,
+    useReactTable,
+    type ColumnDef,
+    type Row,
 } from "@tanstack/react-table";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * useExcelTable Hook
@@ -41,11 +41,16 @@ interface UseExcelTableReturn {
   setColumnWidth: (columnName: string, width: number) => void;
 }
 
-const ROW_HEIGHT = 32; // 固定行高
+const ROW_HEIGHT = 40; // 与当前单元格 padding 的实际视觉行高对齐，减少中段滚动偏移抖动
 const BUFFER_SIZE = 20; // 虚拟滚动缓冲区 - 增加到 20 以减少闪烁
 const DEFAULT_COLUMN_WIDTH = 120; // 默认列宽（像素）
 const MIN_COLUMN_WIDTH = 50; // 最小列宽
 const MAX_COLUMN_WIDTH = 500; // 最大列宽
+
+function areColumnsEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => item === b[index]);
+}
 
 /**
  * 从 localStorage 加载列配置
@@ -104,11 +109,11 @@ export function useExcelTable({
   // 当 columns 改变时，更新 columnOrder（但不覆盖已保存的顺序）
   useEffect(() => {
     setColumnOrder((prev) => {
-      // 如果 columns 内容改变，需要重新初始化
-      if (prev.length !== columns.length || !columns.every((c, i) => c === prev[i])) {
-        return columns;
-      }
-      return prev;
+      // 迁移后列可见性会频繁变化，这里保留已有顺序并仅增量合并，避免抖动和重排
+      const retained = prev.filter((column) => columns.includes(column));
+      const appended = columns.filter((column) => !retained.includes(column));
+      const nextOrder = [...retained, ...appended];
+      return areColumnsEqual(prev, nextOrder) ? prev : nextOrder;
     });
   }, [columns]);
 
@@ -171,6 +176,7 @@ export function useExcelTable({
     count: rows.length,
     getScrollElement: () => tableContainerRef.current as any,
     estimateSize: () => ROW_HEIGHT,
+    getItemKey: (index) => rows[index]?.original?._rowIndex ?? index,
     overscan: BUFFER_SIZE,
   });
 
@@ -214,4 +220,5 @@ export function isCellSelected(
 /**
  * 列管理常量和工具
  */
-export { DEFAULT_COLUMN_WIDTH, MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH };
+export { DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH };
+

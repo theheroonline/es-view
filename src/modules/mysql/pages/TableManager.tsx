@@ -1,11 +1,12 @@
-import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useFloatingMenuDismiss } from "../../../hooks/useFloatingMenuDismiss";
 import { logError } from "../../../lib/errorLog";
 import {
   getMysqlOpenedTableKey,
-  type MysqlFilterOperator,
   type MysqlFilterNode,
+  type MysqlFilterOperator,
   type MysqlOpenedTable,
   useMysqlContext
 } from "../../../state/MysqlContext";
@@ -19,47 +20,48 @@ import {
   mysqlQuery,
 } from "../services/client";
 import type { ColumnMeta, IndexMeta } from "../types";
-import { DatabaseOverviewPanel } from "./table-manager/components/DatabaseOverviewPanel";
-import { StructureTabPanel } from "./table-manager/components/StructureTabPanel";
-import { InfoTabPanel } from "./table-manager/components/InfoTabPanel";
-import { DataTabPanel } from "./table-manager/components/DataTabPanel";
-import { CreateTableModal } from "./table-manager/components/CreateTableModal";
 import { BatchEditModal } from "./table-manager/components/BatchEditModal";
-import { useExportImport } from "./table-manager/hooks/useExportImport";
+import { CreateTableModal } from "./table-manager/components/CreateTableModal";
+import { DatabaseOverviewPanel } from "./table-manager/components/DatabaseOverviewPanel";
+import { DataTabPanel } from "./table-manager/components/DataTabPanel";
+import { InfoTabPanel } from "./table-manager/components/InfoTabPanel";
+import { StructureTabPanel } from "./table-manager/components/StructureTabPanel";
 import { useCreateTable } from "./table-manager/hooks/useCreateTable";
+import { useExportImport } from "./table-manager/hooks/useExportImport";
 import {
-  type FilterConditionDraft,
-  type FilterGroupDraft,
-  type TableInfo,
-  type TableDetailInfo,
-  type DataState,
-  type RightPanelTab,
-  type SelectedCell,
-  type ColumnEditForm,
-  type TreeContextMenu,
-  type DatabaseContextMenu,
-  type RowContextMenu,
-  type ColumnHeaderContextMenu,
-  type ColumnEditMode,
-  defaultDataState,
-  mysqlColumnTypeOptions,
-  getColumnTypeOption,
-  escapeSqlIdentifier,
-  escapeSqlLiteral,
-  escapeSqlLikeLiteral,
-  parseColumnType,
   buildColumnType,
-  formatInfoDate,
-  formatInfoText,
-  toSafeNumber,
-  getSingleResultRow,
+  buildConditionSql as buildFilterConditionSql,
+  cloneFilterGroup,
+  type ColumnEditForm,
+  type ColumnEditMode,
+  type ColumnHeaderContextMenu,
   createFilterCondition,
   createFilterGroup,
-  cloneFilterGroup,
-  sanitizeFilterNode
+  type DatabaseContextMenu,
+  type DataState,
+  defaultDataState,
+  escapeSqlIdentifier,
+  escapeSqlLiteral,
+  type FilterConditionDraft,
+  type FilterGroupDraft,
+  formatInfoDate,
+  formatInfoText,
+  getColumnTypeOption,
+  getSingleResultRow,
+  mysqlColumnTypeOptions,
+  parseColumnType,
+  type RightPanelTab,
+  type RowContextMenu,
+  sanitizeFilterNode,
+  type SelectedCell,
+  type TableDetailInfo,
+  type TableInfo,
+  toSafeNumber,
+  type TreeContextMenu
 } from "./table-manager/utils";
 
 export default function MysqlTableManager() {
+  const MAX_SHIFT_SELECTION_CELLS = 5000;
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
@@ -95,6 +97,8 @@ export default function MysqlTableManager() {
   const [overviewSelectionAnchor, setOverviewSelectionAnchor] = useState<string | null>(null);
 
   const selectedOverviewTablesRef = useRef<string[]>([]);
+  const latestDataRequestRef = useRef(0);
+  const activeDataRequestKeyRef = useRef<string | null>(null);
 
   // Data browsing state
   const [dataState, setDataState] = useState<DataState>(defaultDataState);
@@ -211,6 +215,7 @@ export default function MysqlTableManager() {
     { value: "gte", label: t("mysql.tableManager.operatorGte") },
     { value: "lt", label: t("mysql.tableManager.operatorLt") },
     { value: "lte", label: t("mysql.tableManager.operatorLte") },
+    { value: "between", label: t("mysql.tableManager.operatorBetween") },
     { value: "contains", label: t("mysql.tableManager.operatorContains") },
     { value: "startsWith", label: t("mysql.tableManager.operatorStartsWith") },
     { value: "endsWith", label: t("mysql.tableManager.operatorEndsWith") },
@@ -244,42 +249,8 @@ export default function MysqlTableManager() {
   }
 
   const buildConditionSql = useCallback((condition: FilterConditionDraft) => {
-    const column = condition.column.trim();
-    if (!column) return null;
-
-    const identifier = escapeSqlIdentifier(column);
-    const conditionValue = condition.value ?? "";
-    switch (condition.operator) {
-      case "eq":
-        return `${identifier} = ${escapeSqlLiteral(conditionValue)}`;
-      case "ne":
-        return `${identifier} <> ${escapeSqlLiteral(conditionValue)}`;
-      case "gt":
-        return `${identifier} > ${escapeSqlLiteral(conditionValue)}`;
-      case "gte":
-        return `${identifier} >= ${escapeSqlLiteral(conditionValue)}`;
-      case "lt":
-        return `${identifier} < ${escapeSqlLiteral(conditionValue)}`;
-      case "lte":
-        return `${identifier} <= ${escapeSqlLiteral(conditionValue)}`;
-      case "contains":
-        return `${identifier} LIKE '%${escapeSqlLikeLiteral(conditionValue)}%' ESCAPE '\\\\'`;
-      case "startsWith":
-        return `${identifier} LIKE '${escapeSqlLikeLiteral(conditionValue)}%' ESCAPE '\\\\'`;
-      case "endsWith":
-        return `${identifier} LIKE '%${escapeSqlLikeLiteral(conditionValue)}' ESCAPE '\\\\'`;
-      case "isNull":
-        return `${identifier} IS NULL`;
-      case "isNotNull":
-        return `${identifier} IS NOT NULL`;
-      case "emptyString":
-        return `${identifier} = ''`;
-      case "notEmptyString":
-        return `${identifier} <> ''`;
-      default:
-        return null;
-    }
-  }, []);
+    return buildFilterConditionSql(condition);
+  }, [databaseContextMenu, treeContextMenu, columnHeaderContextMenu]);
 
   const getWhereClause = useCallback((tree?: FilterGroupDraft | null) => {
     if (!tree) return "";
@@ -594,6 +565,18 @@ export default function MysqlTableManager() {
     setOverviewSelectionAnchor(null);
   }, []);
 
+  const handleOverviewTableDragStart = useCallback((event: React.DragEvent<HTMLDivElement>, db: string, table: string) => {
+    const draggedTables = selectedOverviewTables.includes(table)
+      ? getOrderedSelectedTables(db, selectedOverviewTables)
+      : [table];
+
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-mysql-table", JSON.stringify({
+      database: db,
+      tables: draggedTables,
+    }));
+  }, [getOrderedSelectedTables, selectedOverviewTables]);
+
   useEffect(() => {
     selectedOverviewTablesRef.current = selectedOverviewTables;
   }, [selectedOverviewTables]);
@@ -601,10 +584,15 @@ export default function MysqlTableManager() {
   const handleOpenTable = async (db: string, table: string, targetTab: RightPanelTab) => {
     if (!connectionId) return;
 
+    const tableKey = getMysqlOpenedTableKey(db, table);
+    latestDataRequestRef.current += 1;
+    activeDataRequestKeyRef.current = targetTab === "data" ? tableKey : null;
+
     setSelectedDatabase(db);
     setSelectedTable(table);
     setSelectedTableInfo({ database: db, table, loading: true });
     setRightPanelTab(targetTab);
+    setDataState(targetTab === "data" ? { ...defaultDataState, loading: true } : defaultDataState);
 
     try {
       const { columns, rowCount, info } = await loadTableInfo(db, table);
@@ -623,6 +611,8 @@ export default function MysqlTableManager() {
       });
       setSelectedTableInfo({ database: db, table, loading: false });
       setError(err instanceof Error ? err.message : String(err));
+      setDataState(defaultDataState);
+      activeDataRequestKeyRef.current = null;
     }
   };
 
@@ -684,6 +674,8 @@ export default function MysqlTableManager() {
 
   useEffect(() => {
     if (!connectionId) {
+      latestDataRequestRef.current += 1;
+      activeDataRequestKeyRef.current = null;
       setSelectedTableInfo(null);
       setDataState(defaultDataState);
       setDataColumnMeta([]);
@@ -692,6 +684,8 @@ export default function MysqlTableManager() {
     }
 
     if (!expandedDatabase && !activeOpenedTable) {
+      latestDataRequestRef.current += 1;
+      activeDataRequestKeyRef.current = null;
       setSelectedTableInfo(null);
       setDataState(defaultDataState);
       setDataColumnMeta([]);
@@ -705,6 +699,8 @@ export default function MysqlTableManager() {
     }
 
     if (selectedTableInfo && location.pathname !== "/mysql/table" && selectedTableInfo.database !== expandedDatabase) {
+      latestDataRequestRef.current += 1;
+      activeDataRequestKeyRef.current = null;
       setSelectedTableInfo(null);
       setDataState(defaultDataState);
       setDataColumnMeta([]);
@@ -731,6 +727,10 @@ export default function MysqlTableManager() {
     const currentPage = page ?? dataState.page;
     const currentSize = pageSize ?? dataState.pageSize;
     const offset = (currentPage - 1) * currentSize;
+    const requestKey = getMysqlOpenedTableKey(targetDb, targetTable);
+    const requestId = latestDataRequestRef.current + 1;
+    latestDataRequestRef.current = requestId;
+    activeDataRequestKeyRef.current = requestKey;
     const currentFilterTree = overrides?.filterTree ?? activeOpenedTable?.filterTree ?? undefined;
     const currentSortColumn = db && table && activeOpenedTable?.database === db && activeOpenedTable?.table === table
       ? overrides?.sortColumn ?? activeOpenedTable.sortColumn
@@ -764,6 +764,10 @@ export default function MysqlTableManager() {
         `SELECT * FROM \`${targetDb}\`.\`${targetTable}\`${whereClause}${orderClause} LIMIT ${offset}, ${currentSize}`
       );
 
+      if (requestId !== latestDataRequestRef.current || activeDataRequestKeyRef.current !== requestKey) {
+        return;
+      }
+
       setDataState({
         columns: dataResult.columns,
         rows: dataResult.rows,
@@ -778,6 +782,10 @@ export default function MysqlTableManager() {
         source: "mysqlTableManager.fetchData",
         message: `Failed to fetch table data for ${targetDb}.${targetTable}`
       });
+      if (requestId !== latestDataRequestRef.current || activeDataRequestKeyRef.current !== requestKey) {
+        return;
+      }
+
       setDataState((prev) => ({
         ...prev,
         loading: false,
@@ -848,6 +856,12 @@ export default function MysqlTableManager() {
     const rowEnd = Math.max(start.rowIndex, end.rowIndex);
     const colStart = Math.min(start.columnIndex, end.columnIndex);
     const colEnd = Math.max(start.columnIndex, end.columnIndex);
+    const estimatedCellCount = (rowEnd - rowStart + 1) * (colEnd - colStart + 1);
+
+    if (estimatedCellCount > MAX_SHIFT_SELECTION_CELLS) {
+      return null;
+    }
+
     const cells: SelectedCell[] = [];
 
     for (let rowIndex = rowStart; rowIndex <= rowEnd; rowIndex += 1) {
@@ -866,8 +880,24 @@ export default function MysqlTableManager() {
     const currentCell = createSelectedCell(rowIndex, columnIndex);
     if (!currentCell.column) return;
 
+    const isSameSingleSelection =
+      selectedCells.length === 1 &&
+      selectedCells[0]?.key === currentCell.key &&
+      !event.shiftKey &&
+      !(event.ctrlKey || event.metaKey);
+
+    if (isSameSingleSelection) {
+      setSelectedRowIndex((prev) => (prev === rowIndex ? prev : rowIndex));
+      return;
+    }
+
     if (event.shiftKey && selectionAnchor) {
-      setSelectedCells(buildSelectedCells(selectionAnchor, { rowIndex, columnIndex }));
+      const nextCells = buildSelectedCells(selectionAnchor, { rowIndex, columnIndex });
+      if (!nextCells) {
+        setError(t("mysql.tableManager.shiftSelectionLimitHint", { max: MAX_SHIFT_SELECTION_CELLS }));
+        return;
+      }
+      setSelectedCells(nextCells);
     } else if (event.ctrlKey || event.metaKey) {
       setSelectedCells((prev) => prev.some((cell) => cell.key === currentCell.key)
         ? prev.filter((cell) => cell.key !== currentCell.key)
@@ -878,7 +908,7 @@ export default function MysqlTableManager() {
       setSelectionAnchor({ rowIndex, columnIndex });
     }
 
-    setSelectedRowIndex(rowIndex);
+    setSelectedRowIndex((prev) => (prev === rowIndex ? prev : rowIndex));
   };
 
   const appendConditionToRootTree = (tree: FilterGroupDraft | null, condition: FilterConditionDraft) => {
@@ -960,6 +990,23 @@ export default function MysqlTableManager() {
       sortColumn: undefined,
       sortDirection: undefined
     });
+  };
+
+  const handleToggleFilterPanel = () => {
+    const firstColumn = dataState.columns[0] ?? "";
+    const tree = filterDraftTree
+      ? filterDraftTree
+      : createFilterGroup("and", [createFilterCondition(firstColumn)]);
+    setFilterDraftTree(tree);
+    setFilterPanelOpen((prev) => !prev);
+  };
+
+  const handleOpenSortModal = () => {
+    setSortDraft({
+      column: activeOpenedTable?.sortColumn ?? dataState.columns[0] ?? "",
+      direction: activeOpenedTable?.sortDirection ?? "asc"
+    });
+    setSortModalOpen(true);
   };
 
   const updateRowByIndex = useCallback(async (rowIndex: number, updates: Record<string, unknown>, options?: { refresh?: boolean }) => {
@@ -1420,7 +1467,9 @@ export default function MysqlTableManager() {
       setOverviewSelectionAnchor(table);
     }
 
-    setTreeContextMenu({ db, table, selectedTables: nextSelectedTables, x: e.clientX, y: e.clientY });
+    const x = Math.max(8, Math.min(e.clientX, window.innerWidth - 320));
+    const y = Math.max(8, Math.min(e.clientY, window.innerHeight - 360));
+    setTreeContextMenu({ db, table, selectedTables: nextSelectedTables, x, y });
   };
 
   const handleRowContextMenu = (e: MouseEvent<HTMLElement>, rowIndex: number, column: string, value: unknown) => {
@@ -1436,8 +1485,29 @@ export default function MysqlTableManager() {
       setSelectedCells([selectedCell]);
       setSelectionAnchor({ rowIndex, columnIndex });
     }
-    setRowContextMenu({ x: e.clientX, y: e.clientY, rowIndex, columnIndex, column, value });
+    const x = Math.max(8, Math.min(e.clientX, window.innerWidth - 260));
+    const y = Math.max(8, Math.min(e.clientY, window.innerHeight - 420));
+    setRowContextMenu({ x, y, rowIndex, columnIndex, column, value });
   };
+
+  const getContextMenuStyle = useCallback(
+    (x: number, y: number, minWidth: number, estimatedHeight: number): CSSProperties => {
+      const viewportWidth = typeof window !== "undefined" ? window.innerWidth : minWidth + 16;
+      const viewportHeight = typeof window !== "undefined" ? window.innerHeight : estimatedHeight + 16;
+      const left = Math.max(8, Math.min(x, viewportWidth - minWidth - 8));
+      const top = Math.max(8, Math.min(y, viewportHeight - estimatedHeight - 8));
+
+      return {
+        position: "fixed",
+        left: `${left}px`,
+        top: `${top}px`,
+        minWidth: `${minWidth}px`,
+        maxHeight: `${Math.max(180, viewportHeight - 16)}px`,
+        overflowY: "auto"
+      };
+    },
+    []
+  );
 
 
   // 仅在表切换时清除选中状态，避免分页/其他状态变化触发闪烁
@@ -1446,80 +1516,27 @@ export default function MysqlTableManager() {
     setSelectionAnchor(null);
   }, [activeOpenedTableKey]);
 
-  // Close context menu on outside click / scroll / resize
-  // 优化：只在 rowContextMenu 改变时运行，避免其他菜单的频繁更新导致副作用重新运行
-  useEffect(() => {
-    if (!rowContextMenu) return;
+  useFloatingMenuDismiss(
+    Boolean(rowContextMenu),
+    () => setRowContextMenu(null),
+    { rootSelector: ".context-menu-panel" }
+  );
 
-    const closeMenu = () => {
-      setRowContextMenu(null);
-    };
-
-    const handleClickOutside = (e: Event) => {
-      const target = e.target as HTMLElement;
-      // 检查点击是否在菜单内部
-      const isInContextMenu = target.closest(".context-menu-panel");
-      if (!isInContextMenu) {
-        closeMenu();
-      }
-    };
-
-    const handleResize = () => closeMenu();
-    const handleScroll = () => closeMenu();
-
-    // 使用 useCapture 捕获阶段监听，确保能捕获所有点击事件
-    document.addEventListener("click", handleClickOutside, true);
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("scroll", handleScroll, true);
-
-    return () => {
-      document.removeEventListener("click", handleClickOutside, true);
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("scroll", handleScroll, true);
-    };
-  }, [rowContextMenu]);
-
-  // 为其他菜单类型单独建立 effect
-  useEffect(() => {
-    if (!databaseContextMenu && !treeContextMenu && !columnHeaderContextMenu) return;
-
-    const handleClickOutside = (e: Event) => {
-      const target = e.target as HTMLElement;
-      // 检查点击是否在任何菜单内部
-      const isInContextMenu = target.closest(".context-menu-panel");
-      // 如果不在菜单内，关闭菜单
-      if (!isInContextMenu) {
-        setDatabaseContextMenu(null);
-        setTreeContextMenu(null);
-        setColumnHeaderContextMenu(null);
-      }
-    };
-
-    const handleResize = () => {
+  useFloatingMenuDismiss(
+    Boolean(databaseContextMenu || treeContextMenu || columnHeaderContextMenu),
+    () => {
       setDatabaseContextMenu(null);
       setTreeContextMenu(null);
       setColumnHeaderContextMenu(null);
-    };
+    },
+    { rootSelector: ".context-menu-panel" }
+  );
 
-    const handleScroll = () => {
-      setDatabaseContextMenu(null);
-      setTreeContextMenu(null);
-      setColumnHeaderContextMenu(null);
-    };
-
-    // 使用 useCapture 捕获阶段监听
-    document.addEventListener("click", handleClickOutside, true);
-    document.addEventListener("mousedown", handleClickOutside, true);
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("scroll", handleScroll, true);
-
-    return () => {
-      document.removeEventListener("click", handleClickOutside, true);
-      document.removeEventListener("mousedown", handleClickOutside, true);
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("scroll", handleScroll, true);
-    };
-  }, []);
+  useFloatingMenuDismiss(
+    columnMenuOpen,
+    () => setColumnMenuOpen(false),
+    { rootSelector: ".tm-data-actions-wrap, .tm-column-menu" }
+  );
 
   // Wrapper to close context menu after export
   const handleExportTableSqlWrapper = useCallback(
@@ -1811,33 +1828,18 @@ export default function MysqlTableManager() {
         selectedRowIndex={selectedRowIndex}
         filterPanelOpen={filterPanelOpen}
         filterDraftTree={filterDraftTree}
-        columnMenuOpen={columnMenuOpen}
-        activeFilterTree={activeFilterTree}
         totalPages={totalPages}
         filterOperators={filterOperators}
         setSelectedCells={setSelectedCells}
         setFilterPanelOpen={setFilterPanelOpen}
         setFilterDraftTree={setFilterDraftTree}
-        setColumnMenuOpen={setColumnMenuOpen}
-        onAddNewRow={handleAddNewRow}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
         onCellClick={handleCellClick}
         onRowContextMenu={handleRowContextMenu}
         onSaveCell={handleSaveCell}
         onClearFilter={() => void clearFilter()}
-        onClearSort={() => void clearSort()}
         onApplyFilter={(tree) => void applyFilter(tree)}
-        onVisibleColumnToggle={handleVisibleColumnToggle}
-        onSelectAllVisibleColumns={handleSelectAllVisibleColumns}
-        onFetchData={fetchData}
-        onOpenSortModal={() => {
-          setSortDraft({
-            column: activeOpenedTable?.sortColumn ?? dataState.columns[0] ?? "",
-            direction: activeOpenedTable?.sortDirection ?? "asc"
-          });
-          setSortModalOpen(true);
-        }}
       />
     );
   };
@@ -1857,7 +1859,9 @@ export default function MysqlTableManager() {
         selectedOverviewTables={selectedOverviewTables}
         loading={loading}
         onTableClick={handleOverviewTableClick}
+        onClearSelection={clearOverviewTableSelection}
         onBrowseTable={handleBrowseData}
+        onTableDragStart={handleOverviewTableDragStart}
         onTableContextMenu={handleTableContextMenu}
         onRefreshTables={refreshTablesForDb}
         onCreateTableClick={(modalState, editingRows) => {
@@ -1881,45 +1885,91 @@ export default function MysqlTableManager() {
 
     return (
       <>
-        <div className="card-header page-section-header">
-          <div>
-            <h3 className="card-title card-title-reset">
-              {selectedTableInfo?.database ?? activeOpenedTable.database}.{selectedTableInfo?.table ?? activeOpenedTable.table}({selectedTableInfo?.rowCount ?? 0} {t("mysql.data.rowCount")})
-            </h3>
-          </div>
-        </div>
-
         <div className="tm-tab-strip">
-          <button
-            className={`btn btn-sm tm-tab-button ${rightPanelTab === "data" ? "btn-primary is-active" : "btn-ghost"}`}
-            onClick={() => {
-              if (!activeOpenedTable) return;
-              setRightPanelTab("data");
-              setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "data");
-            }}
-          >
-            {t("mysql.tableManager.data")}
-          </button>
-          <button
-            className={`btn btn-sm tm-tab-button ${rightPanelTab === "structure" ? "btn-primary is-active" : "btn-ghost"}`}
-            onClick={() => {
-              if (!activeOpenedTable) return;
-              setRightPanelTab("structure");
-              setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "structure");
-            }}
-          >
-            {t("mysql.tableManager.structure")}
-          </button>
-          <button
-            className={`btn btn-sm tm-tab-button ${rightPanelTab === "info" ? "btn-primary is-active" : "btn-ghost"}`}
-            onClick={() => {
-              if (!activeOpenedTable) return;
-              setRightPanelTab("info");
-              setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "info");
-            }}
-          >
-            {t("mysql.tableManager.info")}
-          </button>
+          <div className="tm-tab-buttons">
+            <button
+              className={`btn btn-sm tm-tab-button ${rightPanelTab === "data" ? "btn-primary is-active" : "btn-ghost"}`}
+              onClick={() => {
+                if (!activeOpenedTable) return;
+                setRightPanelTab("data");
+                setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "data");
+              }}
+            >
+              {t("mysql.tableManager.data")}
+            </button>
+            <button
+              className={`btn btn-sm tm-tab-button ${rightPanelTab === "structure" ? "btn-primary is-active" : "btn-ghost"}`}
+              onClick={() => {
+                if (!activeOpenedTable) return;
+                setRightPanelTab("structure");
+                setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "structure");
+              }}
+            >
+              {t("mysql.tableManager.structure")}
+            </button>
+            <button
+              className={`btn btn-sm tm-tab-button ${rightPanelTab === "info" ? "btn-primary is-active" : "btn-ghost"}`}
+              onClick={() => {
+                if (!activeOpenedTable) return;
+                setRightPanelTab("info");
+                setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, "info");
+              }}
+            >
+              {t("mysql.tableManager.info")}
+            </button>
+          </div>
+
+          {rightPanelTab === "data" ? (
+            <div className="tm-data-actions-wrap">
+              <button className="btn btn-sm btn-ghost" onClick={handleAddNewRow}>
+                {t("mysql.tableManager.addNewRow")}
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={handleToggleFilterPanel}>
+                {t("mysql.tableManager.filterData")}
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={handleOpenSortModal}>
+                {t("mysql.tableManager.sortData")}
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setColumnMenuOpen((prev) => !prev)}>
+                {t("mysql.tableManager.displayColumns")}
+              </button>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => void fetchData()}
+                disabled={dataState.loading}
+              >
+                {dataState.loading ? t("common.loading") : t("common.refresh")}
+              </button>
+
+              {columnMenuOpen && dataState.columns.length > 0 ? (
+                <div className="tm-column-menu">
+                  <div className="tm-column-menu-body">
+                    <div className="tm-column-menu-tools">
+                      <button className="btn btn-sm btn-ghost" onClick={handleSelectAllVisibleColumns}>
+                        {t("common.selectAll")}
+                      </button>
+                      <button className="btn btn-sm btn-ghost" onClick={() => setColumnMenuOpen(false)}>
+                        {t("common.close")}
+                      </button>
+                    </div>
+                    {dataState.columns.map((column: string) => {
+                      const checked = visibleDataColumns.includes(column);
+                      return (
+                        <label key={column} className={`tm-column-option ${checked ? "is-checked" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => handleVisibleColumnToggle(column, event.target.checked)}
+                          />
+                          {column}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="tm-tab-panel">
@@ -1953,12 +2003,7 @@ export default function MysqlTableManager() {
       {treeContextMenu && (
         <div
           className="context-menu-panel"
-          style={{
-            position: "fixed",
-            left: `${treeContextMenu.x}px`,
-            top: `${treeContextMenu.y}px`,
-            minWidth: "140px"
-          }}
+          style={getContextMenuStyle(treeContextMenu.x, treeContextMenu.y, 180, treeContextMenu.selectedTables.length <= 1 ? 420 : 140)}
           onClick={(e) => e.stopPropagation()}
         >
           {treeContextMenu.selectedTables.length <= 1 ? (
@@ -2081,7 +2126,7 @@ export default function MysqlTableManager() {
       {exportSelectionModal && (
         <div className="modal-overlay" onClick={() => setExportSelectionModal(null)}>
           <div className="card modal-card modal-card-md modal-card-scroll" onClick={(event) => event.stopPropagation()}>
-            <div className="card-header">
+            <div className="card-header page-section-header">
               <div>
                 <h3 className="card-title">{t("mysql.tableManager.exportSelectedTables")}</h3>
                 <p className="muted tm-modal-note">
@@ -2091,8 +2136,23 @@ export default function MysqlTableManager() {
                   })}
                 </p>
               </div>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setExportSelectionModal(null)}>
+                {t("common.close")}
+              </button>
             </div>
             <div className="modal-card-body modal-card-body-scroll tm-export-selection-modal-body">
+              <div className="tm-export-selection-hero">
+                <div className="tm-export-selection-hero-main">
+                  <span className="tm-export-selection-badge">{exportSelectionModal.database}</span>
+                  <strong>{t("mysql.tableManager.selectedTablesSummary", { count: exportSelectionModal.selectedTables.length })}</strong>
+                </div>
+                <div className="tm-export-selection-hero-sub muted">
+                  {exportSelectionModal.includeData
+                    ? t("mysql.tableManager.exportSelectedStructureAndData")
+                    : t("mysql.tableManager.exportSelectedStructure")}
+                </div>
+              </div>
+
               <div className="tm-export-selection-toolbar">
                 <div className="tm-toolbar-actions">
                   <button
@@ -2139,7 +2199,8 @@ export default function MysqlTableManager() {
                         checked={checked}
                         onChange={() => handleToggleExportSelectionTable(table)}
                       />
-                      <span>{table}</span>
+                      <span className="tm-export-selection-item-name">{table}</span>
+                      <span className="tm-export-selection-item-meta muted">TABLE</span>
                     </label>
                   );
                 })}
@@ -2155,7 +2216,9 @@ export default function MysqlTableManager() {
                 disabled={exportSelectionModal.selectedTables.length === 0}
                 onClick={() => void handleConfirmExportSelection()}
               >
-                {t("mysql.tableManager.confirmExportSelectedTables")}
+                {exportSelectionModal.includeData
+                  ? t("mysql.tableManager.exportSelectedStructureAndData")
+                  : t("mysql.tableManager.exportSelectedStructure")}
               </button>
             </div>
           </div>
@@ -2165,12 +2228,7 @@ export default function MysqlTableManager() {
       {rowContextMenu && (
         <div
           className="context-menu-panel"
-          style={{
-            position: "fixed",
-            left: `${rowContextMenu.x}px`,
-            top: `${rowContextMenu.y}px`,
-            minWidth: "180px"
-          }}
+          style={getContextMenuStyle(rowContextMenu.x, rowContextMenu.y, 200, 420)}
         >
           <button
             type="button"
@@ -2259,12 +2317,7 @@ export default function MysqlTableManager() {
       {columnHeaderContextMenu && (
         <div
           className="context-menu-panel"
-          style={{
-            position: "fixed",
-            left: `${columnHeaderContextMenu.x}px`,
-            top: `${columnHeaderContextMenu.y}px`,
-            minWidth: "180px"
-          }}
+          style={getContextMenuStyle(columnHeaderContextMenu.x, columnHeaderContextMenu.y, 200, 180)}
           onClick={(event) => event.stopPropagation()}
         >
           <button

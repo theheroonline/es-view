@@ -1,6 +1,6 @@
-import { type MouseEvent, useState, useRef, useEffect, useCallback } from "react";
+import { memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useExcelTable, isCellSelected, DEFAULT_COLUMN_WIDTH } from "../hooks/useExcelTable";
+import { DEFAULT_COLUMN_WIDTH, isCellSelected, useExcelTable } from "../hooks/useExcelTable";
 import { useInlineEditor } from "../hooks/useInlineEditor";
 
 /**
@@ -34,7 +34,7 @@ interface ExcelLikeTableProps {
   onSaveCell: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>;
 }
 
-export function ExcelLikeTable({
+function ExcelLikeTableInner({
   columns,
   data,
   selectedCellKeySet,
@@ -52,7 +52,7 @@ export function ExcelLikeTable({
   const [resizeStartX, setResizeStartX] = useState<number>(0);
 
   // 行内编辑状态
-  const { editingCell, startEditing, updateEditValue, saveEdit, cancelEdit, handleKeyDown } = useInlineEditor();
+  const { editingCell, startEditing, updateEditValue, saveEdit, cancelEdit } = useInlineEditor();
   const editInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   // 当编辑单元格时，自动聚焦输入框
@@ -95,15 +95,34 @@ export function ExcelLikeTable({
   );
 
   const handleInputKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>, onSaveCellFn: typeof onSaveCell) => {
-      handleKeyDown(e);
-      if (e.key === "Enter") {
-        saveEdit(onSaveCellFn);
-      } else if (e.key === "Escape") {
+    async (e: React.KeyboardEvent<HTMLInputElement>, onSaveCellFn: typeof onSaveCell) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
         cancelEdit();
+        return;
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const current = editingCell;
+        await saveEdit(onSaveCellFn);
+
+        if (current) {
+          const nextRowIndex = current.rowIndex + 1;
+          if (nextRowIndex < data.length) {
+            const nextCellValue = data[nextRowIndex]?.[current.columnIndex];
+            startEditing(nextRowIndex, current.columnIndex, current.columnName, nextCellValue);
+          }
+        }
+        return;
+      }
+
+      if (e.key === "Tab") {
+        e.preventDefault();
+        await saveEdit(onSaveCellFn);
       }
     },
-    [handleKeyDown, saveEdit, cancelEdit]
+    [cancelEdit, data, editingCell, saveEdit, startEditing]
   );
 
   const handleInputBlur = useCallback(
@@ -120,6 +139,7 @@ export function ExcelLikeTable({
   // 使用 Hook 获取虚拟滚动和表格实例
   const {
     table,
+    rowVirtualizer,
     virtualRows,
     rows,
     tableContainerRef,
@@ -135,6 +155,15 @@ export function ExcelLikeTable({
 
   // 获取表头
   const headerGroups = table.getHeaderGroups();
+  const virtualPaddingTop = virtualRows.length > 0 ? virtualRows[0]!.start : 0;
+  const virtualPaddingBottom =
+    virtualRows.length > 0
+      ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1]!.end
+      : 0;
+  const visibleOrderedColumns = useMemo(
+    () => columnOrder.filter((column) => columns.includes(column)),
+    [columnOrder, columns]
+  );
 
   // ==================== 列拖拽处理 ====================
 
@@ -248,6 +277,20 @@ export function ExcelLikeTable({
 
           {/* 表体 - 虚拟滚动 */}
           <tbody className="excel-table-body">
+            {virtualPaddingTop > 0 && (
+              <tr aria-hidden="true">
+                <td
+                  colSpan={Math.max(visibleOrderedColumns.length, 1)}
+                  style={{
+                    height: `${virtualPaddingTop}px`,
+                    padding: 0,
+                    border: 0,
+                    background: "transparent",
+                  }}
+                />
+              </tr>
+            )}
+
             {/* 虚拟行渲染 */}
             {virtualRows.length > 0 ? (
               virtualRows.map((virtualItem) => {
@@ -255,15 +298,23 @@ export function ExcelLikeTable({
                 if (!row) return null;
 
                 const rowIndex = row.original._rowIndex;
-                const isRowSelected = selectedRowIndex === rowIndex;
+                const isRowSelected =
+                  selectedRowIndex === rowIndex &&
+                  columns.length > 0 &&
+                  columns.every((_, index) => selectedCellKeySet.has(`${rowIndex}:${index}`));
 
                 return (
                   <tr
-                    key={virtualItem.key}
+                    key={row.id}
+                    ref={(node) => {
+                      if (node) {
+                        rowVirtualizer.measureElement(node);
+                      }
+                    }}
                     className={`excel-table-row ${isRowSelected ? "excel-table-row-selected" : ""}`}
                   >
                     {/* 数据单元格 */}
-                    {columnOrder.filter((col) => columns.includes(col)).map((columnName) => {
+                    {visibleOrderedColumns.map((columnName) => {
                       const columnIndex = columns.indexOf(columnName);
                       const cellValue = data[rowIndex]?.[columnIndex];
                       const isSelected = isCellSelected(rowIndex, columnIndex, selectedCellKeySet);
@@ -313,6 +364,20 @@ export function ExcelLikeTable({
                 </td>
               </tr>
             )}
+
+            {virtualPaddingBottom > 0 && (
+              <tr aria-hidden="true">
+                <td
+                  colSpan={Math.max(visibleOrderedColumns.length, 1)}
+                  style={{
+                    height: `${virtualPaddingBottom}px`,
+                    padding: 0,
+                    border: 0,
+                    background: "transparent",
+                  }}
+                />
+              </tr>
+            )}
           </tbody>
         </table>
 
@@ -320,3 +385,5 @@ export function ExcelLikeTable({
     </div>
   );
 }
+
+export const ExcelLikeTable = memo(ExcelLikeTableInner);

@@ -6,10 +6,11 @@ interface MysqlSidebarSectionProps {
   profiles: ConnectionProfile[];
   activeConnectionId: string | null | undefined;
   databases: string[];
-  expandedDatabase: string | null;
+  expandedDatabases: string[];
+  selectedSidebarTables: string[];
   selectedDatabase?: string;
   selectedTable?: string;
-  sidebarExpandedTablesDatabase: string | null;
+  sidebarExpandedTablesDatabases: string[];
   tablesByDb: Record<string, string[]>;
   tablesLabel: string;
   emptyText: string;
@@ -24,9 +25,11 @@ interface MysqlSidebarSectionProps {
   onOpenDatabase: (database: string) => void;
   onDatabaseContextMenu: (event: MouseEvent<HTMLDivElement>, database: string) => void;
   onToggleSidebarTables: (database: string) => void;
-  onSelectSidebarTable: (database: string, table: string) => void;
+  onSelectSidebarTable: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
   onOpenSidebarTable: (database: string, table: string) => void;
   onTableContextMenu: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
+  onSidebarTableDragStart: (event: React.DragEvent<HTMLDivElement>, database: string, table: string) => void;
+  onSidebarDatabaseDrop: (event: React.DragEvent<HTMLDivElement>, database: string) => void;
 }
 
 export default function MysqlSidebarSection({
@@ -34,12 +37,13 @@ export default function MysqlSidebarSection({
   profiles,
   activeConnectionId,
   databases,
-  expandedDatabase,
+  expandedDatabases,
+  selectedSidebarTables,
   selectedDatabase,
   selectedTable,
-  sidebarExpandedTablesDatabase,
+  sidebarExpandedTablesDatabases: _sidebarExpandedTablesDatabases,
   tablesByDb,
-  tablesLabel,
+  tablesLabel: _tablesLabel,
   emptyText,
   noTablesText,
   createConnectionTitle,
@@ -48,14 +52,18 @@ export default function MysqlSidebarSection({
   onToggle,
   onCreateConnection,
   onRefresh,
-  onSelectDatabase,
+  onSelectDatabase: _onSelectDatabase,
   onOpenDatabase,
   onDatabaseContextMenu,
-  onToggleSidebarTables,
+  onToggleSidebarTables: _onToggleSidebarTables,
   onSelectSidebarTable,
   onOpenSidebarTable,
   onTableContextMenu,
+  onSidebarTableDragStart,
+  onSidebarDatabaseDrop,
 }: MysqlSidebarSectionProps) {
+  const selectedSidebarTableSet = new Set(selectedSidebarTables);
+
   return (
     <div className="mdb-tree-group mdb-tree-group-spaced">
       <div className="mdb-tree-label mdb-tree-header">
@@ -82,10 +90,9 @@ export default function MysqlSidebarSection({
                 {isActiveMysql && databases.length > 0 ? (
                   <div className="mdb-tree-nested">
                     {databases.map((database) => {
-                      const isOpened = expandedDatabase === database;
+                      const isOpened = expandedDatabases.includes(database);
                       const isSelected = selectedDatabase === database;
                       const showChildren = isOpened || isSelected;
-                      const tablesVisible = sidebarExpandedTablesDatabase === database;
                       const tables = tablesByDb[database] ?? [];
                       const tableCount = tablesByDb[database]?.length;
 
@@ -93,9 +100,13 @@ export default function MysqlSidebarSection({
                         <div key={`${profile.id}-${database}`}>
                           <div
                             className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${isSelected ? "is-selected" : ""}`}
-                            onClick={() => onSelectDatabase(database)}
+                            onClick={() => {
+                              void onOpenDatabase(database);
+                            }}
                             onDoubleClick={() => onOpenDatabase(database)}
                             onContextMenu={(event) => onDatabaseContextMenu(event, database)}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={(event) => onSidebarDatabaseDrop(event, database)}
                           >
                             <span className="mdb-tree-row-main">
                               <span>{showChildren ? "▾" : "▸"}</span>
@@ -106,39 +117,25 @@ export default function MysqlSidebarSection({
                           </div>
 
                           {showChildren ? (
-                            <div className="mdb-tree-nested">
-                              <div
-                                className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${tablesVisible ? "is-soft-selected" : ""}`}
-                                onClick={() => onToggleSidebarTables(database)}
-                              >
-                                <span className="mdb-tree-row-main">
-                                  <span>{tablesVisible ? "▾" : "▸"}</span>
-                                  <span>🗂</span>
-                                  <span>{tablesLabel}</span>
-                                </span>
-                                <span className="muted mdb-tree-count">{typeof tableCount === "number" ? tableCount : ""}</span>
-                              </div>
-
-                              {tablesVisible ? (
-                                <div className="mdb-tree-nested mdb-tree-nested-deep">
-                                  {tables.map((table) => (
-                                    <div
-                                      key={`${profile.id}-${database}-${table}`}
-                                      className={`mdb-tree-item mdb-tree-item-compact ${selectedDatabase === database && selectedTable === table ? "is-selected" : ""}`}
-                                      onClick={() => onSelectSidebarTable(database, table)}
-                                      onDoubleClick={() => onOpenSidebarTable(database, table)}
-                                      onContextMenu={(event) => onTableContextMenu(event, database, table)}
-                                      title={table}
-                                    >
-                                      <span className="mdb-tree-row-main">
-                                        <span className="mdb-tree-table-icon">▤</span>
-                                        <span className="mdb-tree-row-label">{table}</span>
-                                      </span>
-                                    </div>
-                                  ))}
-                                  {tables.length === 0 ? <div className="mdb-tree-empty">{noTablesText}</div> : null}
+                            <div className="mdb-tree-nested mdb-tree-nested-deep">
+                              {tables.map((table) => (
+                                <div
+                                  key={`${profile.id}-${database}-${table}`}
+                                  className={`mdb-tree-item mdb-tree-item-compact ${selectedDatabase === database && selectedSidebarTableSet.has(table) ? "is-soft-selected" : ""} ${selectedDatabase === database && selectedTable === table ? "is-selected" : ""}`}
+                                  draggable
+                                  onClick={(event) => onSelectSidebarTable(event, database, table)}
+                                  onDoubleClick={() => onOpenSidebarTable(database, table)}
+                                  onContextMenu={(event) => onTableContextMenu(event, database, table)}
+                                  onDragStart={(event) => onSidebarTableDragStart(event, database, table)}
+                                  title={table}
+                                >
+                                  <span className="mdb-tree-row-main">
+                                    <span className="mdb-tree-table-icon">▤</span>
+                                    <span className="mdb-tree-row-label">{table}</span>
+                                  </span>
                                 </div>
-                              ) : null}
+                              ))}
+                              {tables.length === 0 ? <div className="mdb-tree-empty">{noTablesText}</div> : null}
                             </div>
                           ) : null}
                         </div>

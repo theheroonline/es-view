@@ -60,6 +60,12 @@ export function useInlineEditor(): UseInlineEditorReturn {
   ) => {
     if (!editingCell || isSaving) return;
 
+    const originalValue = editingCell.originalValue === null ? "" : String(editingCell.originalValue);
+    if (editingCell.editValue === originalValue) {
+      setEditingCell(null);
+      return;
+    }
+
     setIsSaving(true);
     try {
       await onSave(

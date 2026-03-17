@@ -156,7 +156,7 @@ export const getFilterStatsText = (
   t?: (key: string, options?: any) => string
 ): string => {
   if (stats.conditions === 0) {
-    return t ? t("mysql.tableManager.noFilterApplied") : "No filters applied";
+    return "No filters applied";
   }
 
   const modeText = mode === "or" ? (t ? t("mysql.tableManager.matchAny") : "match any") : (t ? t("mysql.tableManager.matchAll") : "match all");

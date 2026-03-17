@@ -10,6 +10,7 @@ export type MysqlFilterOperator =
   | "gte"
   | "lt"
   | "lte"
+  | "between"
   | "contains"
   | "startsWith"
   | "endsWith"

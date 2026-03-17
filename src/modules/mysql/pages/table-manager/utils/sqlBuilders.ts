@@ -5,6 +5,15 @@
 import type { MysqlFilterOperator } from "../../../../../state/MysqlContext";
 import type { FilterConditionDraft } from "./typeHelpers";
 
+const BETWEEN_VALUE_SEPARATOR = "|||";
+
+export const splitBetweenValue = (value = ""): [string, string] => {
+  const [start = "", end = ""] = value.split(BETWEEN_VALUE_SEPARATOR);
+  return [start, end];
+};
+
+export const joinBetweenValue = (start: string, end: string) => `${start}${BETWEEN_VALUE_SEPARATOR}${end}`;
+
 /**
  * Escape MySQL identifier (column name, table name, database name)
  * Wraps in backticks and escapes internal backticks
@@ -61,6 +70,11 @@ export const buildConditionSql = (
       return `${identifier} > ${escapeSqlLiteral(conditionValue)}`;
     case "gte":
       return `${identifier} >= ${escapeSqlLiteral(conditionValue)}`;
+    case "between": {
+      const [start, end] = splitBetweenValue(conditionValue);
+      if (!start.trim() || !end.trim()) return null;
+      return `${identifier} BETWEEN ${escapeSqlLiteral(start)} AND ${escapeSqlLiteral(end)}`;
+    }
     case "lt":
       return `${identifier} < ${escapeSqlLiteral(conditionValue)}`;
     case "lte":

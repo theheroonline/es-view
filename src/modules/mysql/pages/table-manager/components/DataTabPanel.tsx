@@ -1,17 +1,17 @@
-import { type MouseEvent, useState, useEffect } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { MysqlFilterOperator, MysqlFilterNode } from "../../../../../state/MysqlContext";
+import type { MysqlFilterOperator } from "../../../../../state/MysqlContext";
 import {
-  type FilterGroupDraft,
-  type TableInfo,
-  type DataState,
-  type SelectedCell,
-  countFilterStats,
-  updateFilterTreeNode,
-  removeFilterTreeNode,
-  createFilterCondition,
-  createFilterGroup,
-  operatorNeedsValue,
+    type DataState,
+    type FilterConditionDraft,
+    type FilterGroupDraft,
+    type SelectedCell,
+    type TableInfo,
+    createFilterCondition,
+    createFilterGroup,
+    joinBetweenValue,
+    operatorNeedsValue,
+    splitBetweenValue,
 } from "../utils";
 import { ExcelLikeTable } from "./ExcelLikeTable";
 
@@ -23,8 +23,6 @@ interface DataTabPanelProps {
   selectedRowIndex: number | null;
   filterPanelOpen: boolean;
   filterDraftTree: FilterGroupDraft | null;
-  columnMenuOpen: boolean;
-  activeFilterTree: MysqlFilterNode | null;
   totalPages: number;
   filterOperators: Array<{ value: MysqlFilterOperator; label: string }>;
 
@@ -32,22 +30,15 @@ interface DataTabPanelProps {
   setSelectedCells: (cells: SelectedCell[]) => void;
   setFilterPanelOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   setFilterDraftTree: (tree: FilterGroupDraft | null | ((prev: FilterGroupDraft | null) => FilterGroupDraft | null)) => void;
-  setColumnMenuOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
 
   // Event handlers
-  onAddNewRow: () => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   onCellClick: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
   onRowContextMenu: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, column: string, cell: unknown) => void;
   onSaveCell: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>;
   onClearFilter: () => void;
-  onClearSort: () => void;
   onApplyFilter: (tree: FilterGroupDraft | null) => void;
-  onVisibleColumnToggle: (column: string, checked: boolean) => void;
-  onSelectAllVisibleColumns: () => void;
-  onFetchData: () => void;
-  onOpenSortModal: () => void;
 }
 
 export function DataTabPanel({
@@ -58,28 +49,19 @@ export function DataTabPanel({
   selectedRowIndex,
   filterPanelOpen,
   filterDraftTree,
-  columnMenuOpen,
-  activeFilterTree,
   totalPages,
   filterOperators,
   // setSelectedCells is no longer used after removing selection summary bar
   setSelectedCells: _,
   setFilterPanelOpen,
   setFilterDraftTree,
-  setColumnMenuOpen,
-  onAddNewRow,
   onPageChange,
   onPageSizeChange,
   onCellClick,
   onRowContextMenu,
   onSaveCell,
   onClearFilter,
-  onClearSort,
   onApplyFilter,
-  onVisibleColumnToggle,
-  onSelectAllVisibleColumns,
-  onFetchData,
-  onOpenSortModal,
 }: DataTabPanelProps) {
   const { t } = useTranslation();
 
@@ -96,132 +78,175 @@ export function DataTabPanel({
     setPageInput(String(dataState.page));
   }, [dataState.page]);
 
+  useEffect(() => {
+    if (!filterPanelOpen || !filterDraftTree) return;
+
+    const flattenConditions = (node: FilterGroupDraft): FilterConditionDraft[] =>
+      node.children.flatMap((child) => {
+        if (child.kind === "condition") {
+          return [child];
+        }
+        return flattenConditions(child);
+      });
+
+    const hasNestedGroup = filterDraftTree.children.some((child) => child.kind === "group");
+    if (!hasNestedGroup) return;
+
+    const flattened = flattenConditions(filterDraftTree);
+    setFilterDraftTree({
+      ...filterDraftTree,
+      children: flattened.length > 0 ? flattened : [createFilterCondition(dataState.columns[0] ?? "")],
+    });
+  }, [dataState.columns, filterDraftTree, filterPanelOpen, setFilterDraftTree]);
+
+  const clampPage = (value: number) => Math.min(totalPages, Math.max(1, value));
+  const currentPageCount = dataState.rows.length;
+  const selectedRowDisplay =
+    selectedRowIndex !== null && selectedRowIndex >= 0 && selectedRowIndex < currentPageCount
+      ? selectedRowIndex + 1
+      : null;
+
   if (!selectedTableInfo) return null;
 
-  const filterStats = countFilterStats(activeFilterTree as FilterGroupDraft | null);
+  const rootFilterTree = filterDraftTree ?? createFilterGroup("and", [createFilterCondition(dataState.columns[0] ?? "")]);
+  const filterConditions = rootFilterTree.children.filter(
+    (child): child is FilterConditionDraft => child.kind === "condition"
+  );
 
-  const renderFilterGroup = (group: FilterGroupDraft, isRoot = false, depth = 0) => (
-    <div
-      key={group.id}
-      className={`tm-filter-group ${depth > 0 ? "is-nested" : ""}`}
-      style={{ marginLeft: depth > 0 ? "16px" : 0 }}
-    >
-      <div className="tm-filter-group-header">
-        <div className="tm-filter-group-title">
-          <strong>{isRoot ? t("mysql.tableManager.rootGroup") : t("mysql.tableManager.nestedGroup")}</strong>
-          <select
-            className="form-control tm-filter-mode-select"
-            value={group.mode}
+  const updateCondition = (id: string, updater: (condition: FilterConditionDraft) => FilterConditionDraft) => {
+    setFilterDraftTree((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        children: prev.children.map((child) => {
+          if (child.kind !== "condition" || child.id !== id) return child;
+          return updater(child);
+        }),
+      };
+    });
+  };
+
+  const removeCondition = (id: string) => {
+    setFilterDraftTree((prev) => {
+      if (!prev) return prev;
+      const conditions = prev.children.filter((child) => child.kind === "condition" && child.id !== id);
+      return {
+        ...prev,
+        children: conditions.length > 0 ? conditions : [createFilterCondition(dataState.columns[0] ?? "")],
+      };
+    });
+  };
+
+  const renderValueInput = (condition: FilterConditionDraft) => {
+    if (!operatorNeedsValue(condition.operator)) {
+      return (
+        <input
+          className="form-control"
+          value=""
+          disabled
+          placeholder={t("mysql.tableManager.noValueNeeded")}
+          readOnly
+        />
+      );
+    }
+
+    if (condition.operator === "between") {
+      const [startValue, endValue] = splitBetweenValue(condition.value ?? "");
+      return (
+        <div className="tm-filter-between-inputs">
+          <input
+            className="form-control"
+            value={startValue}
+            placeholder={t("mysql.tableManager.filterValue")}
             onChange={(event) =>
-              setFilterDraftTree(
-                (prev: FilterGroupDraft | null) =>
-                  prev
-                    ? (updateFilterTreeNode(
-                        prev,
-                        group.id,
-                        (node: any) =>
-                          node.kind === "group"
-                            ? { ...node, mode: event.target.value as "and" | "or" }
-                            : node
-                      ) as FilterGroupDraft)
-                    : prev
-              )
+              updateCondition(condition.id, (prev) => ({
+                ...prev,
+                value: joinBetweenValue(event.target.value, splitBetweenValue(prev.value ?? "")[1]),
+              }))
             }
-          >
-            <option value="and">{t("mysql.tableManager.matchAll")}</option>
-            <option value="or">{t("mysql.tableManager.matchAny")}</option>
-          </select>
+          />
+          <span className="tm-filter-between-separator">~</span>
+          <input
+            className="form-control"
+            value={endValue}
+            placeholder={t("mysql.tableManager.filterValue")}
+            onChange={(event) =>
+              updateCondition(condition.id, (prev) => ({
+                ...prev,
+                value: joinBetweenValue(splitBetweenValue(prev.value ?? "")[0], event.target.value),
+              }))
+            }
+          />
         </div>
-        <div className="tm-filter-group-actions">
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={() =>
-              setFilterDraftTree(
-                (prev: FilterGroupDraft | null) =>
-                  prev
-                    ? (updateFilterTreeNode(
-                        prev,
-                        group.id,
-                        (node: any) =>
-                          node.kind === "group"
-                            ? {
-                                ...node,
-                                children: [...node.children, createFilterCondition(dataState.columns[0] ?? "")]
-                              }
-                            : node
-                      ) as FilterGroupDraft)
-                    : prev
-              )
-            }
-          >
-            {t("mysql.tableManager.addCondition")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={() =>
-              setFilterDraftTree(
-                (prev: FilterGroupDraft | null) =>
-                  prev
-                    ? (updateFilterTreeNode(
-                        prev,
-                        group.id,
-                        (node: any) =>
-                          node.kind === "group"
-                            ? {
-                                ...node,
-                                children: [
-                                  ...node.children,
-                                  createFilterGroup("and", [createFilterCondition(dataState.columns[0] ?? "")])
-                                ]
-                              }
-                            : node
-                      ) as FilterGroupDraft)
-                    : prev
-              )
-            }
-          >
-            {t("mysql.tableManager.addGroup")}
-          </button>
-          {!isRoot && (
-            <button
-              className="btn btn-sm btn-ghost text-danger"
-              onClick={() => setFilterDraftTree((prev: FilterGroupDraft | null) => (prev ? removeFilterTreeNode(prev, group.id) : prev))}
-            >
-              {t("mysql.tableManager.removeGroup")}
-            </button>
-          )}
-        </div>
-      </div>
+      );
+    }
 
-      <div className="tm-filter-group-children">
-        {group.children.length > 0 ? (
-          group.children.map((child: any) => {
-            if (child.kind === "group") {
-              return renderFilterGroup(child, false, depth + 1);
-            }
+    return (
+      <input
+        className="form-control"
+        value={condition.value ?? ""}
+        placeholder={t("mysql.tableManager.filterValue")}
+        onChange={(event) => updateCondition(condition.id, (prev) => ({ ...prev, value: event.target.value }))}
+      />
+    );
+  };
 
-            return (
-              <div key={child.id} className="tm-filter-row">
+  return (
+    <div className="tm-filter-workspace">
+      {filterPanelOpen && (
+        <div className="tm-filter-panel">
+          <div className="tm-filter-lite-head">
+            <strong>{t("mysql.tableManager.filterPanelTitle")}</strong>
+            <div className="tm-filter-lite-head-actions">
+              <label className="tm-filter-lite-mode">
+                <span>{t("mysql.tableManager.matchMode")}</span>
                 <select
                   className="form-control"
-                  value={child.column}
+                  value={rootFilterTree.mode}
                   onChange={(event) =>
-                    setFilterDraftTree(
-                      (prev: FilterGroupDraft | null) =>
-                        prev
-                          ? (updateFilterTreeNode(
-                              prev,
-                              child.id,
-                              (node: any) =>
-                                node.kind === "condition"
-                                  ? { ...node, column: event.target.value }
-                                  : node
-                            ) as FilterGroupDraft)
-                          : prev
-                    )
+                    setFilterDraftTree((prev) => (prev ? { ...prev, mode: event.target.value as "and" | "or" } : prev))
                   }
                 >
-                  {dataState.columns.map((column: string) => (
+                  <option value="and">{t("mysql.tableManager.matchAll")}</option>
+                  <option value="or">{t("mysql.tableManager.matchAny")}</option>
+                </select>
+              </label>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() =>
+                  setFilterDraftTree((prev) => {
+                    const next = prev ?? createFilterGroup("and", []);
+                    return {
+                      ...next,
+                      children: [...next.children.filter((child) => child.kind === "condition"), createFilterCondition(dataState.columns[0] ?? "")],
+                    };
+                  })
+                }
+              >
+                {t("mysql.tableManager.addCondition")}
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={onClearFilter}>
+                {t("mysql.tableManager.clearFilter")}
+              </button>
+              <button className="btn btn-sm btn-primary" onClick={() => onApplyFilter(rootFilterTree)}>
+                {t("mysql.tableManager.apply")}
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setFilterPanelOpen(false)}>
+                {t("common.close")}
+              </button>
+            </div>
+          </div>
+
+          <div className="tm-filter-lite-list">
+            {filterConditions.map((condition, index) => (
+              <div key={condition.id} className="tm-filter-lite-row">
+                <span className="tm-filter-lite-joiner">{index === 0 ? "" : rootFilterTree.mode.toUpperCase()}</span>
+                <select
+                  className="form-control"
+                  value={condition.column}
+                  onChange={(event) => updateCondition(condition.id, (prev) => ({ ...prev, column: event.target.value }))}
+                >
+                  {dataState.columns.map((column) => (
                     <option key={column} value={column}>
                       {column}
                     </option>
@@ -229,27 +254,13 @@ export function DataTabPanel({
                 </select>
                 <select
                   className="form-control"
-                  value={child.operator}
+                  value={condition.operator}
                   onChange={(event) =>
-                    setFilterDraftTree(
-                      (prev: FilterGroupDraft | null) =>
-                        prev
-                          ? (updateFilterTreeNode(
-                              prev,
-                              child.id,
-                              (node: any) =>
-                                node.kind === "condition"
-                                  ? {
-                                      ...node,
-                                      operator: event.target.value as MysqlFilterOperator,
-                                      value: operatorNeedsValue(event.target.value as MysqlFilterOperator)
-                                        ? node.value ?? ""
-                                        : ""
-                                    }
-                                  : node
-                            ) as FilterGroupDraft)
-                          : prev
-                    )
+                    updateCondition(condition.id, (prev) => ({
+                      ...prev,
+                      operator: event.target.value as MysqlFilterOperator,
+                      value: operatorNeedsValue(event.target.value as MysqlFilterOperator) ? prev.value ?? "" : "",
+                    }))
                   }
                 >
                   {filterOperators.map((operator) => (
@@ -258,172 +269,13 @@ export function DataTabPanel({
                     </option>
                   ))}
                 </select>
-                <input
-                  className="form-control"
-                  value={child.value ?? ""}
-                  disabled={!operatorNeedsValue(child.operator)}
-                  placeholder={
-                    operatorNeedsValue(child.operator)
-                      ? t("mysql.tableManager.filterValue")
-                      : t("mysql.tableManager.noValueNeeded")
-                  }
-                  onChange={(event) =>
-                    setFilterDraftTree(
-                      (prev: FilterGroupDraft | null) =>
-                        prev
-                          ? (updateFilterTreeNode(
-                              prev,
-                              child.id,
-                              (node: any) =>
-                                node.kind === "condition"
-                                  ? { ...node, value: event.target.value }
-                                  : node
-                            ) as FilterGroupDraft)
-                          : prev
-                    )
-                  }
-                />
-                <button
-                  className="btn btn-sm btn-ghost text-danger"
-                  onClick={() => setFilterDraftTree((prev: FilterGroupDraft | null) => (prev ? removeFilterTreeNode(prev, child.id) : prev))}
-                >
+                {renderValueInput(condition)}
+                <button className="btn btn-sm btn-ghost text-danger" onClick={() => removeCondition(condition.id)}>
                   {t("mysql.tableManager.removeCondition")}
                 </button>
               </div>
-            );
-          })
-        ) : (
-          <div className="muted tm-filter-empty">{t("mysql.tableManager.emptyGroup")}</div>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="tm-filter-workspace">
-      <div className="tm-toolbar">
-        <div className="tm-toolbar-meta">
-          <span className="tm-toolbar-stat">
-            {filterStats.conditions > 0
-              ? t("mysql.tableManager.filterSummary", {
-                  count: filterStats.conditions,
-                  groups: filterStats.groups,
-                  mode: (activeFilterTree as any)?.mode === "or" ? t("mysql.tableManager.matchAny") : t("mysql.tableManager.matchAll")
-                })
-              : t("mysql.tableManager.noFilterApplied")}
-            {filterStats.conditions > 0 && (
-              <button className="btn btn-sm btn-ghost" onClick={onClearFilter}>
-                {t("common.close")}
-              </button>
-            )}
-          </span>
-          <span className="tm-toolbar-stat">
-            {(selectedTableInfo as any)?.sortColumn
-              ? t("mysql.tableManager.sortSummary", {
-                  column: (selectedTableInfo as any)?.sortColumn,
-                  direction:
-                    (selectedTableInfo as any)?.sortDirection === "desc"
-                      ? t("dataBrowser.sortDescending")
-                      : t("dataBrowser.sortAscending")
-                })
-              : t("mysql.tableManager.noSortApplied")}
-            {(selectedTableInfo as any)?.sortColumn && (
-              <button className="btn btn-sm btn-ghost" onClick={onClearSort}>
-                {t("common.close")}
-              </button>
-            )}
-          </span>
-        </div>
-        <div className="tm-toolbar-actions">
-          <button className="btn btn-sm btn-ghost" onClick={onAddNewRow}>
-            {t("mysql.tableManager.addNewRow")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={() => {
-              const firstColumn = dataState.columns[0] ?? "";
-              const tree = filterDraftTree
-                ? filterDraftTree
-                : createFilterGroup("and", [createFilterCondition(firstColumn)]);
-              setFilterDraftTree(tree);
-              setFilterPanelOpen(!filterPanelOpen);
-            }}
-          >
-            {t("mysql.tableManager.filterData")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={onOpenSortModal}
-          >
-            {t("mysql.tableManager.sortData")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={() => setColumnMenuOpen(!columnMenuOpen)}
-          >
-            {t("mysql.tableManager.displayColumns")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={onFetchData}
-            disabled={dataState.loading}
-          >
-            {dataState.loading ? t("common.loading") : t("common.refresh")}
-          </button>
-
-          {/* Column selection dropdown menu */}
-          {columnMenuOpen && dataState.columns.length > 0 && (
-            <div className="tm-column-menu">
-              <div className="tm-column-menu-body">
-                <div className="tm-column-menu-tools">
-                  <button className="btn btn-sm btn-ghost" onClick={onSelectAllVisibleColumns}>
-                    {t("common.selectAll")}
-                  </button>
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => setColumnMenuOpen(false)}
-                  >
-                    {t("common.close")}
-                  </button>
-                </div>
-                {dataState.columns.map((column: string) => {
-                  const checked = visibleDataColumns.includes(column);
-                  return (
-                    <label key={column} className={`tm-column-option ${checked ? "is-checked" : ""}`}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) => onVisibleColumnToggle(column, event.target.checked)}
-                      />
-                      {column}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {filterPanelOpen && (
-        <div className="tm-filter-panel">
-          <div className="page-section-header">
-            <div className="tm-inline-checkbox">
-              <strong>{t("mysql.tableManager.filterPanelTitle")}</strong>
-            </div>
-            <div className="flex-gap">
-              <button className="btn btn-sm btn-ghost" onClick={() => setFilterPanelOpen(false)}>
-                {t("common.close")}
-              </button>
-              <button className="btn btn-sm btn-ghost" onClick={onClearFilter}>
-                {t("mysql.tableManager.clearFilter")}
-              </button>
-              <button className="btn btn-sm btn-primary" onClick={() => onApplyFilter(filterDraftTree)}>
-                {t("common.save")}
-              </button>
-            </div>
+            ))}
           </div>
-          {filterDraftTree ? renderFilterGroup(filterDraftTree, true, 0) : null}
         </div>
       )}
 
@@ -482,6 +334,13 @@ export function DataTabPanel({
           <button
             className="btn btn-sm btn-ghost"
             disabled={dataState.page <= 1}
+            onClick={() => onPageChange(1)}
+          >
+            {t("mysql.tableManager.firstPage")}
+          </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            disabled={dataState.page <= 1}
             onClick={() => onPageChange(dataState.page - 1)}
           >
             {t("dataBrowser.previousPage")}
@@ -494,21 +353,26 @@ export function DataTabPanel({
               onChange={(e) => setPageInput(e.target.value)}
               onBlur={(e) => {
                 const val = Number(e.target.value);
-                if (val > 0 && val <= totalPages) {
-                  onPageChange(val);
-                } else {
-                  // 无效输入，恢复原值
+                if (!Number.isFinite(val)) {
                   setPageInput(String(dataState.page));
+                  return;
                 }
+
+                const clamped = clampPage(val);
+                onPageChange(clamped);
+                setPageInput(String(clamped));
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   const val = Number(pageInput);
-                  if (val > 0 && val <= totalPages) {
-                    onPageChange(val);
-                  } else {
+                  if (!Number.isFinite(val)) {
                     setPageInput(String(dataState.page));
+                    return;
                   }
+
+                  const clamped = clampPage(val);
+                  onPageChange(clamped);
+                  setPageInput(String(clamped));
                 }
               }}
               min="1"
@@ -524,6 +388,21 @@ export function DataTabPanel({
           >
             {t("dataBrowser.nextPage")}
           </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            disabled={dataState.page >= totalPages}
+            onClick={() => onPageChange(totalPages)}
+          >
+            {t("mysql.tableManager.lastPage")}
+          </button>
+        </div>
+        <div className="tm-pagination-group tm-pagination-group-right">
+          {selectedRowDisplay !== null ? (
+            <span className="tm-pagination-info">
+              {selectedRowDisplay}/{Math.max(currentPageCount, 1)}
+            </span>
+          ) : null}
+          <span className="tm-pagination-info">{t("mysql.tableManager.currentPageRows", { count: currentPageCount })}</span>
         </div>
       </div>
     </div>

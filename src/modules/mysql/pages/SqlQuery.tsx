@@ -177,6 +177,29 @@ function getVisibleColumns(columns: string[], preferred?: string[]) {
   return nextColumns.length > 0 ? nextColumns : columns;
 }
 
+function extractMysqlErrorLine(message: string): number | null {
+  const match = message.match(/\bline\s+(\d+)\b/i);
+  if (!match) return null;
+  const line = Number(match[1]);
+  return Number.isFinite(line) && line > 0 ? line : null;
+}
+
+function getLineStartOffset(source: string, lineNumber: number): number {
+  if (lineNumber <= 1) return 0;
+
+  let currentLine = 1;
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "\n") {
+      currentLine += 1;
+      if (currentLine === lineNumber) {
+        return index + 1;
+      }
+    }
+  }
+
+  return source.length;
+}
+
 export default function MysqlSqlQuery() {
   const { t } = useTranslation();
   const { activeConnectionId, setActiveConnection, state } = useElasticsearchContext();
@@ -191,6 +214,7 @@ export default function MysqlSqlQuery() {
     getMysqlConnectionById
   } = useMysqlContext();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lineNumberRef = useRef<HTMLDivElement | null>(null);
   const autocompleteListRef = useRef<HTMLDivElement | null>(null);
   const autocompleteOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [sql, setSql] = useState("");
@@ -259,6 +283,27 @@ export default function MysqlSqlQuery() {
     () => results.find((item) => item.id === activeResultId) ?? results[0] ?? null,
     [activeResultId, results]
   );
+
+  const lineCount = useMemo(() => Math.max(1, sql.split("\n").length), [sql]);
+  const lineNumbers = useMemo(() => Array.from({ length: lineCount }, (_, index) => index + 1), [lineCount]);
+  const editorErrorLine = useMemo(() => extractMysqlErrorLine(error), [error]);
+
+  useEffect(() => {
+    if (!editorErrorLine || !textareaRef.current) {
+      return;
+    }
+
+    const lineOffset = getLineStartOffset(sql, editorErrorLine);
+    textareaRef.current.focus();
+    textareaRef.current.setSelectionRange(lineOffset, lineOffset);
+
+    const lineHeight = 13 * 1.6;
+    const nextScrollTop = Math.max(0, (editorErrorLine - 2) * lineHeight);
+    textareaRef.current.scrollTop = nextScrollTop;
+    if (lineNumberRef.current) {
+      lineNumberRef.current.scrollTop = nextScrollTop;
+    }
+  }, [editorErrorLine, sql]);
 
   useEffect(() => {
     if (!autocompleteOpen) return;
@@ -780,20 +825,52 @@ export default function MysqlSqlQuery() {
           </div>
         </div>
         <div style={{ padding: "12px 16px", position: "relative", display: "grid", gap: "12px", flex: "0 0 auto" }}>
-          <div style={{ position: "relative", flex: "1 1 auto", minHeight: "72px", display: "flex", flexDirection: "column", resize: "vertical", overflow: "visible", zIndex: 0 }}>
+          <div style={{ position: "relative", minHeight: "140px", height: "220px", display: "flex", flexDirection: "column", resize: "vertical", overflow: "hidden", zIndex: 0 }}>
+            <div style={{ display: "flex", height: "100%", border: "1px solid #d1d1d6", borderRadius: "8px", overflow: "hidden", background: "#fff" }}>
+              <div
+                ref={lineNumberRef}
+                aria-hidden="true"
+                style={{
+                  width: "46px",
+                  flexShrink: 0,
+                  background: "#f8fafc",
+                  borderRight: "1px solid #e5e7eb",
+                  fontFamily: "monospace",
+                  fontSize: "12px",
+                  lineHeight: 1.6,
+                  color: "#94a3b8",
+                  textAlign: "right",
+                  padding: "12px 8px",
+                  overflow: "hidden"
+                }}
+              >
+                {lineNumbers.map((lineNumber) => (
+                  <div
+                    key={lineNumber}
+                    style={{
+                      color: editorErrorLine === lineNumber ? "#dc2626" : undefined,
+                      fontWeight: editorErrorLine === lineNumber ? 700 : 400
+                    }}
+                  >
+                    {lineNumber}
+                  </div>
+                ))}
+              </div>
             <textarea
               ref={textareaRef}
-              className="json-editor"
+              className="json-editor sql-query-editor-textarea"
               style={{
                 width: "100%",
-                height: "100px",
-                minHeight: "80px",
+                height: "100%",
+                minHeight: 0,
                 fontFamily: "monospace",
                 fontSize: "13px",
                 padding: "12px",
-                border: "1px solid #d1d1d6",
-                borderRadius: "8px",
-                resize: "vertical",
+                border: 0,
+                borderRadius: 0,
+                resize: "none",
+                marginBottom: 0,
+                background: "#fff",
                 lineHeight: 1.6
               }}
               value={sql}
@@ -822,7 +899,13 @@ export default function MysqlSqlQuery() {
               onKeyDown={handleKeyDown}
               placeholder="SELECT * FROM table_name LIMIT 100;"
               spellCheck={false}
+              onScroll={(event) => {
+                if (lineNumberRef.current) {
+                  lineNumberRef.current.scrollTop = event.currentTarget.scrollTop;
+                }
+              }}
             />
+            </div>
             {autocompleteOpen && autocompleteItems.length > 0 && (
               <div
                 ref={autocompleteListRef}
@@ -903,6 +986,7 @@ export default function MysqlSqlQuery() {
       {error && (
         <div className="text-danger" style={{ marginBottom: "12px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
           {t("mysql.query.executeFailed")} {error}
+          {editorErrorLine ? <span style={{ marginLeft: "8px" }}>({t("mysql.query.errorLineHint", { line: editorErrorLine })})</span> : null}
         </div>
       )}
 
