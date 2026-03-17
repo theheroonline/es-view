@@ -10,9 +10,7 @@ interface MysqlSidebarSectionProps {
   selectedSidebarTables: string[];
   selectedDatabase?: string;
   selectedTable?: string;
-  sidebarExpandedTablesDatabases: string[];
   tablesByDb: Record<string, string[]>;
-  tablesLabel: string;
   emptyText: string;
   noTablesText: string;
   createConnectionTitle: string;
@@ -21,7 +19,6 @@ interface MysqlSidebarSectionProps {
   onToggle: () => void;
   onCreateConnection: () => void;
   onRefresh: () => void;
-  onSelectDatabase: (database: string) => void;
   onOpenDatabase: (database: string) => void;
   onDatabaseContextMenu: (event: MouseEvent<HTMLDivElement>, database: string) => void;
   onToggleSidebarTables: (database: string) => void;
@@ -41,9 +38,7 @@ export default function MysqlSidebarSection({
   selectedSidebarTables,
   selectedDatabase,
   selectedTable,
-  sidebarExpandedTablesDatabases: _sidebarExpandedTablesDatabases,
   tablesByDb,
-  tablesLabel: _tablesLabel,
   emptyText,
   noTablesText,
   createConnectionTitle,
@@ -52,7 +47,6 @@ export default function MysqlSidebarSection({
   onToggle,
   onCreateConnection,
   onRefresh,
-  onSelectDatabase: _onSelectDatabase,
   onOpenDatabase,
   onDatabaseContextMenu,
   onToggleSidebarTables,

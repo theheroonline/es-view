@@ -191,9 +191,7 @@ function AppLayout() {
         selectedSidebarTables={mysql.selectedSidebarTables}
         selectedDatabase={mysql.selectedDatabase}
         selectedTable={mysql.selectedTable}
-        sidebarExpandedTablesDatabases={mysql.sidebarExpandedTablesDatabases}
         tablesByDb={mysql.tablesByDb}
-        tablesLabel={t("mysql.tableManager.tables")}
         emptyText={t("connections.noConnections")}
         noTablesText={t("mysql.data.noTables")}
         createConnectionTitle={t("connections.createConnection")}
@@ -206,7 +204,6 @@ function AppLayout() {
         onRefresh={() => {
           void mysql.refreshMysqlDatabases();
         }}
-        onSelectDatabase={mysql.handleMysqlSelectDatabase}
         onOpenDatabase={(database) => {
           void mysql.handleMysqlOpenDatabase(database);
         }}
