@@ -299,6 +299,7 @@ function ExcelLikeTableInner({
 
                 const rowIndex = row.original._rowIndex;
                 const isRowSelected =
+                  selectedRowIndex !== null &&
                   selectedRowIndex === rowIndex &&
                   columns.length > 0 &&
                   columns.every((_, index) => selectedCellKeySet.has(`${rowIndex}:${index}`));

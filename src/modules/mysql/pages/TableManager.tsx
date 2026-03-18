@@ -898,17 +898,19 @@ export default function MysqlTableManager() {
         return;
       }
       setSelectedCells(nextCells);
+      // 不更新 selectedRowIndex，保持多选状态不触发行选中样式
     } else if (event.ctrlKey || event.metaKey) {
       setSelectedCells((prev) => prev.some((cell) => cell.key === currentCell.key)
         ? prev.filter((cell) => cell.key !== currentCell.key)
         : [...prev, currentCell]);
       setSelectionAnchor({ rowIndex, columnIndex });
+      // 不更新 selectedRowIndex，保持多选状态不触发行选中样式
     } else {
       setSelectedCells([currentCell]);
       setSelectionAnchor({ rowIndex, columnIndex });
+      // 只在普通单选时更新 selectedRowIndex
+      setSelectedRowIndex((prev) => (prev === rowIndex ? prev : rowIndex));
     }
-
-    setSelectedRowIndex((prev) => (prev === rowIndex ? prev : rowIndex));
   };
 
   const appendConditionToRootTree = (tree: FilterGroupDraft | null, condition: FilterConditionDraft) => {

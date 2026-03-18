@@ -1087,9 +1087,9 @@ export default function DataBrowser() {
             <p className="muted" style={{ textAlign: 'center', margin: '20px 0' }}>{t('common.noData')}</p>
           </div>
         ) : (
-          <div>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             {viewMode === "table" && (
-              <div>
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <div className="table-wrapper">
                   <table className="table">
                   <thead>
@@ -1166,7 +1166,7 @@ export default function DataBrowser() {
             )}
 
             {viewMode === "json" && (
-              <div>
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <div style={{
                   padding: '12px 16px',
                   background: '#eff6ff',
