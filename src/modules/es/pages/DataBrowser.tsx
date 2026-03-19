@@ -70,6 +70,9 @@ export default function DataBrowser() {
   const [editJson, setEditJson] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
 
+  // Delete Confirmation State
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ docIndex: string; docId: string } | null>(null);
+
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
@@ -374,9 +377,12 @@ export default function DataBrowser() {
 
 
 
-  const handleDeleteDoc = async (docIndex: string, docId: string) => {
+  const handleDeleteDoc = (docIndex: string, docId: string) => {
+    setDeleteConfirmDialog({ docIndex, docId });
+  };
+
+  const confirmDeleteDoc = async (docIndex: string, docId: string) => {
       if (!activeConnection) return;
-      if (!confirm(t('dataBrowser.deleteConfirm', { docId }))) return;
       try {
           setLoading(true);
           setError("");
@@ -398,6 +404,7 @@ export default function DataBrowser() {
           setError(t('dataBrowser.deleteFailed') + (e instanceof Error ? e.message : String(e)));
       } finally {
           setLoading(false);
+          setDeleteConfirmDialog(null);
       }
   };
 
@@ -1237,7 +1244,7 @@ export default function DataBrowser() {
 
       {/* Context Menu */}
       {contextMenu.visible && (
-        <div 
+        <div
           ref={contextMenuRef}
           className="context-menu"
           style={{
@@ -1314,7 +1321,7 @@ export default function DataBrowser() {
           {contextMenu.field && contextMenu.field !== '_id' && (
             <>
               <div style={{ height: '1px', background: '#e2e8f0', margin: '4px 0' }} />
-              
+
               <div
                 className="context-menu-item context-menu-submenu"
                 style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
@@ -1389,6 +1396,36 @@ export default function DataBrowser() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmDialog && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirmDialog(null)}>
+          <div className="card modal-card modal-card-sm modal-card-scroll" onClick={(event) => event.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{t('dataBrowser.deleteConfirm', { docId: deleteConfirmDialog.docId })}</h3>
+              <button className="btn btn-sm btn-ghost" onClick={() => setDeleteConfirmDialog(null)}>
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body">
+              <p style={{ margin: 0, color: '#ef4444', fontSize: '14px' }}>
+                {t('dataBrowser.deleteWarning', { docId: deleteConfirmDialog.docId })}
+              </p>
+            </div>
+            <div className="modal-card-footer">
+              <button className="btn btn-sm btn-ghost" onClick={() => setDeleteConfirmDialog(null)}>
+                {t("common.cancel")}
+              </button>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => void confirmDeleteDoc(deleteConfirmDialog.docIndex, deleteConfirmDialog.docId)}
+              >
+                {t("common.delete")}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

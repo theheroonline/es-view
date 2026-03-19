@@ -839,6 +839,35 @@ function AppLayout() {
         </div>
       ) : null}
 
+      {mysql.dropDatabaseConfirmDialog ? (
+        <div className="modal-overlay" onClick={() => mysql.setDropDatabaseConfirmDialog(null)}>
+          <div className="card modal-card modal-card-sm modal-card-scroll" onClick={(event) => event.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{t("mysql.tableManager.dropDatabaseConfirm", { name: mysql.dropDatabaseConfirmDialog.database })}</h3>
+              <button className="btn btn-sm btn-ghost" onClick={() => mysql.setDropDatabaseConfirmDialog(null)}>
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body">
+              <p style={{ margin: 0, color: '#ef4444', fontSize: '14px' }}>
+                {t("mysql.tableManager.dropDatabaseWarning", { name: mysql.dropDatabaseConfirmDialog.database })}
+              </p>
+            </div>
+            <div className="modal-card-footer">
+              <button className="btn btn-sm btn-ghost" onClick={() => mysql.setDropDatabaseConfirmDialog(null)}>
+                {t("common.cancel")}
+              </button>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => void mysql.confirmDropMysqlDatabase(mysql.dropDatabaseConfirmDialog!.database)}
+              >
+                {t("common.delete")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {mysql.tableTransferTask ? (
         <div className="modal-overlay" onClick={() => {
           if (mysql.tableTransferTask?.status === "completed") {

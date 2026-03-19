@@ -1,5 +1,4 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
@@ -74,13 +73,16 @@ interface TableTransferTaskState {
   items: TableTransferTaskItem[];
 }
 
+interface DropDatabaseConfirmDialogState {
+  database: string;
+}
+
 export function useMysqlSidebarWorkspace({
   activeConnectionId,
   getProfileById,
   ensureMysqlConnectionReady,
   setConnectionActionError,
 }: UseMysqlSidebarWorkspaceOptions) {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -111,6 +113,7 @@ export function useMysqlSidebarWorkspace({
   const [databasePropertiesDialog, setDatabasePropertiesDialog] = useState<DatabasePropertiesDialogState | null>(null);
   const [tableTransferDialog, setTableTransferDialog] = useState<TableTransferDialogState | null>(null);
   const [tableTransferTask, setTableTransferTask] = useState<TableTransferTaskState | null>(null);
+  const [dropDatabaseConfirmDialog, setDropDatabaseConfirmDialog] = useState<DropDatabaseConfirmDialogState | null>(null);
 
   const closeMysqlMenus = () => {
     setMysqlDatabaseContextMenu(null);
@@ -434,11 +437,13 @@ export function useMysqlSidebarWorkspace({
     }
   };
 
-  const handleDropMysqlDatabase = async (database: string) => {
+  const handleDropMysqlDatabase = (database: string) => {
+    setDropDatabaseConfirmDialog({ database });
+    setMysqlDatabaseContextMenu(null);
+  };
+
+  const confirmDropMysqlDatabase = async (database: string) => {
     if (!activeConnectionId) {
-      return;
-    }
-    if (!window.confirm(t("mysql.tableManager.dropDatabaseConfirm", { name: database }))) {
       return;
     }
 
@@ -482,7 +487,7 @@ export function useMysqlSidebarWorkspace({
       });
       setConnectionActionError(error instanceof Error ? error.message : String(error));
     } finally {
-      setMysqlDatabaseContextMenu(null);
+      setDropDatabaseConfirmDialog(null);
     }
   };
 
@@ -744,6 +749,7 @@ export function useMysqlSidebarWorkspace({
     databasePropertiesDialog,
     tableTransferDialog,
     tableTransferTask,
+    dropDatabaseConfirmDialog,
     closeMysqlMenus,
     refreshMysqlDatabases,
     handleMysqlSelectDatabase,
@@ -764,6 +770,7 @@ export function useMysqlSidebarWorkspace({
     handleCreateMysqlDatabase,
     handleConfirmCreateMysqlDatabase,
     handleDropMysqlDatabase,
+    confirmDropMysqlDatabase,
     handleMysqlExportDatabase,
     handleMysqlImportDatabase,
     handleViewDatabaseProperties,
@@ -777,6 +784,7 @@ export function useMysqlSidebarWorkspace({
     setDatabasePropertiesDialog,
     setTableTransferDialog,
     setTableTransferTask,
+    setDropDatabaseConfirmDialog,
     setMysqlDatabaseContextMenu,
     setMysqlTableContextMenu,
     setMysqlTabContextMenu,
