@@ -5,10 +5,6 @@ import { useConnectionWorkspace } from "./hooks/useConnectionWorkspace";
 import { useFloatingMenuDismiss } from "./hooks/useFloatingMenuDismiss";
 import { FloatingMenu, FloatingMenuDivider } from "./layout/FloatingMenu";
 import WorkspaceChrome from "./layout/WorkspaceChrome";
-/* ERROR LOG HIDDEN - DO NOT DELETE
-import ErrorLogModal from "./components/ErrorLogModal";
-import { useErrorLog } from "./lib/errorLog";
-*/
 import type { ConnectionProfile } from "./lib/types";
 import EsSidebarSection from "./modules/es/components/EsSidebarSection";
 import EsWorkspaceTabs from "./modules/es/components/EsWorkspaceTabs";
