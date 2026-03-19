@@ -898,13 +898,15 @@ export default function MysqlTableManager() {
         return;
       }
       setSelectedCells(nextCells);
-      // 不更新 selectedRowIndex，保持多选状态不触发行选中样式
+      // 清除 selectedRowIndex，避免多选时整行高亮
+      setSelectedRowIndex(null);
     } else if (event.ctrlKey || event.metaKey) {
       setSelectedCells((prev) => prev.some((cell) => cell.key === currentCell.key)
         ? prev.filter((cell) => cell.key !== currentCell.key)
         : [...prev, currentCell]);
       setSelectionAnchor({ rowIndex, columnIndex });
-      // 不更新 selectedRowIndex，保持多选状态不触发行选中样式
+      // 清除 selectedRowIndex，避免多选时整行高亮
+      setSelectedRowIndex(null);
     } else {
       setSelectedCells([currentCell]);
       setSelectionAnchor({ rowIndex, columnIndex });

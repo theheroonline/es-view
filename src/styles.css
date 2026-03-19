@@ -1918,6 +1918,11 @@ body {
   font-size: 12px;
   background: white;
   table-layout: fixed;  /* 固定表格布局，防止内容改变宽度 */
+  /* MySQL 表格禁用文本选择，避免选中文字时出现渲染闪烁 */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .excel-table-head {
@@ -1975,12 +1980,12 @@ body {
 }
 
 .excel-table-row-selected {
-  background-color: #e6f0ff;
+  /* 行选中样式已移除 - 只通过单元格高亮来显示选中状态 */
 }
 
 .excel-table-cell {
   padding: 0 12px;
-  border-right: 1px solid #edf2f7;
+  border-right: 1px solid #d0d7e0;
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2018,7 +2023,7 @@ body {
 
 .excel-table-cell-selected {
   background-color: #dcebff;
-  box-shadow: inset 0 0 0 1px #5b9cff;
+  border: 1px solid #5b9cff;
 }
 
 .excel-table-cell-actions {
