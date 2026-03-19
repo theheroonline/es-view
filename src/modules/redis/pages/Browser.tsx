@@ -374,12 +374,6 @@ export default function RedisBrowserPage() {
   return (
     <div className="redis-browser-grid">
       <div className="card redis-browser-panel">
-        <div className="card-header redis-toolbar">
-          <div>
-            <h3 className="card-title">{t("redis.browser.title")}</h3>
-          </div>
-        </div>
-
         <div style={{ padding: "12px 16px", display: "grid", gap: "12px", flexShrink: 0 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="module-toolbar-field">
@@ -406,16 +400,16 @@ export default function RedisBrowserPage() {
             <input className="form-control" value={keyPattern} onChange={(event) => setKeyPattern(event.target.value)} placeholder={t("redis.browser.patternPlaceholder")} />
           </div>
           <div className="redis-toolbar-button-grid">
-            <button className="btn btn-primary" onClick={openCreateEditor}>
-              + {t("redis.browser.newKey")}
+            <button className="btn btn-primary" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px" }} onClick={openCreateEditor}>
+              {t("common.new")}
             </button>
-            <button className="btn btn-ghost text-danger" onClick={() => openDeleteModal(selectedKeyNames)} disabled={selectedKeyNames.length === 0}>
+            <button className="btn btn-ghost" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px", backgroundColor: "#fee2e2" }} onClick={() => openDeleteModal(selectedKeyNames)} disabled={selectedKeyNames.length === 0}>
               {t("redis.browser.deleteSelected", { count: selectedKeyNames.length })}
             </button>
-            <button className="btn btn-primary" onClick={() => void loadKeys(true)} disabled={loadingKeys}>
+            <button className="btn btn-primary" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px" }} onClick={() => void loadKeys(true)} disabled={loadingKeys}>
               {loadingKeys ? t("common.loading") : t("common.search")}
             </button>
-            <button className="btn btn-ghost" onClick={() => void loadDatabases()} disabled={loadingDatabases}>
+            <button className="btn btn-ghost" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px", backgroundColor: "#f0f0f0" }} onClick={() => void loadDatabases()} disabled={loadingDatabases}>
               {t("common.refresh")}
             </button>
           </div>
@@ -423,19 +417,13 @@ export default function RedisBrowserPage() {
 
         {error && <div className="text-danger" style={{ marginBottom: "12px" }}>{error}</div>}
 
-        <div className="redis-selection-bar">
-          <label className="redis-checkbox-label">
-            <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} />
-            <span>{t("redis.browser.selectVisible")}</span>
-          </label>
-          <div className="muted">{t("redis.browser.selectedCount", { count: selectedKeyNames.length })}</div>
-        </div>
-
         <div className="table-wrapper redis-key-table-wrapper">
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: "44px" }} />
+                <th style={{ width: "44px" }}>
+                  <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} />
+                </th>
                 <th>{t("redis.browser.key")}</th>
                 <th>{t("redis.browser.type")}</th>
                 <th>{t("redis.browser.ttl")}</th>

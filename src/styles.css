@@ -631,7 +631,8 @@ body {
   display: grid;
   grid-template-columns: minmax(280px, 38%) minmax(320px, 1fr);
   gap: 12px;
-  min-height: calc(100vh - var(--chrome-height) - 108px);
+  height: 100%;
+  min-height: 0;
 }
 
 .redis-browser-panel {
