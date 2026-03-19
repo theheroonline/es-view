@@ -149,6 +149,21 @@ export default function MysqlTableManager() {
   const [columnEditLoading, setColumnEditLoading] = useState(false);
   const [columnEditError, setColumnEditError] = useState("");
 
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDangerous?: boolean;
+  }>({
+    open: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    isDangerous: false
+  });
+
   // Index management state
   const [indexModalOpen, setIndexModalOpen] = useState(false);
   const [indexModalMode, setIndexModalMode] = useState<"view" | "create" | "edit">("view");
@@ -461,21 +476,31 @@ export default function MysqlTableManager() {
 
   const handleDropIndex = async (indexName: string) => {
     if (!selectedTableInfo || !connectionId) return;
-    if (!confirm(`Are you sure you want to drop index "${indexName}"?`)) return;
-    try {
-      setIndexLoading(true);
-      setIndexError("");
-      await mysqlDropIndex(connectionId, selectedTableInfo.database, selectedTableInfo.table, indexName);
-      await loadIndexes(selectedTableInfo.database, selectedTableInfo.table);
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.dropIndex",
-        message: `Failed to drop index`
-      });
-      setIndexError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIndexLoading(false);
-    }
+
+    const onConfirm = async () => {
+      try {
+        setIndexLoading(true);
+        setIndexError("");
+        await mysqlDropIndex(connectionId, selectedTableInfo.database, selectedTableInfo.table, indexName);
+        await loadIndexes(selectedTableInfo.database, selectedTableInfo.table);
+      } catch (err) {
+        logError(err, {
+          source: "mysqlTableManager.dropIndex",
+          message: `Failed to drop index`
+        });
+        setIndexError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIndexLoading(false);
+      }
+    };
+
+    setConfirmDialog({
+      open: true,
+      title: t("mysql.tableManager.dropIndex"),
+      message: t("mysql.tableManager.dropIndexConfirm", { index: `"${indexName}"` }),
+      isDangerous: true,
+      onConfirm
+    });
   };
 
   const openEditIndexModal = useCallback((index: IndexMeta) => {
@@ -1384,54 +1409,72 @@ export default function MysqlTableManager() {
 
   const handleDropTable = async (db: string, table: string) => {
     if (!connectionId) return;
-    if (!confirm(`Drop table \`${db}\`.\`${table}\`? This cannot be undone.`)) return;
 
-    try {
-      await mysqlQuery(connectionId, `DROP TABLE \`${db}\`.\`${table}\``);
-      setTablesByDb((prev) => ({
-        ...prev,
-        [db]: (prev[db] ?? []).filter((t) => t !== table)
-      }));
-      if (selectedTableInfo?.database === db && selectedTableInfo?.table === table) {
-        setSelectedTable(undefined);
-        setSelectedTableInfo(null);
-        setDataState(defaultDataState);
-      }
-      const targetKey = getMysqlOpenedTableKey(db, table);
-      const remainingOpenedTables = openedTables.filter((item) => getMysqlOpenedTableKey(item.database, item.table) !== targetKey);
-      setOpenedTables(remainingOpenedTables);
-      if (activeOpenedTableKey === targetKey) {
-        const nextActive = remainingOpenedTables[remainingOpenedTables.length - 1] ?? null;
-        setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableKey(nextActive.database, nextActive.table) : null);
-        if (location.pathname === "/mysql/table") {
-          await navigate(nextActive ? "/mysql/table" : "/mysql/tables");
+    const onConfirm = async () => {
+      try {
+        await mysqlQuery(connectionId, `DROP TABLE \`${db}\`.\`${table}\``);
+        setTablesByDb((prev) => ({
+          ...prev,
+          [db]: (prev[db] ?? []).filter((t) => t !== table)
+        }));
+        if (selectedTableInfo?.database === db && selectedTableInfo?.table === table) {
+          setSelectedTable(undefined);
+          setSelectedTableInfo(null);
+          setDataState(defaultDataState);
         }
+        const targetKey = getMysqlOpenedTableKey(db, table);
+        const remainingOpenedTables = openedTables.filter((item) => getMysqlOpenedTableKey(item.database, item.table) !== targetKey);
+        setOpenedTables(remainingOpenedTables);
+        if (activeOpenedTableKey === targetKey) {
+          const nextActive = remainingOpenedTables[remainingOpenedTables.length - 1] ?? null;
+          setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableKey(nextActive.database, nextActive.table) : null);
+          if (location.pathname === "/mysql/table") {
+            await navigate(nextActive ? "/mysql/table" : "/mysql/tables");
+          }
+        }
+      } catch (err) {
+        logError(err, {
+          source: "mysqlTableManager.dropTable",
+          message: `Failed to drop table ${db}.${table}`
+        });
+        setError(err instanceof Error ? err.message : String(err));
       }
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.dropTable",
-        message: `Failed to drop table ${db}.${table}`
-      });
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    };
+
+    setConfirmDialog({
+      open: true,
+      title: t("mysql.tableManager.dropTable"),
+      message: t("mysql.tableManager.dropTableConfirm", { table: `\`${db}\`.\`${table}\`` }),
+      isDangerous: true,
+      onConfirm
+    });
   };
 
   const handleTruncateTable = async (db: string, table: string) => {
     if (!connectionId) return;
-    if (!confirm(`Truncate table \`${db}\`.\`${table}\`? All data will be deleted.`)) return;
 
-    try {
-      await mysqlQuery(connectionId, `TRUNCATE TABLE \`${db}\`.\`${table}\``);
-      if (selectedTableInfo?.database === db && selectedTableInfo?.table === table) {
-        await handleOpenTable(db, table, rightPanelTab);
+    const onConfirm = async () => {
+      try {
+        await mysqlQuery(connectionId, `TRUNCATE TABLE \`${db}\`.\`${table}\``);
+        if (selectedTableInfo?.database === db && selectedTableInfo?.table === table) {
+          await handleOpenTable(db, table, rightPanelTab);
+        }
+      } catch (err) {
+        logError(err, {
+          source: "mysqlTableManager.truncateTable",
+          message: `Failed to truncate table ${db}.${table}`
+        });
+        setError(err instanceof Error ? err.message : String(err));
       }
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.truncateTable",
-        message: `Failed to truncate table ${db}.${table}`
-      });
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    };
+
+    setConfirmDialog({
+      open: true,
+      title: t("mysql.tableManager.truncate"),
+      message: t("mysql.tableManager.truncateConfirm", { table: `\`${db}\`.\`${table}\`` }),
+      isDangerous: true,
+      onConfirm
+    });
   };
 
   const handleCopyTable = async (db: string, table: string) => {
@@ -1780,21 +1823,33 @@ export default function MysqlTableManager() {
 
   const handleDropColumn = async (column: ColumnMeta) => {
     if (!connectionId || !selectedTableInfo) return;
-    if (!confirm(`Drop column \`${column.field}\` from \`${selectedTableInfo.database}\`.\`${selectedTableInfo.table}\`?`)) return;
 
-    try {
-      await mysqlQuery(
-        connectionId,
-        `ALTER TABLE \`${selectedTableInfo.database}\`.\`${selectedTableInfo.table}\` DROP COLUMN \`${column.field}\``
-      );
-      await refreshSelectedTableInfo();
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.dropColumn",
-        message: `Failed to drop column ${column.field}`
-      });
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    const onConfirm = async () => {
+      try {
+        await mysqlQuery(
+          connectionId,
+          `ALTER TABLE \`${selectedTableInfo.database}\`.\`${selectedTableInfo.table}\` DROP COLUMN \`${column.field}\``
+        );
+        await refreshSelectedTableInfo();
+      } catch (err) {
+        logError(err, {
+          source: "mysqlTableManager.dropColumn",
+          message: `Failed to drop column ${column.field}`
+        });
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    setConfirmDialog({
+      open: true,
+      title: t("mysql.tableManager.dropColumn"),
+      message: t("mysql.tableManager.dropColumnConfirm", {
+        column: `\`${column.field}\``,
+        table: `\`${selectedTableInfo.database}\`.\`${selectedTableInfo.table}\``
+      }),
+      isDangerous: true,
+      onConfirm
+    });
   };
 
   // ─── Render ───
@@ -2922,6 +2977,42 @@ export default function MysqlTableManager() {
             >
               {t("common.ok")}
             </button>
+          </div>
+        </div>
+      )}
+
+      {confirmDialog.open && (
+        <div className="modal-overlay" onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+          <div className="card modal-card modal-card-md" onClick={(e) => e.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{confirmDialog.title}</h3>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body">
+              <p>{confirmDialog.message}</p>
+            </div>
+            <div className="modal-card-footer">
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                className={`btn btn-sm ${confirmDialog.isDangerous ? "btn-danger" : "btn-primary"}`}
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog({ ...confirmDialog, open: false });
+                }}
+              >
+                {t("common.confirm")}
+              </button>
+            </div>
           </div>
         </div>
       )}
