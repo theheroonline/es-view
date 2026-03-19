@@ -47,6 +47,12 @@ interface CreateDatabaseDialogState {
   collation: string;
 }
 
+interface DatabasePropertiesDialogState {
+  database: string;
+  charset: string;
+  collation: string;
+}
+
 interface TableTransferDialogState {
   sourceDatabase: string;
   sourceTables: string[];
@@ -102,6 +108,7 @@ export function useMysqlSidebarWorkspace({
   const [mysqlTableContextMenu, setMysqlTableContextMenu] = useState<TableMenuState | null>(null);
   const [mysqlTabContextMenu, setMysqlTabContextMenu] = useState<TabMenuState | null>(null);
   const [createDatabaseDialog, setCreateDatabaseDialog] = useState<CreateDatabaseDialogState | null>(null);
+  const [databasePropertiesDialog, setDatabasePropertiesDialog] = useState<DatabasePropertiesDialogState | null>(null);
   const [tableTransferDialog, setTableTransferDialog] = useState<TableTransferDialogState | null>(null);
   const [tableTransferTask, setTableTransferTask] = useState<TableTransferTaskState | null>(null);
 
@@ -521,6 +528,51 @@ export function useMysqlSidebarWorkspace({
     }
   };
 
+  const handleViewDatabaseProperties = async (database: string) => {
+    if (!activeConnectionId) {
+      return;
+    }
+
+    try {
+      // Query database info to get charset and collation
+      const result = await mysqlQuery(
+        activeConnectionId,
+        `SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${database}'`
+      );
+
+      let charset = MYSQL_CHARSET_OPTIONS[0]?.value ?? "utf8mb4";
+      let collation = getCharsetOption(charset).defaultCollation;
+
+      if (result.rows && result.rows.length > 0) {
+        const row = result.rows[0];
+        if (Array.isArray(row) && row.length >= 2) {
+          // DEFAULT_CHARACTER_SET_NAME is first column
+          if (row[0]) {
+            charset = String(row[0]);
+          }
+          // DEFAULT_COLLATION_NAME is second column
+          if (row[1]) {
+            collation = String(row[1]);
+          }
+        }
+      }
+
+      setDatabasePropertiesDialog({
+        database,
+        charset,
+        collation,
+      });
+    } catch (error) {
+      logError(error, {
+        source: "app.mysql.viewDatabaseProperties",
+        message: `Failed to load database properties for ${database}`,
+      });
+      setConnectionActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMysqlDatabaseContextMenu(null);
+    }
+  };
+
   const handleMysqlExportTable = async (database: string, table: string, includeData: boolean) => {
     if (!activeConnectionId) {
       return;
@@ -689,6 +741,7 @@ export function useMysqlSidebarWorkspace({
     mysqlTableContextMenu,
     mysqlTabContextMenu,
     createDatabaseDialog,
+    databasePropertiesDialog,
     tableTransferDialog,
     tableTransferTask,
     closeMysqlMenus,
@@ -713,6 +766,7 @@ export function useMysqlSidebarWorkspace({
     handleDropMysqlDatabase,
     handleMysqlExportDatabase,
     handleMysqlImportDatabase,
+    handleViewDatabaseProperties,
     handleMysqlExportTable,
     handleMysqlImportTable,
     handleMysqlCreateTable,
@@ -720,6 +774,7 @@ export function useMysqlSidebarWorkspace({
     handleSidebarDatabaseDrop,
     handleConfirmTableTransfer,
     setCreateDatabaseDialog,
+    setDatabasePropertiesDialog,
     setTableTransferDialog,
     setTableTransferTask,
     setMysqlDatabaseContextMenu,

@@ -479,6 +479,38 @@ function AppLayout() {
 
       {mysql.mysqlDatabaseContextMenu ? (
         <FloatingMenu x={mysql.mysqlDatabaseContextMenu.x} y={mysql.mysqlDatabaseContextMenu.y} minWidth={148}>
+          {mysql.expandedSidebarDatabases.includes(mysql.mysqlDatabaseContextMenu.database) ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              style={{ width: "100%", justifyContent: "flex-start" }}
+              onClick={async () => {
+                const database = mysql.mysqlDatabaseContextMenu?.database;
+                mysql.setMysqlDatabaseContextMenu(null);
+                if (database) {
+                  await mysql.handleMysqlCloseDatabase(database);
+                }
+              }}
+            >
+              {t("mysql.tableManager.closeDatabase")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              style={{ width: "100%", justifyContent: "flex-start" }}
+              onClick={async () => {
+                const database = mysql.mysqlDatabaseContextMenu?.database;
+                mysql.setMysqlDatabaseContextMenu(null);
+                if (database) {
+                  await mysql.handleMysqlOpenDatabase(database);
+                }
+              }}
+            >
+              {t("mysql.tableManager.openDatabase")}
+            </button>
+          )}
+          <FloatingMenuDivider />
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -520,35 +552,15 @@ function AppLayout() {
           >
             {t("mysql.tableManager.exportStructureAndData")}
           </button>
-          <FloatingMenuDivider />
           <button
             type="button"
             className="btn btn-sm btn-ghost"
             style={{ width: "100%", justifyContent: "flex-start" }}
-            onClick={async () => {
-              const database = mysql.mysqlDatabaseContextMenu?.database;
-              mysql.setMysqlDatabaseContextMenu(null);
-              if (database) {
-                await mysql.handleMysqlOpenDatabase(database);
-              }
+            onClick={() => {
+              mysql.handleViewDatabaseProperties(mysql.mysqlDatabaseContextMenu!.database);
             }}
           >
-            {t("mysql.tableManager.openDatabase")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
-            disabled={!mysql.expandedSidebarDatabases.includes(mysql.mysqlDatabaseContextMenu.database)}
-            onClick={async () => {
-              const database = mysql.mysqlDatabaseContextMenu?.database;
-              mysql.setMysqlDatabaseContextMenu(null);
-              if (database) {
-                await mysql.handleMysqlCloseDatabase(database);
-              }
-            }}
-          >
-            {t("mysql.tableManager.closeDatabase")}
+            {t("mysql.tableManager.viewDatabaseProperties")}
           </button>
           <FloatingMenuDivider />
           <button
@@ -766,6 +778,62 @@ function AppLayout() {
                   {t("mysql.tableManager.copyStructureAndData")}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {mysql.databasePropertiesDialog ? (
+        <div className="modal-overlay" onClick={() => mysql.setDatabasePropertiesDialog(null)}>
+          <div className="card modal-card modal-card-md modal-card-scroll" onClick={(event) => event.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{t("mysql.tableManager.viewDatabaseProperties")}</h3>
+              <button className="btn btn-sm btn-ghost" onClick={() => mysql.setDatabasePropertiesDialog(null)}>
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body modal-card-grid">
+              <div>
+                <label>{t("mysql.tableManager.databaseName")}</label>
+                <input
+                  className="form-control"
+                  value={mysql.databasePropertiesDialog.database}
+                  disabled
+                />
+              </div>
+              <div>
+                <label>{t("mysql.tableManager.databaseCharset")}</label>
+                <select
+                  className="form-control"
+                  value={mysql.databasePropertiesDialog.charset}
+                  disabled
+                >
+                  {MYSQL_CHARSET_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label>{t("mysql.tableManager.databaseCollation")}</label>
+                <select
+                  className="form-control"
+                  value={mysql.databasePropertiesDialog.collation}
+                  disabled
+                >
+                  {getCharsetOption(mysql.databasePropertiesDialog.charset).collations.map((collation) => (
+                    <option key={collation} value={collation}>
+                      {collation}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-card-footer">
+              <button className="btn btn-sm btn-primary" onClick={() => mysql.setDatabasePropertiesDialog(null)}>
+                {t("common.close")}
+              </button>
             </div>
           </div>
         </div>
