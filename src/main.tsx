@@ -5,10 +5,11 @@ import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { waitForWails } from "./lib/wailsapi";
 import "./i18n/config";
+/* ERROR LOG DISABLED - DO NOT DELETE
 import { registerGlobalErrorLoggers } from "./lib/errorLog";
-import "./styles.css";
-
 registerGlobalErrorLoggers();
+*/
+import "./styles.css";
 
 // Wait for Wails to be ready before mounting React
 waitForWails().then(() => {

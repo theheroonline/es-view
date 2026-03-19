@@ -1,12 +1,14 @@
 import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import ErrorLogModal from "./components/ErrorLogModal";
 import { useConnectionWorkspace } from "./hooks/useConnectionWorkspace";
 import { useFloatingMenuDismiss } from "./hooks/useFloatingMenuDismiss";
 import { FloatingMenu, FloatingMenuDivider } from "./layout/FloatingMenu";
 import WorkspaceChrome from "./layout/WorkspaceChrome";
+/* ERROR LOG HIDDEN - DO NOT DELETE
+import ErrorLogModal from "./components/ErrorLogModal";
 import { useErrorLog } from "./lib/errorLog";
+*/
 import type { ConnectionProfile } from "./lib/types";
 import EsSidebarSection from "./modules/es/components/EsSidebarSection";
 import EsWorkspaceTabs from "./modules/es/components/EsWorkspaceTabs";
@@ -53,7 +55,9 @@ function App() {
 
 function AppLayout() {
   const { t, i18n } = useTranslation();
+  /* ERROR LOG DISABLED - DO NOT DELETE
   const { count: errorLogCount } = useErrorLog();
+  */
   const location = useLocation();
   const connection = useConnectionWorkspace();
   const mysql = useMysqlSidebarWorkspace({
@@ -66,7 +70,9 @@ function AppLayout() {
   const [esExpanded, setEsExpanded] = useState(true);
   const [mysqlExpanded, setMysqlExpanded] = useState(true);
   const [redisExpanded, setRedisExpanded] = useState(true);
+  /* ERROR LOG HIDDEN - DO NOT DELETE
   const [isErrorLogOpen, setIsErrorLogOpen] = useState(false);
+  */
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(266);
 
@@ -257,6 +263,7 @@ function AppLayout() {
       >
         {i18n.language === "zh" ? "EN" : "中"}
       </button>
+      {/* ERROR LOG BUTTON HIDDEN - DO NOT DELETE
       <button
         type="button"
         className="mdb-sidebar-footer-button"
@@ -267,6 +274,7 @@ function AppLayout() {
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("errorLog.button")}</span>
         <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
       </button>
+      */}
     </div>
   );
 
@@ -855,7 +863,7 @@ function AppLayout() {
         </div>
       ) : null}
 
-      {isErrorLogOpen ? <ErrorLogModal open={isErrorLogOpen} onClose={() => setIsErrorLogOpen(false)} /> : null}
+      {/* ERROR LOG MODAL HIDDEN - DO NOT DELETE */}
     </>
   );
 }

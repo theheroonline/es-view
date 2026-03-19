@@ -153,6 +153,9 @@ export function logError(error: unknown, options: LogErrorOptions) {
   return entry;
 }
 
+/* ERROR LOG SYSTEM DISABLED - DO NOT DELETE
+   To re-enable, uncomment this function and call registerGlobalErrorLoggers() in src/main.tsx
+
 let globalLoggersRegistered = false;
 
 export function registerGlobalErrorLoggers() {
@@ -192,6 +195,12 @@ export function registerGlobalErrorLoggers() {
     window.removeEventListener("error", handleWindowError);
     window.removeEventListener("unhandledrejection", handleUnhandledRejection);
   };
+}
+*/
+
+// Stub function to maintain API compatibility
+export function registerGlobalErrorLoggers() {
+  return () => undefined;
 }
 
 export function useErrorLog() {
