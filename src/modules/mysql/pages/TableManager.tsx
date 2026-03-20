@@ -844,11 +844,6 @@ export default function MysqlTableManager() {
     }
   }, []);
 
-  const getRowObject = (rowIndex: number) => {
-    const row = dataState.rows[rowIndex] ?? [];
-    return Object.fromEntries(dataState.columns.map((col, index) => [col, row[index]]));
-  };
-
   const visibleDataColumns = useMemo(
     () => {
       const preferred = activeOpenedTable?.visibleColumns;
@@ -866,14 +861,6 @@ export default function MysqlTableManager() {
     if (typeof value === "number" || typeof value === "bigint") return String(value);
     if (typeof value === "boolean") return value ? "1" : "0";
     return escapeSqlLiteral(String(value));
-  };
-
-  const buildInsertSql = (rowIndex: number) => {
-    if (!selectedTableInfo) return "";
-    const row = dataState.rows[rowIndex] ?? [];
-    const columns = dataState.columns.map((column) => escapeSqlIdentifier(column)).join(", ");
-    const values = row.map((value) => formatSqlValue(value)).join(", ");
-    return `INSERT INTO ${escapeSqlIdentifier(selectedTableInfo.database)}.${escapeSqlIdentifier(selectedTableInfo.table)} (${columns}) VALUES (${values});`;
   };
 
   const buildSelectedCells = (start: { rowIndex: number; columnIndex: number }, end: { rowIndex: number; columnIndex: number }) => {
@@ -1197,29 +1184,79 @@ export default function MysqlTableManager() {
 
   // ─── Context menu handlers (useCallback 包裹以避免闪烁) ───
 
-  const handleContextMenuCopyCellValue = useCallback(() => {
-    if (!rowContextMenu) return;
-    void copyToClipboard(rowContextMenu.value === null ? "NULL" : String(rowContextMenu.value));
-    setRowContextMenu(null);
-  }, [rowContextMenu]);
-
-  const handleContextMenuCopySqlValue = useCallback(() => {
-    if (!rowContextMenu) return;
-    void copyToClipboard(formatSqlValue(rowContextMenu.value));
-    setRowContextMenu(null);
-  }, [rowContextMenu]);
-
   const handleContextMenuCopyRow = useCallback(() => {
-    if (!rowContextMenu) return;
-    void copyToClipboard(JSON.stringify(getRowObject(rowContextMenu.rowIndex), null, 2));
+    if (selectedCells.length === 0) return;
+
+    // Get all unique rows from selected cells
+    const selectedRowIndexes = Array.from(new Set(selectedCells.map(cell => cell.rowIndex)));
+
+    const rows = selectedRowIndexes.map(rowIndex => {
+      const row = dataState.rows[rowIndex] ?? [];
+      return Object.fromEntries(dataState.columns.map((col, index) => [col, row[index]]));
+    });
+    void copyToClipboard(JSON.stringify(rows, null, 2));
     setRowContextMenu(null);
-  }, [rowContextMenu]);
+  }, [selectedCells, dataState]);
 
   const handleContextMenuCopyInsert = useCallback(() => {
-    if (!rowContextMenu) return;
-    void copyToClipboard(buildInsertSql(rowContextMenu.rowIndex));
+    if (!selectedTableInfo || selectedCells.length === 0) return;
+
+    // Get all unique rows from selected cells
+    const selectedRowIndexes = Array.from(new Set(selectedCells.map(cell => cell.rowIndex)));
+
+    const sqlStatements = selectedRowIndexes.map(rowIndex => {
+      const row = dataState.rows[rowIndex] ?? [];
+      const columns = dataState.columns.map((column) => escapeSqlIdentifier(column)).join(", ");
+      const values = row.map((value) => formatSqlValue(value)).join(", ");
+      return `INSERT INTO ${escapeSqlIdentifier(selectedTableInfo.database)}.${escapeSqlIdentifier(selectedTableInfo.table)} (${columns}) VALUES (${values});`;
+    });
+
+    void copyToClipboard(sqlStatements.join("\n"));
     setRowContextMenu(null);
-  }, [rowContextMenu]);
+  }, [selectedCells, dataState, selectedTableInfo, escapeSqlIdentifier, escapeSqlLiteral]);
+
+  const handleContextMenuCopyUpdate = useCallback(() => {
+    if (!selectedTableInfo || selectedCells.length === 0) return;
+
+    // Get all unique rows from selected cells
+    const selectedRowIndexes = Array.from(new Set(selectedCells.map(cell => cell.rowIndex)));
+
+    // Find primary key column(s) for WHERE clause
+    const primaryKeyColumns = selectedTableInfo.columns
+      ?.filter(col => col.key === "PRI")
+      .map(col => col.field) ?? [];
+
+    if (primaryKeyColumns.length === 0) {
+      window.alert(t("mysql.tableManager.noPrimaryKey"));
+      return;
+    }
+
+    const sqlStatements = selectedRowIndexes.map(rowIndex => {
+      const row = dataState.rows[rowIndex] ?? [];
+
+      // Build SET clause
+      const setClause = dataState.columns
+        .map((column, index) => {
+          const value = row[index];
+          return `${escapeSqlIdentifier(column)} = ${formatSqlValue(value)}`;
+        })
+        .join(", ");
+
+      // Build WHERE clause with primary key
+      const whereClause = primaryKeyColumns
+        .map(pkColumn => {
+          const pkIndex = dataState.columns.indexOf(pkColumn);
+          const pkValue = pkIndex >= 0 ? row[pkIndex] : null;
+          return `${escapeSqlIdentifier(pkColumn)} = ${formatSqlValue(pkValue)}`;
+        })
+        .join(" AND ");
+
+      return `UPDATE ${escapeSqlIdentifier(selectedTableInfo.database)}.${escapeSqlIdentifier(selectedTableInfo.table)} SET ${setClause} WHERE ${whereClause};`;
+    });
+
+    void copyToClipboard(sqlStatements.join("\n"));
+    setRowContextMenu(null);
+  }, [selectedCells, dataState, selectedTableInfo, escapeSqlIdentifier, escapeSqlLiteral, t]);
 
   const handleContextMenuFilterByValue = useCallback(() => {
     if (!rowContextMenu) return;
@@ -2292,30 +2329,26 @@ export default function MysqlTableManager() {
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
-            onClick={handleContextMenuCopyCellValue}
-          >
-            {t("mysql.tableManager.copyCellValue")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
-            onClick={handleContextMenuCopySqlValue}
-          >
-            {t("mysql.tableManager.copySqlValue")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost context-menu-button"
             onClick={handleContextMenuCopyRow}
+            disabled={selectedCells.length === 0}
           >
-            {t("dataBrowser.copyRow")}
+            {t("mysql.tableManager.copySelectedRows")} ({selectedCells.length > 0 ? new Set(selectedCells.map(c => c.rowIndex)).size : 0})
           </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost context-menu-button"
             onClick={handleContextMenuCopyInsert}
+            disabled={selectedCells.length === 0}
           >
-            {t("mysql.tableManager.copyInsert")}
+            {t("mysql.tableManager.copyAsInsertStatement")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost context-menu-button"
+            onClick={handleContextMenuCopyUpdate}
+            disabled={selectedCells.length === 0}
+          >
+            {t("mysql.tableManager.copyAsUpdateStatement")}
           </button>
           <div className="context-menu-separator" />
           <button

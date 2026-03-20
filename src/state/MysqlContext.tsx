@@ -50,6 +50,31 @@ export function getMysqlOpenedTableKey(database: string, table: string) {
   return `${database}::${table}`;
 }
 
+export interface MysqlQueryResult {
+  columns: string[];
+  rows: Array<Array<unknown>>;
+  affectedRows: number;
+  isResultSet: boolean;
+}
+
+export interface ExecutedStatementResult {
+  id: string;
+  sql: string;
+  effectiveSql: string;
+  mode: "execute" | "explain";
+  durationMs: number;
+  connectionName: string;
+  databaseUsed?: string;
+  result?: MysqlQueryResult;
+  explainResult?: MysqlQueryResult;
+  error?: string;
+}
+
+export interface SqlQueryState {
+  sql: string;
+  results: ExecutedStatementResult[];
+}
+
 interface MysqlContextValue {
   activeMysqlConnection: MysqlConnection | null;
   databases: string[];
@@ -67,6 +92,9 @@ interface MysqlContextValue {
   activeOpenedTableKey: string | null;
   setActiveOpenedTableKey: (key: string | null) => void;
   getMysqlConnectionById: (id: string) => MysqlConnection | null;
+  sqlQueryStates: Record<string, SqlQueryState>;
+  updateSqlQueryState: (connectionId: string, state: Partial<SqlQueryState>) => void;
+  getSqlQueryState: (connectionId: string) => SqlQueryState;
 }
 
 const MysqlContext = createContext<MysqlContextValue | null>(null);
@@ -80,6 +108,35 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
   const [selectedTable, setSelectedTable] = useState<string | undefined>();
   const [openedTables, setOpenedTables] = useState<MysqlOpenedTable[]>([]);
   const [activeOpenedTableKey, setActiveOpenedTableKey] = useState<string | null>(null);
+  const [sqlQueryStates, setSqlQueryStates] = useState<Record<string, SqlQueryState>>({});
+
+  const defaultSqlQueryState: SqlQueryState = {
+    sql: "",
+    results: []
+  };
+
+  const getSqlQueryState = useCallback(
+    (connectionId: string): SqlQueryState => {
+      return sqlQueryStates[connectionId] ?? defaultSqlQueryState;
+    },
+    [sqlQueryStates]
+  );
+
+  const updateSqlQueryState = useCallback(
+    (connectionId: string, updates: Partial<SqlQueryState>) => {
+      setSqlQueryStates((prev) => {
+        const current = prev[connectionId] ?? defaultSqlQueryState;
+        return {
+          ...prev,
+          [connectionId]: {
+            ...current,
+            ...updates
+          }
+        };
+      });
+    },
+    []
+  );
 
   const getMysqlConnectionById = useCallback(
     (id: string): MysqlConnection | null => {
@@ -125,6 +182,9 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
       activeOpenedTableKey,
       setActiveOpenedTableKey,
       getMysqlConnectionById,
+      sqlQueryStates,
+      updateSqlQueryState,
+      getSqlQueryState
     }),
     [
       activeMysqlConnection,
@@ -135,7 +195,10 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
       selectedTable,
       openedTables,
       activeOpenedTableKey,
-      getMysqlConnectionById
+      getMysqlConnectionById,
+      sqlQueryStates,
+      updateSqlQueryState,
+      getSqlQueryState
     ]
   );
 

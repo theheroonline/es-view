@@ -3,21 +3,8 @@ import { useTranslation } from "react-i18next";
 import { format as formatSql } from "sql-formatter";
 import { logError } from "../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
-import { useMysqlContext } from "../../../state/MysqlContext";
-import { mysqlConnect, mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery, type MysqlQueryResult } from "../services/client";
-
-interface ExecutedStatementResult {
-  id: string;
-  sql: string;
-  effectiveSql: string;
-  mode: "execute" | "explain";
-  durationMs: number;
-  connectionName: string;
-  databaseUsed?: string;
-  result?: MysqlQueryResult;
-  explainResult?: MysqlQueryResult;
-  error?: string;
-}
+import { useMysqlContext, type ExecutedStatementResult } from "../../../state/MysqlContext";
+import { mysqlConnect, mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/client";
 
 interface AutocompleteItem {
   label: string;
@@ -204,23 +191,22 @@ export default function MysqlSqlQuery() {
   const { t } = useTranslation();
   const { activeConnectionId, setActiveConnection, state } = useElasticsearchContext();
   const {
-    activeMysqlConnection,
     databases,
     setDatabases,
     selectedDatabase,
     setSelectedDatabase,
     tablesByDb,
     setTablesByDb,
-    getMysqlConnectionById
+    getMysqlConnectionById,
+    updateSqlQueryState,
+    getSqlQueryState
   } = useMysqlContext();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lineNumberRef = useRef<HTMLDivElement | null>(null);
   const autocompleteListRef = useRef<HTMLDivElement | null>(null);
   const autocompleteOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [sql, setSql] = useState("");
-  const [results, setResults] = useState<ExecutedStatementResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [metaLoading, setMetaLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [columnMap, setColumnMap] = useState<Record<string, string[]>>({});
@@ -233,8 +219,30 @@ export default function MysqlSqlQuery() {
   const [activeResultId, setActiveResultId] = useState<string | null>(null);
   const [resultVisibleColumns, setResultVisibleColumns] = useState<Record<string, string[]>>({});
   const [expandedRowsByResult, setExpandedRowsByResult] = useState<Record<string, Set<number>>>({});
+  const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
 
-  const connectionId = activeMysqlConnection?.id;
+  const connectionId = activeConnectionId;
+  const currentActiveMysqlConnection = getMysqlConnectionById(connectionId || "");
+
+  const currentSqlState = useMemo(
+    () => getSqlQueryState(connectionId || ""),
+    [connectionId, getSqlQueryState]
+  );
+  const sql = currentSqlState.sql;
+  const results = currentSqlState.results;
+
+  const setSql = (value: string) => {
+    if (connectionId) {
+      updateSqlQueryState(connectionId, { sql: value });
+    }
+  };
+
+  const setResults = (value: ExecutedStatementResult[]) => {
+    if (connectionId) {
+      updateSqlQueryState(connectionId, { results: value });
+    }
+  };
+
   const selectedText = sql.slice(selectionRange.start, selectionRange.end).trim();
   const mysqlProfiles = useMemo(
     () => state.profiles.filter((profile) => profile.engine === "mysql"),
@@ -306,10 +314,32 @@ export default function MysqlSqlQuery() {
   }, [editorErrorLine, sql]);
 
   useEffect(() => {
-    if (!autocompleteOpen) return;
+    if (!autocompleteOpen || !textareaRef.current) return;
+
+    // 计算自动补全弹窗的位置
+    const textarea = textareaRef.current;
+    const rect = textarea.getBoundingClientRect();
+
+    // 计算光标位置在文本中的行列
+    const textBeforeCursor = sql.slice(0, selectionRange.start);
+    const lines = textBeforeCursor.split('\n');
+    const currentLine = lines.length;
+    const currentCol = lines[lines.length - 1].length;
+
+    // 估算光标的像素位置
+    const lineHeight = 13 * 1.6; // 与编辑器的lineHeight一致
+    const charWidth = 7.8; // monospace字体的平均字符宽度
+    const cursorTop = rect.top + (currentLine - 1) * lineHeight + lineHeight;
+    const cursorLeft = rect.left + 46 + 12 + currentCol * charWidth; // 46px行号宽度 + padding
+
+    setAutocompletePosition({
+      top: cursorTop,
+      left: cursorLeft
+    });
+
     const activeOption = autocompleteOptionRefs.current[autocompleteIndex];
     activeOption?.scrollIntoView({ block: "nearest" });
-  }, [autocompleteIndex, autocompleteOpen]);
+  }, [autocompleteIndex, autocompleteOpen, sql, selectionRange, textareaRef]);
 
   const ensureDatabasesLoaded = async (targetConnectionId: string, preferredDatabase?: string) => {
     const dbs = await mysqlListDatabases(targetConnectionId);
@@ -370,8 +400,8 @@ export default function MysqlSqlQuery() {
     async function loadConnectionDatabases() {
       if (!connectionId || loadedConnectionId === connectionId) return;
       try {
-        await ensureConnectionDatabase(connectionId, activeMysqlConnection?.database || selectedDatabase);
-        await ensureDatabasesLoaded(connectionId, selectedDatabase ?? activeMysqlConnection?.database);
+        await ensureConnectionDatabase(connectionId, currentActiveMysqlConnection?.database || selectedDatabase);
+        await ensureDatabasesLoaded(connectionId, selectedDatabase ?? currentActiveMysqlConnection?.database);
         setLoadedConnectionId(connectionId);
         setColumnMap({});
       } catch (err) {
@@ -383,7 +413,7 @@ export default function MysqlSqlQuery() {
     }
 
     void loadConnectionDatabases();
-  }, [activeMysqlConnection?.database, connectionId, loadedConnectionId, selectedDatabase]);
+  }, [currentActiveMysqlConnection?.database, connectionId, loadedConnectionId, selectedDatabase]);
 
   useEffect(() => {
     async function loadTablesAndColumns() {
@@ -501,7 +531,7 @@ export default function MysqlSqlQuery() {
             effectiveSql: `-- switch default database to ${explicitUseDatabase}`,
             mode,
             durationMs: 0,
-            connectionName: activeMysqlConnection?.name ?? connectionId,
+            connectionName: currentActiveMysqlConnection?.name ?? connectionId,
             databaseUsed: explicitUseDatabase,
             result: {
               columns: [],
@@ -530,7 +560,7 @@ export default function MysqlSqlQuery() {
           effectiveSql,
           mode,
           durationMs,
-          connectionName: activeMysqlConnection?.name ?? connectionId,
+          connectionName: currentActiveMysqlConnection?.name ?? connectionId,
           databaseUsed,
           result: res
         });
@@ -547,7 +577,7 @@ export default function MysqlSqlQuery() {
           effectiveSql,
           mode,
           durationMs: 0,
-          connectionName: activeMysqlConnection?.name ?? connectionId,
+          connectionName: currentActiveMysqlConnection?.name ?? connectionId,
           databaseUsed,
           error: message
         });
@@ -574,7 +604,6 @@ export default function MysqlSqlQuery() {
     if (!nextConnection) return;
 
     setMetaLoading(true);
-    setError("");
     try {
       await ensureConnectionDatabase(nextConnectionId, nextConnection.database);
       await setActiveConnection(nextConnectionId);
@@ -587,7 +616,9 @@ export default function MysqlSqlQuery() {
         source: "mysqlSqlQuery.switchConnection",
         message: `Failed to switch MySQL connection to ${nextConnectionId}`
       });
-      setError(err instanceof Error ? err.message : String(err));
+      if (connectionId) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setMetaLoading(false);
     }
@@ -650,30 +681,28 @@ export default function MysqlSqlQuery() {
   };
 
   const handleCloseResult = (resultId: string) => {
-    setResults((prev) => {
-      const nextResults = prev.filter((item) => item.id !== resultId);
-      const removedIndex = prev.findIndex((item) => item.id === resultId);
-      setActiveResultId((currentActiveId) => {
-        if (currentActiveId !== resultId) {
-          return currentActiveId;
-        }
-        if (nextResults.length === 0) {
-          return null;
-        }
-        const nextIndex = Math.min(removedIndex, nextResults.length - 1);
-        return nextResults[nextIndex]?.id ?? null;
-      });
-      setResultVisibleColumns((prevColumns) => {
-        const nextColumns = { ...prevColumns };
-        delete nextColumns[resultId];
-        return nextColumns;
-      });
-      setExpandedRowsByResult((prevExpanded) => {
-        const nextExpanded = { ...prevExpanded };
-        delete nextExpanded[resultId];
-        return nextExpanded;
-      });
-      return nextResults;
+    const nextResults = results.filter((item) => item.id !== resultId);
+    const removedIndex = results.findIndex((item) => item.id === resultId);
+    setResults(nextResults);
+    setActiveResultId((currentActiveId) => {
+      if (currentActiveId !== resultId) {
+        return currentActiveId;
+      }
+      if (nextResults.length === 0) {
+        return null;
+      }
+      const nextIndex = Math.min(removedIndex, nextResults.length - 1);
+      return nextResults[nextIndex]?.id ?? null;
+    });
+    setResultVisibleColumns((prevColumns) => {
+      const nextColumns = { ...prevColumns };
+      delete nextColumns[resultId];
+      return nextColumns;
+    });
+    setExpandedRowsByResult((prevExpanded) => {
+      const nextExpanded = { ...prevExpanded };
+      delete nextExpanded[resultId];
+      return nextExpanded;
     });
   };
 
@@ -793,7 +822,7 @@ export default function MysqlSqlQuery() {
                 className="form-control"
                 style={{ width: "100%" }}
                 value={selectedDatabase ?? ""}
-                disabled={!activeMysqlConnection || metaLoading || loading || databases.length === 0}
+                disabled={!currentActiveMysqlConnection || metaLoading || loading || databases.length === 0}
                 onChange={(event) => void handleDatabaseSwitch(event.target.value)}
               >
                 {databases.length === 0 ? (
@@ -874,7 +903,7 @@ export default function MysqlSqlQuery() {
                 lineHeight: 1.6
               }}
               value={sql}
-              disabled={!activeMysqlConnection || metaLoading}
+              disabled={!currentActiveMysqlConnection || metaLoading}
               onChange={handleEditorChange}
               onClick={(e) => {
                 const target = e.currentTarget;
@@ -910,9 +939,9 @@ export default function MysqlSqlQuery() {
               <div
                 ref={autocompleteListRef}
                 style={{
-                  position: "absolute",
-                  left: "0",
-                  top: "calc(100% + 6px)",
+                  position: "fixed",
+                  top: `${autocompletePosition.top}px`,
+                  left: `${autocompletePosition.left}px`,
                   zIndex: 9999,
                   background: "#fff",
                   border: "1px solid #d1d5db",
