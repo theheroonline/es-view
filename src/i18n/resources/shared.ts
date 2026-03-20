@@ -139,7 +139,7 @@ export const sharedResources = {
       notConnected: "当前未连接，请点击左侧连接按钮",
       menu: "Menu",
       dataBrowser: "数据浏览",
-      sqlQuery: "简易查询",
+      sqlQuery: "简易操作",
       restConsole: "高级操作",
       indexManager: "索引管理",
       connections: "连接配置",

@@ -392,115 +392,99 @@ export default function SqlQuery() {
   return (
     <>
       <div className="page" style={{ flex: 1, minHeight: 0, height: "100%" }}>
-        <div className="card" style={{ flex: "0 0 auto" }}>
-        <div className="card-header">
-          <div>
-            <h3 className="card-title">{t('sqlQuery.simpleQuery')}</h3>
+      <div className="flex-gap items-center" style={{ margin: '0 0 16px 0' }}>
+        <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
+          <label>{t('sqlQuery.operationType')}</label>
+          <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)} style={{ width: '160px' }}>
+            <option value="select">{t('sqlQuery.select')}</option>
+            <option value="insert">{t('sqlQuery.insert')}</option>
+            <option value="update">{t('sqlQuery.update')}</option>
+            <option value="delete">{t('sqlQuery.delete')}</option>
+          </select>
+        </div>
+
+        <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
+          <label>{t('sqlQuery.selectIndex')}</label>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '260px' }}>
+            <select
+              className="form-control"
+              value={selectedIndex ?? ""}
+              onChange={(event) => setSelectedIndex(event.target.value || undefined)}
+              style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
+            >
+              <option value="">{t('sqlQuery.selectIndexPlaceholder')}</option>
+              {indices
+                .filter((item) => !item.startsWith('.'))
+                .sort()
+                .map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+            </select>
+            {selectedIndex && (
+              <button
+                onClick={() => setSelectedIndex(undefined)}
+                className="btn-clear"
+                style={{
+                  position: 'absolute',
+                  right: '24px',
+                  background: 'none',
+                  border: 'none',
+                  color: '#86868b',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title={t('common.clear')}
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
-        <div className="card-body">
-          <div style={{ display: 'grid', gap: '12px' }}>
-            <div className="module-toolbar-grid">
-            <div className="module-toolbar-field">
-              <label>{t('sqlQuery.operationType')}</label>
-              <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)}>
-                <option value="select">{t('sqlQuery.select')}</option>
-                <option value="insert">{t('sqlQuery.insert')}</option>
-                <option value="update">{t('sqlQuery.update')}</option>
-                <option value="delete">{t('sqlQuery.delete')}</option>
-              </select>
-            </div>
 
-            <div className="module-toolbar-field">
-              <label>{t('sqlQuery.selectIndex')}</label>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <select
-                  className="form-control"
-                  value={selectedIndex ?? ""}
-                  onChange={(event) => setSelectedIndex(event.target.value || undefined)}
-                  style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
-                >
-                  <option value="">{t('sqlQuery.selectIndexPlaceholder')}</option>
-                  {indices
-                    .filter((item) => !item.startsWith('.'))
-                    .sort()
-                    .map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                </select>
-                {selectedIndex && (
-                  <button
-                    onClick={() => setSelectedIndex(undefined)}
-                    className="btn-clear"
-                    style={{
-                      position: 'absolute',
-                      right: '24px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#86868b',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      padding: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title={t('common.clear')}
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {operation === "select" && (
-              <div className="module-toolbar-field">
-                  <label>{t('sqlQuery.resultLimit')}</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={limit}
-                    onChange={handleLimitChange}
-                    min="1"
-                    max="1000"
-                  />
-                </div>
-            )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-              <div className="module-toolbar-actions">
-                {operation === "select" && (
-                  <>
-                <div style={{ flex: '0 0 auto' }}>
-                  <button className="btn btn-secondary" onClick={addCondition}>
-                    <span>+</span> {t('sqlQuery.addCondition')}
-                  </button>
-                </div>
-
-                <div style={{ flex: '0 0 auto' }}>
-                  <FieldFilterButton
-                    allFields={availableFields}
-                    state={fieldFilter}
-                    onChange={setFieldFilter}
-                    align="left"
-                    label={t('sqlQuery.fieldFilter')}
-                  />
-                </div>
-                  </>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
-                <button className="btn btn-primary" onClick={execute}>
-                  <span>▶</span> {t('sqlQuery.executeQuery')}
-                </button>
-              </div>
-            </div>
+        {operation === "select" && (
+          <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
+            <label>{t('sqlQuery.resultLimit')}</label>
+            <input
+              type="number"
+              className="form-control"
+              value={limit}
+              onChange={handleLimitChange}
+              min="1"
+              max="1000"
+              style={{ width: '80px', padding: '4px 8px' }}
+            />
           </div>
+        )}
 
-          {/* WHERE 条件构建器 */}
-          {operation === "select" && showConditions && (
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '20px' }}>
+          <button className="btn btn-primary btn-sm" onClick={execute}>
+            <span>▶</span> {t('sqlQuery.query')}
+          </button>
+
+          {operation === "select" && (
+            <button className="btn btn-secondary btn-sm" onClick={addCondition}>
+              <span>+</span> {t('sqlQuery.filter')}
+            </button>
+          )}
+
+          {operation === "select" && (
+            <FieldFilterButton
+              allFields={availableFields}
+              state={fieldFilter}
+              onChange={setFieldFilter}
+              align="left"
+              label={t('sqlQuery.fieldFilter')}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* WHERE 条件构建器 */}
+      {operation === "select" && showConditions && (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '16px' }}>
                 <label style={{ fontWeight: 600, margin: 0 }}>{t('sqlQuery.whereCondition')}</label>
@@ -605,10 +589,8 @@ export default function SqlQuery() {
             </div>
           </div>
           <div className="toolbar">
-             {error && <span className="text-danger">{error}</span>}
+            {error && <span className="text-danger">{error}</span>}
           </div>
-        </div>
-      </div>
 
       <div className="card" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="card-header">
