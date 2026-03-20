@@ -855,7 +855,7 @@ export default function DataBrowser() {
       </div>
 
       {showQueryConditions && (
-      <div className="card">
+      <div className="card" style={{ flex: '0 0 auto', maxHeight: '280px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="card-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h3 className="card-title" style={{ margin: 0 }}>{t('dataBrowser.queryCondition')}</h3>
@@ -872,7 +872,7 @@ export default function DataBrowser() {
           </div>
         </div>
 
-          <div className="card-body">
+          <div className="card-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', paddingRight: '8px' }}>
             <div>
               <div className="query-builder-header-row">
                 <div className="col-header">{t('dataBrowser.type')}</div>
@@ -1073,7 +1073,7 @@ export default function DataBrowser() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card" style={{ flex: 1, minHeight: '200px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="card-header">
           <h3 className="card-title">{t('dataBrowser.queryResult')}</h3>
           <div className="flex-gap" style={{ alignItems: 'center' }}>
@@ -1088,7 +1088,7 @@ export default function DataBrowser() {
             </div>
           </div>
         </div>
-          
+
         {rows.length === 0 ? (
           <div className="card-body">
             <p className="muted" style={{ textAlign: 'center', margin: '20px 0' }}>{t('common.noData')}</p>

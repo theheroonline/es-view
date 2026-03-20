@@ -36,8 +36,17 @@ export default function FieldFilterButton({
         setOpen(false);
       }
     };
+
+    const handleScroll = () => {
+      setOpen(false);
+    };
+
     document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
+    document.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("scroll", handleScroll, true);
+    };
   }, []);
 
   const effectiveSelected = useMemo(() => {
@@ -79,6 +88,30 @@ export default function FieldFilterButton({
     onChange({ enabled: true, fields: next });
   };
 
+  const [popupPos, setPopupPos] = useState<{ top: number; [key: string]: number } | null>(null);
+
+  useEffect(() => {
+    if (open && rootRef.current) {
+      const rect = rootRef.current.getBoundingClientRect();
+      const popupHeight = 420; // maxHeight from popup
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+
+      // Check if there's enough space below, otherwise show above
+      const shouldShowAbove = spaceBelow < popupHeight + 8 && spaceAbove > popupHeight + 8;
+
+      const top = shouldShowAbove ? rect.top - popupHeight - 8 : rect.bottom + 8;
+      const right = align === 'right' ? window.innerWidth - rect.right : undefined;
+      const left = align === 'left' ? rect.left : undefined;
+
+      setPopupPos({
+        top,
+        ...(right !== undefined ? { right } : {}),
+        ...(left !== undefined ? { left } : {})
+      });
+    }
+  }, [open, align]);
+
   return (
     <div ref={rootRef} style={{ position: "relative", display: "inline-block" }}>
       <button
@@ -93,13 +126,10 @@ export default function FieldFilterButton({
         🔍 {displayLabel} {selectedCount > 0 && `(${selectedCount})`}
       </button>
 
-      {open && (
+      {open && popupPos && (
         <div
           style={{
-            position: "absolute",
-            top: "100%",
-            [align]: 0,
-            marginTop: "8px",
+            position: "fixed",
             background: "rgba(255, 255, 255, 0.98)",
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
@@ -110,7 +140,8 @@ export default function FieldFilterButton({
             maxHeight: "420px",
             overflow: "auto",
             zIndex: 2000,
-            padding: "16px"
+            padding: "16px",
+            ...popupPos
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
