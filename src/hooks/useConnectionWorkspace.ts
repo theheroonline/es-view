@@ -18,6 +18,26 @@ interface ConnectionContextMenuState {
   y: number;
 }
 
+// Helper to disconnect MySQL or Redis connection
+async function disconnectEngine(
+  engine: "mysql" | "redis",
+  connectionId: string,
+  source: string
+): Promise<void> {
+  try {
+    if (engine === "mysql") {
+      await mysqlDisconnect(connectionId);
+    } else if (engine === "redis") {
+      await redisDisconnect(connectionId);
+    }
+  } catch (error) {
+    logError(error, {
+      source,
+      message: `Failed to disconnect ${engine.toUpperCase()} connection ${connectionId}`,
+    });
+  }
+}
+
 export function useConnectionWorkspace() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -118,26 +138,8 @@ export function useConnectionWorkspace() {
     }
 
     const currentProfile = getProfileById(connectionId);
-    if (currentProfile?.engine === "mysql") {
-      try {
-        await mysqlDisconnect(connectionId);
-      } catch (error) {
-        logError(error, {
-          source: "app.connection.mysql.disconnectBeforeEdit",
-          message: `Failed to disconnect MySQL connection ${connectionId} before editing config`,
-        });
-      }
-    }
-
-    if (currentProfile?.engine === "redis") {
-      try {
-        await redisDisconnect(connectionId);
-      } catch (error) {
-        logError(error, {
-          source: "app.connection.redis.disconnectBeforeEdit",
-          message: `Failed to disconnect Redis connection ${connectionId} before editing config`,
-        });
-      }
+    if (currentProfile?.engine === "mysql" || currentProfile?.engine === "redis") {
+      await disconnectEngine(currentProfile.engine, connectionId, "app.connection.disconnectBeforeEdit");
     }
 
     await disconnectActiveConnection();
@@ -198,25 +200,8 @@ export function useConnectionWorkspace() {
     // 立即断开前一个连接，清理状态，防止竞态条件
     if (activeConnectionId) {
       const previousProfile = getProfileById(activeConnectionId);
-      if (previousProfile?.engine === "mysql") {
-        try {
-          await mysqlDisconnect(activeConnectionId);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.change.cleanup",
-            message: `Failed to cleanup previous MySQL connection ${activeConnectionId}`,
-          });
-        }
-      }
-      if (previousProfile?.engine === "redis") {
-        try {
-          await redisDisconnect(activeConnectionId);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.change.cleanup",
-            message: `Failed to cleanup previous Redis connection ${activeConnectionId}`,
-          });
-        }
+      if (previousProfile?.engine === "mysql" || previousProfile?.engine === "redis") {
+        await disconnectEngine(previousProfile.engine, activeConnectionId, "app.connection.change.cleanup");
       }
     }
 
@@ -350,26 +335,8 @@ export function useConnectionWorkspace() {
     const currentProfile = getProfileById(activeConnectionId);
 
     try {
-      if (currentProfile?.engine === "mysql") {
-        try {
-          await mysqlDisconnect(activeConnectionId);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.mysql.disconnect",
-            message: `Failed to disconnect MySQL connection ${activeConnectionId}`,
-          });
-        }
-      }
-
-      if (currentProfile?.engine === "redis") {
-        try {
-          await redisDisconnect(activeConnectionId);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.redis.disconnect",
-            message: `Failed to disconnect Redis connection ${activeConnectionId}`,
-          });
-        }
+      if (currentProfile?.engine === "mysql" || currentProfile?.engine === "redis") {
+        await disconnectEngine(currentProfile.engine, activeConnectionId, "app.connection.disconnect");
       }
 
       await disconnectActiveConnection();

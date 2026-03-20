@@ -155,6 +155,9 @@ func (s *MysqlTransferService) readCreateTableSQL(db *sql.DB, database, table st
 }
 
 func (s *MysqlTransferService) buildTableDataDump(db *sql.DB, database, table string) (string, error) {
+	// Fixed: Added row limit to prevent memory overflow when exporting large tables
+	const maxExportRows = 1000000 // 1 million rows max per table
+
 	query := fmt.Sprintf("SELECT * FROM %s.%s", escapeMysqlIdentifier(database), escapeMysqlIdentifier(table))
 	rows, err := db.Query(query)
 	if err != nil {
@@ -179,7 +182,12 @@ func (s *MysqlTransferService) buildTableDataDump(db *sql.DB, database, table st
 		valueRefs[index] = &values[index]
 	}
 
+	rowCount := 0
 	for rows.Next() {
+		if rowCount >= maxExportRows {
+			return "", fmt.Errorf("table %s.%s exceeds export limit of %d rows; consider exporting in smaller batches", database, table, maxExportRows)
+		}
+
 		if err := rows.Scan(valueRefs...); err != nil {
 			return "", err
 		}
@@ -196,6 +204,7 @@ func (s *MysqlTransferService) buildTableDataDump(db *sql.DB, database, table st
 		builder.WriteString(") VALUES (")
 		builder.WriteString(strings.Join(serialized, ", "))
 		builder.WriteString(");\n")
+		rowCount++
 	}
 
 	if err := rows.Err(); err != nil {

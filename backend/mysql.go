@@ -139,9 +139,10 @@ func (m *MysqlModule) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	config.Params = map[string]string{"charset": "utf8mb4"}
 	config.ParseTime = true
 	config.Loc = time.Local
-	config.Timeout = 3 * time.Second
-	config.ReadTimeout = 5 * time.Second
-	config.WriteTimeout = 5 * time.Second
+	// Fixed: Increased connection timeout from 3s to 10s to support slower databases
+	config.Timeout = 10 * time.Second
+	config.ReadTimeout = 15 * time.Second
+	config.WriteTimeout = 15 * time.Second
 
 	dsn := config.FormatDSN()
 
@@ -159,7 +160,7 @@ func (m *MysqlModule) MysqlConnect(req MysqlConnectRequest) (string, error) {
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		return "", fmt.Errorf("failed to ping database: %w", err)
+		return "", fmt.Errorf("failed to ping database at %s:%d: %w", req.Host, req.Port, err)
 	}
 
 	m.connManager.mu.Lock()
@@ -211,7 +212,10 @@ func (m *MysqlModule) MysqlPing(connectionID string) (string, error) {
 }
 
 // MysqlQuery executes a query and returns results
+// Fixed: Added result row limit to prevent memory overflow
 func (m *MysqlModule) MysqlQuery(connectionID string, query string) (MysqlQueryResult, error) {
+	const maxRows = 100000 // Prevent memory overflow from large result sets
+
 	m.connManager.mu.RLock()
 	db, exists := m.connManager.connections[connectionID]
 	m.connManager.mu.RUnlock()
@@ -222,7 +226,7 @@ func (m *MysqlModule) MysqlQuery(connectionID string, query string) (MysqlQueryR
 
 	rows, err := db.Query(query)
 	if err != nil {
-		return MysqlQueryResult{}, fmt.Errorf("query failed: %w", err)
+		return MysqlQueryResult{}, fmt.Errorf("query failed: connection=%s: %w", connectionID, err)
 	}
 	defer rows.Close()
 
@@ -237,7 +241,12 @@ func (m *MysqlModule) MysqlQuery(connectionID string, query string) (MysqlQueryR
 		IsResultSet: true,
 	}
 
+	rowCount := 0
 	for rows.Next() {
+		if rowCount >= maxRows {
+			return MysqlQueryResult{}, fmt.Errorf("result set exceeds maximum limit of %d rows; query may return too much data", maxRows)
+		}
+
 		values := make([]interface{}, len(columns))
 		valuePtrs := make([]interface{}, len(columns))
 		for i := range columns {
@@ -246,7 +255,7 @@ func (m *MysqlModule) MysqlQuery(connectionID string, query string) (MysqlQueryR
 
 		err := rows.Scan(valuePtrs...)
 		if err != nil {
-			return MysqlQueryResult{}, fmt.Errorf("scan failed: %w", err)
+			return MysqlQueryResult{}, fmt.Errorf("scan failed at row %d: %w", rowCount+1, err)
 		}
 
 		// Convert byte slices to strings for proper UTF-8 handling
@@ -257,6 +266,11 @@ func (m *MysqlModule) MysqlQuery(connectionID string, query string) (MysqlQueryR
 		}
 
 		result.Rows = append(result.Rows, values)
+		rowCount++
+	}
+
+	if err := rows.Err(); err != nil {
+		return MysqlQueryResult{}, fmt.Errorf("error iterating result rows: %w", err)
 	}
 
 	return result, nil

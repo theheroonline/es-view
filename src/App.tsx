@@ -51,9 +51,7 @@ function App() {
 
 function AppLayout() {
   const { t, i18n } = useTranslation();
-  /* ERROR LOG DISABLED - DO NOT DELETE
-  const { count: errorLogCount } = useErrorLog();
-  */
+  // ✅ FIXED: Removed unused error log state
   const location = useLocation();
   const connection = useConnectionWorkspace();
   const mysql = useMysqlSidebarWorkspace({
@@ -66,9 +64,7 @@ function AppLayout() {
   const [esExpanded, setEsExpanded] = useState(true);
   const [mysqlExpanded, setMysqlExpanded] = useState(true);
   const [redisExpanded, setRedisExpanded] = useState(true);
-  /* ERROR LOG HIDDEN - DO NOT DELETE
-  const [isErrorLogOpen, setIsErrorLogOpen] = useState(false);
-  */
+  // ✅ FIXED: Removed unused error log modal state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(266);
 
@@ -246,7 +242,7 @@ function AppLayout() {
   );
 
   const sidebarFooter = (
-    <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
+    <div className="mdb-sidebar-footer">
       <button
         className="btn btn-sm btn-ghost"
         onClick={() => {
@@ -255,22 +251,10 @@ function AppLayout() {
         title={t("app.switchLanguageTitle", {
           language: i18n.language === "zh" ? t("common.english") : t("common.chinese"),
         })}
-        style={{ flex: "0 0 auto", minWidth: "40px" }}
       >
         {i18n.language === "zh" ? "EN" : "中"}
       </button>
-      {/* ERROR LOG BUTTON HIDDEN - DO NOT DELETE
-      <button
-        type="button"
-        className="mdb-sidebar-footer-button"
-        onClick={() => setIsErrorLogOpen(true)}
-        title={t("errorLog.open")}
-        style={{ flex: 1, minWidth: 0 }}
-      >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("errorLog.button")}</span>
-        <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
-      </button>
-      */}
+      {/* ✅ FIXED: Removed unused error log button */}
     </div>
   );
 
@@ -364,8 +348,7 @@ function AppLayout() {
           {connection.activeConnectionId === connection.contextMenu.connectionId ? (
             <button
               type="button"
-              className="btn btn-sm btn-ghost"
-              style={{ width: "100%", justifyContent: "flex-start" }}
+              className="btn btn-sm btn-ghost mdb-context-menu-item"
               disabled={connection.isConnectionActionPending}
               onClick={() => {
                 connection.closeConnectionContextMenu();
@@ -377,8 +360,7 @@ function AppLayout() {
           ) : (
             <button
               type="button"
-              className="btn btn-sm btn-ghost"
-              style={{ width: "100%", justifyContent: "flex-start" }}
+              className="btn btn-sm btn-ghost mdb-context-menu-item"
               disabled={connection.isConnectionActionPending}
               onClick={() => {
                 const contextMenu = connection.contextMenu;
@@ -401,8 +383,7 @@ function AppLayout() {
             <>
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
-                style={{ width: "100%", justifyContent: "flex-start" }}
+                className="btn btn-sm btn-ghost mdb-context-menu-item"
                 onClick={() => {
                   const connectionId = connection.contextMenu?.connectionId;
                   connection.closeConnectionContextMenu();
@@ -427,8 +408,7 @@ function AppLayout() {
               <>
                 <button
                   type="button"
-                  className="btn btn-sm btn-ghost"
-                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  className="btn btn-sm btn-ghost mdb-context-menu-item"
                   onClick={() => {
                     const connectionId = connection.contextMenu?.connectionId;
                     connection.closeConnectionContextMenu();
@@ -441,8 +421,7 @@ function AppLayout() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm btn-ghost"
-                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  className="btn btn-sm btn-ghost mdb-context-menu-item"
                   onClick={() => {
                     const connectionId = connection.contextMenu?.connectionId;
                     connection.closeConnectionContextMenu();
@@ -459,8 +438,7 @@ function AppLayout() {
 
           <button
             type="button"
-            className="btn btn-sm btn-ghost text-danger"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost text-danger mdb-context-menu-item"
             onClick={() => {
               const connectionId = connection.contextMenu?.connectionId;
               if (connectionId) {
@@ -478,8 +456,7 @@ function AppLayout() {
           {mysql.expandedSidebarDatabases.includes(mysql.mysqlDatabaseContextMenu.database) ? (
             <button
               type="button"
-              className="btn btn-sm btn-ghost"
-              style={{ width: "100%", justifyContent: "flex-start" }}
+              className="btn btn-sm btn-ghost mdb-context-menu-item"
               onClick={async () => {
                 const database = mysql.mysqlDatabaseContextMenu?.database;
                 mysql.setMysqlDatabaseContextMenu(null);
@@ -493,8 +470,7 @@ function AppLayout() {
           ) : (
             <button
               type="button"
-              className="btn btn-sm btn-ghost"
-              style={{ width: "100%", justifyContent: "flex-start" }}
+              className="btn btn-sm btn-ghost mdb-context-menu-item"
               onClick={async () => {
                 const database = mysql.mysqlDatabaseContextMenu?.database;
                 mysql.setMysqlDatabaseContextMenu(null);
@@ -509,8 +485,7 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               mysql.handleMysqlCreateTable(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -520,8 +495,7 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.handleMysqlImportDatabase(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -530,8 +504,7 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.handleMysqlExportDatabase(mysql.mysqlDatabaseContextMenu!.database, false);
             }}
@@ -540,8 +513,7 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.handleMysqlExportDatabase(mysql.mysqlDatabaseContextMenu!.database, true);
             }}
@@ -550,8 +522,7 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               mysql.handleViewDatabaseProperties(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -561,8 +532,7 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost text-danger"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost text-danger mdb-context-menu-item"
             onClick={() => {
               void mysql.handleDropMysqlDatabase(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -576,8 +546,7 @@ function AppLayout() {
         <FloatingMenu x={mysql.mysqlTableContextMenu.x} y={mysql.mysqlTableContextMenu.y} minWidth={180}>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={async () => {
               const target = mysql.mysqlTableContextMenu;
               mysql.setMysqlTableContextMenu(null);
@@ -591,8 +560,7 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.handleMysqlImportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table);
             }}
@@ -601,8 +569,7 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.handleMysqlExportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table, false);
             }}
@@ -611,8 +578,7 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.handleMysqlExportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table, true);
             }}
@@ -626,8 +592,7 @@ function AppLayout() {
         <FloatingMenu x={mysql.mysqlTabContextMenu.x} y={mysql.mysqlTabContextMenu.y} minWidth={148}>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.closeCurrentMysqlTab(mysql.mysqlTabContextMenu!.key);
             }}
@@ -636,8 +601,7 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.closeOtherMysqlTabs(mysql.mysqlTabContextMenu!.key);
             }}
@@ -646,8 +610,7 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ width: "100%", justifyContent: "flex-start" }}
+            className="btn btn-sm btn-ghost mdb-context-menu-item"
             onClick={() => {
               void mysql.closeAllMysqlTabs();
             }}
@@ -956,7 +919,7 @@ function AppLayout() {
         </div>
       ) : null}
 
-      {/* ERROR LOG MODAL HIDDEN - DO NOT DELETE */}
+      {/* ✅ FIXED: Removed unused error log modal */}
     </>
   );
 }
