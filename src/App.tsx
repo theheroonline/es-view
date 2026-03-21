@@ -51,11 +51,13 @@ function App() {
 
 function AppLayout() {
   const { t, i18n } = useTranslation();
-  // ✅ FIXED: Removed unused error log state
+  /* ERROR LOG DISABLED - DO NOT DELETE
+  const { count: errorLogCount } = useErrorLog();
+  */
   const location = useLocation();
   const connection = useConnectionWorkspace();
   const mysql = useMysqlSidebarWorkspace({
-    activeConnectionId: connection.activeConnectionId,
+    activeConnectionId: connection.activeConnectionIdByEngine.mysql,
     getProfileById: connection.getProfileById,
     ensureMysqlConnectionReady: connection.ensureMysqlConnectionReady,
     setConnectionActionError: connection.setConnectionActionError,
@@ -64,7 +66,9 @@ function AppLayout() {
   const [esExpanded, setEsExpanded] = useState(true);
   const [mysqlExpanded, setMysqlExpanded] = useState(true);
   const [redisExpanded, setRedisExpanded] = useState(true);
-  // ✅ FIXED: Removed unused error log modal state
+  /* ERROR LOG HIDDEN - DO NOT DELETE
+  const [isErrorLogOpen, setIsErrorLogOpen] = useState(false);
+  */
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(266);
 
@@ -84,10 +88,13 @@ function AppLayout() {
   const showMysqlConnectionsTab = location.pathname.startsWith("/mysql/connections");
   const showRedisConnectionsTab = location.pathname.startsWith("/redis/connections");
   const showConnectionsTab = showMysqlConnectionsTab || showRedisConnectionsTab;
-  const canShowWorkspace = (Boolean(connection.activeConnectionId) && !connection.isWorkspaceSuspended) || showConnectionsTab;
+  const hasAnyConnected = Object.values(connection.activeConnectionIdByEngine).some(Boolean);
+  const canShowWorkspace = (hasAnyConnected && !connection.isWorkspaceSuspended) || showConnectionsTab;
   const isEsWorkspace = connection.activeEngine === "elasticsearch";
   const isMysqlWorkspace = connection.activeEngine === "mysql" || showMysqlConnectionsTab;
   const isRedisWorkspace = connection.activeEngine === "redis" || showRedisConnectionsTab;
+
+  const isConnectionActiveNow = (profile: ConnectionProfile) => connection.activeConnectionId === profile.id;
 
   const renderConnectionItem = (profile: ConnectionProfile) => {
     const status = connection.connectionStatusById[profile.id] ?? "idle";
@@ -98,28 +105,24 @@ function AppLayout() {
         className={`mdb-tree-item mdb-connection-item ${connection.focusedConnectionId === profile.id ? "active" : ""}`}
         onClick={() => {
           connection.setFocusedConnectionId(profile.id);
-          if (connection.activeConnectionId === profile.id) {
+          if (isConnectionActiveNow(profile)) {
             if (connection.isWorkspaceSuspended) {
               void connection.handleConnectionChange(profile.id, { forceValidate: false });
             }
             return;
           }
 
-          if (status === "success") {
-            void connection.handleConnectionChange(profile.id, { forceValidate: false });
-          }
+          void connection.handleConnectionChange(profile.id, { forceValidate: status !== "success" });
         }}
         onDoubleClick={() => {
-          if (connection.activeConnectionId === profile.id) {
+          if (isConnectionActiveNow(profile)) {
             if (connection.isWorkspaceSuspended) {
               void connection.handleConnectionChange(profile.id, { forceValidate: false });
             }
             return;
           }
 
-          if (status !== "success") {
-            void connection.handleConnectionChange(profile.id, { forceValidate: true });
-          }
+          void connection.handleConnectionChange(profile.id, { forceValidate: status !== "success" });
         }}
         onContextMenu={(event) => connection.handleConnectionContextMenu(event, profile.id)}
         role="button"
@@ -130,23 +133,21 @@ function AppLayout() {
           }
 
           event.preventDefault();
-          if (connection.activeConnectionId === profile.id) {
+          if (isConnectionActiveNow(profile)) {
             if (connection.isWorkspaceSuspended) {
               void connection.handleConnectionChange(profile.id, { forceValidate: false });
             }
             return;
           }
 
-          if (status === "success") {
-            void connection.handleConnectionChange(profile.id, { forceValidate: false });
-          }
+          void connection.handleConnectionChange(profile.id, { forceValidate: status !== "success" });
         }}
       >
         <span className="mdb-connection-main">
           <span className={`mdb-status-dot status-${status}`} />
           <span className="mdb-connection-name">{profile.name}</span>
         </span>
-        {connection.activeConnectionId === profile.id ? (
+        {isConnectionActiveNow(profile) ? (
           <span className="mdb-connection-badge">{t("connections.currentInUse")}</span>
         ) : null}
       </div>
@@ -183,9 +184,9 @@ function AppLayout() {
       <MysqlSidebarSection
         expanded={mysqlExpanded}
         profiles={connection.mysqlProfiles}
-        activeConnectionId={connection.activeConnectionId}
+        activeConnectionId={connection.activeConnectionIdByEngine.mysql}
         databases={mysql.databases}
-        expandedDatabases={mysql.expandedSidebarDatabases}
+        expandedSidebarTablesDatabases={mysql.sidebarExpandedTablesDatabases}
         selectedSidebarTables={mysql.selectedSidebarTables}
         selectedDatabase={mysql.selectedDatabase}
         selectedTable={mysql.selectedTable}
@@ -242,7 +243,7 @@ function AppLayout() {
   );
 
   const sidebarFooter = (
-    <div className="mdb-sidebar-footer">
+    <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
       <button
         className="btn btn-sm btn-ghost"
         onClick={() => {
@@ -251,10 +252,22 @@ function AppLayout() {
         title={t("app.switchLanguageTitle", {
           language: i18n.language === "zh" ? t("common.english") : t("common.chinese"),
         })}
+        style={{ flex: "0 0 auto", minWidth: "40px" }}
       >
         {i18n.language === "zh" ? "EN" : "中"}
       </button>
-      {/* ✅ FIXED: Removed unused error log button */}
+      {/* ERROR LOG BUTTON HIDDEN - DO NOT DELETE
+      <button
+        type="button"
+        className="mdb-sidebar-footer-button"
+        onClick={() => setIsErrorLogOpen(true)}
+        title={t("errorLog.open")}
+        style={{ flex: 1, minWidth: 0 }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("errorLog.button")}</span>
+        <span className={`mdb-sidebar-footer-badge ${errorLogCount > 0 ? "has-errors" : ""}`}>{errorLogCount}</span>
+      </button>
+      */}
     </div>
   );
 
@@ -345,14 +358,15 @@ function AppLayout() {
 
       {connection.contextMenu ? (
         <FloatingMenu x={connection.contextMenu.x} y={connection.contextMenu.y} minWidth={128}>
-          {connection.activeConnectionId === connection.contextMenu.connectionId ? (
+          {(connection.connectionStatusById[connection.contextMenu.connectionId] ?? "idle") === "success" ? (
             <button
               type="button"
-              className="btn btn-sm btn-ghost mdb-context-menu-item"
+              className="btn btn-sm btn-ghost"
+              style={{ width: "100%", justifyContent: "flex-start" }}
               disabled={connection.isConnectionActionPending}
               onClick={() => {
                 connection.closeConnectionContextMenu();
-                void connection.handleDisconnect();
+                void connection.handleDisconnect(connection.contextMenu?.connectionId);
               }}
             >
               {t("connections.disconnect")}
@@ -360,7 +374,8 @@ function AppLayout() {
           ) : (
             <button
               type="button"
-              className="btn btn-sm btn-ghost mdb-context-menu-item"
+              className="btn btn-sm btn-ghost"
+              style={{ width: "100%", justifyContent: "flex-start" }}
               disabled={connection.isConnectionActionPending}
               onClick={() => {
                 const contextMenu = connection.contextMenu;
@@ -383,7 +398,8 @@ function AppLayout() {
             <>
               <button
                 type="button"
-                className="btn btn-sm btn-ghost mdb-context-menu-item"
+                className="btn btn-sm btn-ghost"
+                style={{ width: "100%", justifyContent: "flex-start" }}
                 onClick={() => {
                   const connectionId = connection.contextMenu?.connectionId;
                   connection.closeConnectionContextMenu();
@@ -408,7 +424,8 @@ function AppLayout() {
               <>
                 <button
                   type="button"
-                  className="btn btn-sm btn-ghost mdb-context-menu-item"
+                  className="btn btn-sm btn-ghost"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
                   onClick={() => {
                     const connectionId = connection.contextMenu?.connectionId;
                     connection.closeConnectionContextMenu();
@@ -421,7 +438,8 @@ function AppLayout() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm btn-ghost mdb-context-menu-item"
+                  className="btn btn-sm btn-ghost"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
                   onClick={() => {
                     const connectionId = connection.contextMenu?.connectionId;
                     connection.closeConnectionContextMenu();
@@ -438,7 +456,8 @@ function AppLayout() {
 
           <button
             type="button"
-            className="btn btn-sm btn-ghost text-danger mdb-context-menu-item"
+            className="btn btn-sm btn-ghost text-danger"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               const connectionId = connection.contextMenu?.connectionId;
               if (connectionId) {
@@ -456,7 +475,8 @@ function AppLayout() {
           {mysql.expandedSidebarDatabases.includes(mysql.mysqlDatabaseContextMenu.database) ? (
             <button
               type="button"
-              className="btn btn-sm btn-ghost mdb-context-menu-item"
+              className="btn btn-sm btn-ghost"
+              style={{ width: "100%", justifyContent: "flex-start" }}
               onClick={async () => {
                 const database = mysql.mysqlDatabaseContextMenu?.database;
                 mysql.setMysqlDatabaseContextMenu(null);
@@ -470,7 +490,8 @@ function AppLayout() {
           ) : (
             <button
               type="button"
-              className="btn btn-sm btn-ghost mdb-context-menu-item"
+              className="btn btn-sm btn-ghost"
+              style={{ width: "100%", justifyContent: "flex-start" }}
               onClick={async () => {
                 const database = mysql.mysqlDatabaseContextMenu?.database;
                 mysql.setMysqlDatabaseContextMenu(null);
@@ -485,7 +506,8 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               mysql.handleMysqlCreateTable(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -495,7 +517,8 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.handleMysqlImportDatabase(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -504,7 +527,8 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.handleMysqlExportDatabase(mysql.mysqlDatabaseContextMenu!.database, false);
             }}
@@ -513,7 +537,8 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.handleMysqlExportDatabase(mysql.mysqlDatabaseContextMenu!.database, true);
             }}
@@ -522,7 +547,8 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               mysql.handleViewDatabaseProperties(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -532,7 +558,8 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost text-danger mdb-context-menu-item"
+            className="btn btn-sm btn-ghost text-danger"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.handleDropMysqlDatabase(mysql.mysqlDatabaseContextMenu!.database);
             }}
@@ -546,7 +573,8 @@ function AppLayout() {
         <FloatingMenu x={mysql.mysqlTableContextMenu.x} y={mysql.mysqlTableContextMenu.y} minWidth={180}>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={async () => {
               const target = mysql.mysqlTableContextMenu;
               mysql.setMysqlTableContextMenu(null);
@@ -560,7 +588,8 @@ function AppLayout() {
           <FloatingMenuDivider />
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.handleMysqlImportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table);
             }}
@@ -569,7 +598,8 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.handleMysqlExportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table, false);
             }}
@@ -578,7 +608,8 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.handleMysqlExportTable(mysql.mysqlTableContextMenu!.database, mysql.mysqlTableContextMenu!.table, true);
             }}
@@ -592,7 +623,8 @@ function AppLayout() {
         <FloatingMenu x={mysql.mysqlTabContextMenu.x} y={mysql.mysqlTabContextMenu.y} minWidth={148}>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.closeCurrentMysqlTab(mysql.mysqlTabContextMenu!.key);
             }}
@@ -601,7 +633,8 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.closeOtherMysqlTabs(mysql.mysqlTabContextMenu!.key);
             }}
@@ -610,7 +643,8 @@ function AppLayout() {
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-ghost mdb-context-menu-item"
+            className="btn btn-sm btn-ghost"
+            style={{ width: "100%", justifyContent: "flex-start" }}
             onClick={() => {
               void mysql.closeAllMysqlTabs();
             }}
@@ -919,7 +953,7 @@ function AppLayout() {
         </div>
       ) : null}
 
-      {/* ✅ FIXED: Removed unused error log modal */}
+      {/* ERROR LOG MODAL HIDDEN - DO NOT DELETE */}
     </>
   );
 }

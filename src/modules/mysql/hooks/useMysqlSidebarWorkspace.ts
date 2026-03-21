@@ -1,3 +1,4 @@
+import { Modal } from "antd";
 import { useEffect, useState, type MouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
@@ -200,6 +201,7 @@ export function useMysqlSidebarWorkspace({
   const handleMysqlOpenDatabase = async (database: string) => {
     setExpandedDatabase(database);
     setExpandedSidebarDatabases((prev) => (prev.includes(database) ? prev : [...prev, database]));
+    setSidebarExpandedTablesDatabases((prev) => (prev.includes(database) ? prev : [...prev, database]));
     setSelectedDatabase(database);
     setSelectedTable(undefined);
     setSelectedSidebarTables([]);
@@ -498,7 +500,10 @@ export function useMysqlSidebarWorkspace({
     try {
       const message = await mysqlExportDatabase(activeConnectionId, database, includeData);
       if (message) {
-        window.alert(message);
+        Modal.success({
+          title: "Success",
+          content: message,
+        });
       }
     } catch (error) {
       logError(error, {
@@ -520,7 +525,10 @@ export function useMysqlSidebarWorkspace({
       await refreshMysqlDatabases();
       await loadMysqlTables(database);
       if (message) {
-        window.alert(message);
+        Modal.success({
+          title: "Success",
+          content: message,
+        });
       }
     } catch (error) {
       logError(error, {
@@ -585,7 +593,10 @@ export function useMysqlSidebarWorkspace({
     try {
       const message = await mysqlExportTable(activeConnectionId, database, table, includeData);
       if (message) {
-        window.alert(message);
+        Modal.success({
+          title: "Success",
+          content: message,
+        });
       }
     } catch (error) {
       logError(error, {
@@ -606,7 +617,10 @@ export function useMysqlSidebarWorkspace({
       const message = await mysqlImportSql(activeConnectionId, database, table);
       await loadMysqlTables(database);
       if (message) {
-        window.alert(message);
+        Modal.success({
+          title: "Success",
+          content: message,
+        });
       }
     } catch (error) {
       logError(error, {

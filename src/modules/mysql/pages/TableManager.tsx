@@ -1,3 +1,4 @@
+import { Input, Modal } from "antd";
 import { type CSSProperties, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -164,6 +165,18 @@ export default function MysqlTableManager() {
     isDangerous: false
   });
 
+  const [copyTableDialog, setCopyTableDialog] = useState<{
+    open: boolean;
+    db: string;
+    table: string;
+    nextName: string;
+  }>({
+    open: false,
+    db: "",
+    table: "",
+    nextName: ""
+  });
+
   // Index management state
   const [indexModalOpen, setIndexModalOpen] = useState(false);
   const [indexModalMode, setIndexModalMode] = useState<"view" | "create" | "edit">("view");
@@ -187,7 +200,7 @@ export default function MysqlTableManager() {
     exportSuccessMessage,
     setExportSuccessMessage,
     handleExportTableSql,
-    handleImportTableSql: useExportImportHandleImportTableSql,
+    handleImportTableSql: exportImportHandleImportTableSql,
     handleConfirmExportSelection
   } = useExportImport({
     connectionId,
@@ -1164,22 +1177,31 @@ export default function MysqlTableManager() {
     }
 
     if (whereParts.length === 0) return;
-    if (!confirm(t("dataBrowser.deleteConfirm", { docId: String(row[0] ?? index) }))) return;
 
-    try {
-      const sql = `DELETE FROM \`${db}\`.\`${table}\` WHERE ${whereParts.join(" AND ")} LIMIT 1`;
-      await mysqlQuery(connectionId, sql);
-      fetchData();
-    } catch (err) {
-      logError(err, {
-        source: "mysqlTableManager.deleteRow",
-        message: `Failed to delete row from ${db}.${table}`
-      });
-      setDataState((prev) => ({
-        ...prev,
-        error: err instanceof Error ? err.message : String(err)
-      }));
-    }
+    const onConfirm = async () => {
+      try {
+        const sql = `DELETE FROM \`${db}\`.\`${table}\` WHERE ${whereParts.join(" AND ")} LIMIT 1`;
+        await mysqlQuery(connectionId, sql);
+        fetchData();
+      } catch (err) {
+        logError(err, {
+          source: "mysqlTableManager.deleteRow",
+          message: `Failed to delete row from ${db}.${table}`
+        });
+        setDataState((prev) => ({
+          ...prev,
+          error: err instanceof Error ? err.message : String(err)
+        }));
+      }
+    };
+
+    setConfirmDialog({
+      open: true,
+      title: t("common.delete"),
+      message: t("dataBrowser.deleteConfirm", { docId: String(row[0] ?? index) }),
+      isDangerous: true,
+      onConfirm
+    });
   }, [connectionId, selectedTableInfo, dataState.rows, dataState.columns, dataColumnMeta, mysqlQuery, fetchData, t]);
 
   // ─── Context menu handlers (useCallback 包裹以避免闪烁) ───
@@ -1227,7 +1249,10 @@ export default function MysqlTableManager() {
       .map(col => col.field) ?? [];
 
     if (primaryKeyColumns.length === 0) {
-      window.alert(t("mysql.tableManager.noPrimaryKey"));
+      Modal.info({
+        title: t("common.notice"),
+        content: t("mysql.tableManager.noPrimaryKey")
+      });
       return;
     }
 
@@ -1517,13 +1542,29 @@ export default function MysqlTableManager() {
   const handleCopyTable = async (db: string, table: string) => {
     if (!connectionId) return;
 
-    const nextName = window.prompt(t("mysql.tableManager.copyTablePrompt"), `${table}_copy`)?.trim();
-    if (!nextName || nextName === table) return;
+    setCopyTableDialog({
+      open: true,
+      db,
+      table,
+      nextName: `${table}_copy`
+    });
+  };
+
+  const handleConfirmCopyTable = async () => {
+    if (!connectionId || !copyTableDialog.open) return;
+
+    const { db, table } = copyTableDialog;
+    const nextName = copyTableDialog.nextName.trim();
+    if (!nextName || nextName === table) {
+      setCopyTableDialog((prev) => ({ ...prev, open: false }));
+      return;
+    }
 
     try {
       await mysqlQuery(connectionId, `CREATE TABLE \`${db}\`.\`${nextName}\` LIKE \`${db}\`.\`${table}\``);
       await mysqlQuery(connectionId, `INSERT INTO \`${db}\`.\`${nextName}\` SELECT * FROM \`${db}\`.\`${table}\``);
       await refreshTablesForDb(db);
+      setCopyTableDialog((prev) => ({ ...prev, open: false }));
     } catch (err) {
       logError(err, {
         source: "mysqlTableManager.copyTable",
@@ -1634,18 +1675,21 @@ export default function MysqlTableManager() {
   // Wrapper to handle import with table refresh and re-opening
   const handleImportTableSql = useCallback(
     async (database: string, table: string) => {
-      await useExportImportHandleImportTableSql(database, table, async (message?: string) => {
+      await exportImportHandleImportTableSql(database, table, async (message?: string) => {
         await refreshTablesForDb(database);
         if (selectedTableInfo?.database === database && selectedTableInfo.table === table) {
           await handleOpenTable(database, table, rightPanelTab);
         }
         if (message) {
-          window.alert(message);
+          Modal.success({
+            title: t("common.success"),
+            content: message
+          });
         }
       });
       setTreeContextMenu(null);
     },
-    [useExportImportHandleImportTableSql, selectedTableInfo, rightPanelTab, refreshTablesForDb, handleOpenTable]
+    [exportImportHandleImportTableSql, selectedTableInfo, rightPanelTab, refreshTablesForDb, handleOpenTable, t]
   );
 
   const openExportSelectionModal = useCallback((database: string, tables: string[], includeData: boolean) => {
@@ -1678,14 +1722,6 @@ export default function MysqlTableManager() {
 
   // ─── SQL modal ───
 
-
-  // Keep this function for backward compatibility (may be used elsewhere)
-  // @ts-ignore - used by other modules
-  const _openSqlModal = (prefill?: string) => {
-    setSqlModalValue(prefill ?? "");
-    setSqlModalResult("");
-    setSqlModalOpen(true);
-  };
 
   const executeSqlModal = async () => {
     if (!connectionId || !sqlModalValue.trim()) return;
@@ -3010,6 +3046,38 @@ export default function MysqlTableManager() {
             >
               {t("common.ok")}
             </button>
+          </div>
+        </div>
+      )}
+
+      {copyTableDialog.open && (
+        <div className="modal-overlay" onClick={() => setCopyTableDialog((prev) => ({ ...prev, open: false }))}>
+          <div className="card modal-card modal-card-sm" onClick={(event) => event.stopPropagation()}>
+            <div className="card-header page-section-header">
+              <h3 className="card-title">{t("mysql.tableManager.copyTable")}</h3>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setCopyTableDialog((prev) => ({ ...prev, open: false }))}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="modal-card-body modal-card-grid">
+              <label>{t("mysql.tableManager.copyTablePrompt")}</label>
+              <Input
+                value={copyTableDialog.nextName}
+                onChange={(event) => setCopyTableDialog((prev) => ({ ...prev, nextName: event.target.value }))}
+                autoFocus
+              />
+            </div>
+            <div className="modal-card-footer">
+              <button className="btn btn-sm btn-ghost" onClick={() => setCopyTableDialog((prev) => ({ ...prev, open: false }))}>
+                {t("common.cancel")}
+              </button>
+              <button className="btn btn-sm btn-primary" onClick={() => void handleConfirmCopyTable()}>
+                {t("common.confirm")}
+              </button>
+            </div>
           </div>
         </div>
       )}

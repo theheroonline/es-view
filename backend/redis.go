@@ -258,7 +258,6 @@ func (a *App) RedisUpdateKeyTTL(req RedisUpdateTTLRequest) (string, error) {
 }
 
 // getRedisClient retrieves or creates a client for the specified database
-// Fixed: Optimized Ping check - only check when creating new client, not on every access
 func (r *RedisModule) getRedisClient(connectionID string, database int) (*redis.Client, error) {
 	r.connManager.mu.RLock()
 	dbClients, exists := r.connManager.connections[connectionID]
@@ -430,10 +429,7 @@ func (r *RedisModule) RedisListDatabases(connectionID string) ([]RedisDatabaseIn
 }
 
 // RedisScanKeys scans for keys
-// Fixed: Added scan count limit to prevent excessive memory usage
 func (r *RedisModule) RedisScanKeys(req RedisScanRequest) (RedisScanResult, error) {
-	const maxScanCount = 10000 // Maximum keys to scan per request
-
 	client, err := r.getRedisClient(req.ConnectionID, req.Database)
 	if err != nil {
 		return RedisScanResult{}, err
@@ -451,10 +447,6 @@ func (r *RedisModule) RedisScanKeys(req RedisScanRequest) (RedisScanResult, erro
 	var count int64 = 100
 	if req.Count != nil {
 		count = int64(*req.Count)
-		// Fixed: Added validation to prevent excessive count values
-		if count > maxScanCount {
-			return RedisScanResult{}, fmt.Errorf("scan count (%d) exceeds maximum allowed value (%d)", count, maxScanCount)
-		}
 	}
 
 	var pattern string
@@ -466,7 +458,7 @@ func (r *RedisModule) RedisScanKeys(req RedisScanRequest) (RedisScanResult, erro
 	cmd := client.Scan(ctx, cursor, pattern, count)
 	keys, nextCursor, err := cmd.Result()
 	if err != nil {
-		return RedisScanResult{}, fmt.Errorf("scan failed in database %d: %w", req.Database, err)
+		return RedisScanResult{}, fmt.Errorf("scan failed: %w", err)
 	}
 
 	// Use pipeline to batch fetch TYPE and TTL for all keys
@@ -545,13 +537,7 @@ func (r *RedisModule) RedisGetKeyDetail(req RedisKeyRequest) (RedisKeyDetail, er
 }
 
 // RedisExecute executes a Redis command
-// Fixed: Added command validation and improved error messages
 func (r *RedisModule) RedisExecute(req RedisExecuteRequest) (RedisCommandResult, error) {
-	// Fixed: Validate command is not empty
-	if strings.TrimSpace(req.Command) == "" {
-		return RedisCommandResult{}, fmt.Errorf("command is required")
-	}
-
 	client, err := r.getRedisClient(req.ConnectionID, req.Database)
 	if err != nil {
 		return RedisCommandResult{}, err
@@ -568,7 +554,7 @@ func (r *RedisModule) RedisExecute(req RedisExecuteRequest) (RedisCommandResult,
 	result := client.Do(ctx, append([]interface{}{req.Command}, args...)...)
 	output, err := result.Result()
 	if err != nil {
-		return RedisCommandResult{}, fmt.Errorf("command execution failed for '%s' in database %d: %w", req.Command, req.Database, err)
+		return RedisCommandResult{}, err
 	}
 
 	return RedisCommandResult{
@@ -578,7 +564,6 @@ func (r *RedisModule) RedisExecute(req RedisExecuteRequest) (RedisCommandResult,
 }
 
 // RedisSetKey sets a key value
-// Fixed: Improved validation for key and value
 func (r *RedisModule) RedisSetKey(req RedisSetKeyRequest) (string, error) {
 	client, err := r.getRedisClient(req.ConnectionID, req.Database)
 	if err != nil {
@@ -588,25 +573,13 @@ func (r *RedisModule) RedisSetKey(req RedisSetKeyRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Fixed: Enhanced key validation
 	if strings.TrimSpace(req.Key) == "" {
-		return "", fmt.Errorf("key is required and cannot be empty")
-	}
-
-	// Fixed: Added key length limit to prevent issues
-	const maxKeyLength = 512 * 1024 * 1024 // 512MB - Redis allows up to 512MB for keys
-	if len(req.Key) > maxKeyLength {
-		return "", fmt.Errorf("key size (%d bytes) exceeds maximum allowed size", len(req.Key))
+		return "", fmt.Errorf("key is required")
 	}
 
 	originalKey := strings.TrimSpace(req.OriginalKey)
 	if originalKey == "" {
 		originalKey = req.Key
-	}
-
-	// Fixed: Validate key type
-	if req.KeyType == "" {
-		return "", fmt.Errorf("key type is required")
 	}
 
 	if !req.Overwrite {
@@ -615,7 +588,7 @@ func (r *RedisModule) RedisSetKey(req RedisSetKeyRequest) (string, error) {
 			return "", fmt.Errorf("failed to check key existence: %w", err)
 		}
 		if exists > 0 {
-			return "", fmt.Errorf("key already exists: %s (use overwrite flag to replace)", req.Key)
+			return "", fmt.Errorf("key already exists: %s", req.Key)
 		}
 	}
 
@@ -703,7 +676,7 @@ func (r *RedisModule) RedisSetKey(req RedisSetKeyRequest) (string, error) {
 			return "", fmt.Errorf("failed to set sorted set members: %w", err)
 		}
 	default:
-		return "", fmt.Errorf("unsupported key type: %s (valid types: string, hash, list, set, zset)", req.KeyType)
+		return "", fmt.Errorf("unsupported key type: %s", req.KeyType)
 	}
 
 	if err := applyRedisKeyTTL(ctx, client, req.Key, getRedisTTLMilliseconds(req)); err != nil {
@@ -716,7 +689,7 @@ func (r *RedisModule) RedisSetKey(req RedisSetKeyRequest) (string, error) {
 		}
 	}
 
-	return fmt.Sprintf("Key '%s' set successfully in database %d", req.Key, req.Database), nil
+	return "Key set successfully", nil
 }
 
 // RedisDeleteKey deletes a single key

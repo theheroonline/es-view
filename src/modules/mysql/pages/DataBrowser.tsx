@@ -1,3 +1,4 @@
+import { Modal } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
@@ -280,7 +281,16 @@ export default function MysqlDataBrowser() {
 
     if (whereParts.length === 0) return;
 
-    if (!confirm(t("dataBrowser.deleteConfirm", { docId: String(row[0] ?? index) }))) return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: t("common.confirm"),
+        content: t("dataBrowser.deleteConfirm", { docId: String(row[0] ?? index) }),
+        okType: "danger",
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false)
+      });
+    });
+    if (!confirmed) return;
 
     try {
       const sql = `DELETE FROM \`${selectedDatabase}\`.\`${selectedTable}\` WHERE ${whereParts.join(" AND ")} LIMIT 1`;

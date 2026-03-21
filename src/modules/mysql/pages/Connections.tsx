@@ -23,7 +23,7 @@ export default function MysqlConnectionsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { state, activeConnectionId, saveConnection, deleteConnection } = useElasticsearchContext();
+  const { state, activeConnectionIdByEngine, saveConnection, deleteConnection } = useElasticsearchContext();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success">("error");
@@ -182,7 +182,7 @@ export default function MysqlConnectionsPage() {
                 <tr key={profile.id}>
                   <td className="table-cell-strong">
                     {profile.name}
-                    {profile.id === activeConnectionId && <span className="status-badge-current">{t("connections.currentInUse")}</span>}
+                    {profile.id === activeConnectionIdByEngine.mysql && <span className="status-badge-current">{t("connections.currentInUse")}</span>}
                   </td>
                   <td><span className="pill">MySQL</span></td>
                   <td className="muted">{profile.mysqlHost ?? "127.0.0.1"}:{profile.mysqlPort ?? 3306}</td>

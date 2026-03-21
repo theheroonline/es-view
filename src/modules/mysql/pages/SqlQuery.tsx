@@ -189,7 +189,7 @@ function getLineStartOffset(source: string, lineNumber: number): number {
 
 export default function MysqlSqlQuery() {
   const { t } = useTranslation();
-  const { activeConnectionId, setActiveConnection, state } = useElasticsearchContext();
+  const { getActiveConnectionIdByEngine, setActiveConnection, state } = useElasticsearchContext();
   const {
     databases,
     setDatabases,
@@ -221,7 +221,7 @@ export default function MysqlSqlQuery() {
   const [expandedRowsByResult, setExpandedRowsByResult] = useState<Record<string, Set<number>>>({});
   const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
 
-  const connectionId = activeConnectionId;
+  const connectionId = getActiveConnectionIdByEngine("mysql");
   const currentActiveMysqlConnection = getMysqlConnectionById(connectionId || "");
 
   const currentSqlState = useMemo(
@@ -599,7 +599,7 @@ export default function MysqlSqlQuery() {
   };
 
   const handleConnectionSwitch = async (nextConnectionId: string) => {
-    if (!nextConnectionId || nextConnectionId === activeConnectionId) return;
+    if (!nextConnectionId || nextConnectionId === connectionId) return;
     const nextConnection = getMysqlConnectionById(nextConnectionId);
     if (!nextConnection) return;
 
@@ -807,7 +807,7 @@ export default function MysqlSqlQuery() {
               <select
                 className="form-control"
                 style={{ width: "100%" }}
-                value={activeConnectionId ?? ""}
+                value={connectionId ?? ""}
                 disabled={metaLoading || loading}
                 onChange={(event) => void handleConnectionSwitch(event.target.value)}
               >

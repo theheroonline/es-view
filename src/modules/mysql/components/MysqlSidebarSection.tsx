@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import type { ConnectionProfile } from "../../../lib/types";
 
 interface MysqlSidebarSectionProps {
@@ -6,7 +6,7 @@ interface MysqlSidebarSectionProps {
   profiles: ConnectionProfile[];
   activeConnectionId: string | null | undefined;
   databases: string[];
-  expandedDatabases: string[];
+  expandedSidebarTablesDatabases: string[];
   selectedSidebarTables: string[];
   selectedDatabase?: string;
   selectedTable?: string;
@@ -34,7 +34,7 @@ export default function MysqlSidebarSection({
   profiles,
   activeConnectionId,
   databases,
-  expandedDatabases,
+  expandedSidebarTablesDatabases,
   selectedSidebarTables,
   selectedDatabase,
   selectedTable,
@@ -57,6 +57,14 @@ export default function MysqlSidebarSection({
   onSidebarDatabaseDrop,
 }: MysqlSidebarSectionProps) {
   const selectedSidebarTableSet = new Set(selectedSidebarTables);
+  const [collapsedConnectionIds, setCollapsedConnectionIds] = useState<Record<string, boolean>>({});
+
+  const toggleConnectionCollapse = (connectionId: string) => {
+    setCollapsedConnectionIds((prev) => ({
+      ...prev,
+      [connectionId]: !prev[connectionId],
+    }));
+  };
 
   return (
     <div className="mdb-tree-group mdb-tree-group-spaced">
@@ -77,14 +85,23 @@ export default function MysqlSidebarSection({
         <div className="mdb-tree-items mdb-tree-stack">
           {profiles.map((profile) => {
             const isActiveMysql = activeConnectionId === profile.id && profile.engine === "mysql";
+            const isConnectionCollapsed = collapsedConnectionIds[profile.id] ?? false;
 
             return (
               <div key={profile.id}>
-                {renderConnectionItem(profile)}
-                {isActiveMysql && databases.length > 0 ? (
+                <div
+                  onClick={() => {
+                    if (isActiveMysql) {
+                      toggleConnectionCollapse(profile.id);
+                    }
+                  }}
+                >
+                  {renderConnectionItem(profile)}
+                </div>
+                {isActiveMysql && !isConnectionCollapsed && databases.length > 0 ? (
                   <div className="mdb-tree-nested">
                     {databases.map((database) => {
-                      const isOpened = expandedDatabases.includes(database);
+                      const isOpened = expandedSidebarTablesDatabases.includes(database);
                       const isSelected = selectedDatabase === database;
                       const tables = tablesByDb[database] ?? [];
                       const tableCount = tablesByDb[database]?.length;
@@ -93,14 +110,23 @@ export default function MysqlSidebarSection({
                         <div key={`${profile.id}-${database}`}>
                           <div
                             className={`mdb-tree-item mdb-tree-item-compact mdb-tree-item-between ${isSelected ? "is-selected" : ""}`}
+                            onClick={() => {
+                              if (isSelected) {
+                                void onToggleSidebarTables(database);
+                                return;
+                              }
+
+                              void onOpenDatabase(database);
+                            }}
                             onContextMenu={(event) => onDatabaseContextMenu(event, database)}
                             onDragOver={(event) => event.preventDefault()}
                             onDrop={(event) => onSidebarDatabaseDrop(event, database)}
                           >
                             <span className="mdb-tree-row-main">
                               <span
-                                onClick={() => {
-                                  onToggleSidebarTables(database);
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void onToggleSidebarTables(database);
                                 }}
                                 style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "20px" }}
                                 title="Click to expand/collapse"
@@ -110,11 +136,9 @@ export default function MysqlSidebarSection({
                               <span className={`mdb-status-dot ${isOpened ? "status-success" : "status-idle"}`} />
                               <span
                                 className="mdb-tree-row-label"
-                                onClick={() => {
-                                  void onOpenDatabase(database);
-                                }}
-                                onDoubleClick={() => {
-                                  onToggleSidebarTables(database);
+                                onDoubleClick={(event) => {
+                                  event.stopPropagation();
+                                  void onToggleSidebarTables(database);
                                 }}
                                 style={{ cursor: "pointer", flex: 1 }}
                               >

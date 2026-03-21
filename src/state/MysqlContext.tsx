@@ -100,7 +100,7 @@ interface MysqlContextValue {
 const MysqlContext = createContext<MysqlContextValue | null>(null);
 
 export function MysqlProvider({ children }: { children: ReactNode }) {
-  const { state, activeConnectionId } = useElasticsearchContext();
+  const { state, getActiveConnectionIdByEngine } = useElasticsearchContext();
   const [databases, setDatabases] = useState<string[]>([]);
   const [tablesByDb, setTablesByDb] = useState<Record<string, string[]>>({});
   const [expandedDatabase, setExpandedDatabase] = useState<string | null>(null);
@@ -160,9 +160,10 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
   );
 
   const activeMysqlConnection = useMemo(() => {
+    const activeConnectionId = getActiveConnectionIdByEngine("mysql");
     if (!activeConnectionId) return null;
     return getMysqlConnectionById(activeConnectionId);
-  }, [activeConnectionId, getMysqlConnectionById]);
+  }, [getActiveConnectionIdByEngine, getMysqlConnectionById]);
 
   const value = useMemo(
     () => ({

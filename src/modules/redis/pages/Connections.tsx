@@ -23,7 +23,7 @@ export default function RedisConnectionsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { state, activeConnectionId, saveConnection, deleteConnection } = useElasticsearchContext();
+  const { state, activeConnectionIdByEngine, saveConnection, deleteConnection } = useElasticsearchContext();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success">("error");
@@ -188,7 +188,7 @@ export default function RedisConnectionsPage() {
                 <tr key={profile.id}>
                   <td className="table-cell-strong">
                     {profile.name}
-                    {profile.id === activeConnectionId && <span className="status-badge-current">{t("connections.currentInUse")}</span>}
+                    {profile.id === activeConnectionIdByEngine.redis && <span className="status-badge-current">{t("connections.currentInUse")}</span>}
                   </td>
                   <td><span className="pill">Redis</span></td>
                   <td className="muted">{profile.redisHost ?? "127.0.0.1"}:{profile.redisPort ?? 6379}</td>

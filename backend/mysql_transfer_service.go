@@ -88,9 +88,8 @@ func (s *MysqlTransferService) ExportTables(ctx context.Context, req MysqlExport
 }
 
 func (s *MysqlTransferService) ImportSQL(ctx context.Context, req MysqlImportSqlRequest) (string, error) {
-	// Fixed: Added input validation
 	if req.ConnectionID == "" {
-		return "", fmt.Errorf("connectionId is required for import operation")
+		return "", fmt.Errorf("connectionId is required")
 	}
 
 	selectedFile, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{
@@ -104,16 +103,6 @@ func (s *MysqlTransferService) ImportSQL(ctx context.Context, req MysqlImportSql
 		return "", err
 	}
 
-	// Fixed: Added file size limit (50MB) to prevent memory overflow
-	const maxFileSize = 50 * 1024 * 1024 // 50MB
-	fileInfo, err := os.Stat(selectedFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read file info: %w", err)
-	}
-	if fileInfo.Size() > maxFileSize {
-		return "", fmt.Errorf("SQL file size (%d bytes) exceeds maximum allowed size of %d bytes", fileInfo.Size(), maxFileSize)
-	}
-
 	content, err := os.ReadFile(selectedFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to read SQL file: %w", err)
@@ -122,12 +111,6 @@ func (s *MysqlTransferService) ImportSQL(ctx context.Context, req MysqlImportSql
 	statements := splitMysqlStatements(string(content))
 	if len(statements) == 0 {
 		return "", fmt.Errorf("no SQL statements found in file")
-	}
-
-	// Fixed: Added statement count limit to prevent excessive operations
-	const maxStatements = 10000
-	if len(statements) > maxStatements {
-		return "", fmt.Errorf("file contains %d statements, exceeds maximum of %d", len(statements), maxStatements)
 	}
 
 	db, err := s.getConnectionDB(req.ConnectionID)
@@ -153,12 +136,12 @@ func (s *MysqlTransferService) ImportSQL(ctx context.Context, req MysqlImportSql
 	defer conn.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS=1")
 
 	executed := 0
-	for i, statement := range statements {
+	for _, statement := range statements {
 		if !shouldExecuteMysqlStatement(statement) {
 			continue
 		}
 		if _, err := conn.ExecContext(context.Background(), statement); err != nil {
-			return "", fmt.Errorf("failed to execute statement %d/%d: %w", i+1, len(statements), err)
+			return "", fmt.Errorf("failed to execute statement %d: %w", executed+1, err)
 		}
 		executed++
 	}

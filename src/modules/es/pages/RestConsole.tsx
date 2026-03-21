@@ -1,3 +1,4 @@
+import { Modal } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
@@ -242,10 +243,16 @@ export default function RestConsole() {
     if (!selectedTemplateId) return;
     const target = templates.find((t) => t.id === selectedTemplateId);
     if (!target) return;
-    if (!window.confirm(t("restConsole.deleteTemplateConfirm", { name: target.name }))) return;
-    const next = templates.filter((t) => t.id !== selectedTemplateId);
-    persistTemplates(next);
-    setSelectedTemplateId("");
+    Modal.confirm({
+      title: t("common.confirm"),
+      content: t("restConsole.deleteTemplateConfirm", { name: target.name }),
+      okType: "danger",
+      onOk: () => {
+        const next = templates.filter((t) => t.id !== selectedTemplateId);
+        persistTemplates(next);
+        setSelectedTemplateId("");
+      }
+    });
   };
 
   const copyText = async (text: string) => {

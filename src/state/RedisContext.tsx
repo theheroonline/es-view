@@ -28,7 +28,7 @@ interface RedisContextValue {
 const RedisContext = createContext<RedisContextValue | null>(null);
 
 export function RedisProvider({ children }: { children: ReactNode }) {
-  const { state, activeConnectionId } = useElasticsearchContext();
+  const { state, getActiveConnectionIdByEngine } = useElasticsearchContext();
   const [databases, setDatabases] = useState<RedisDatabaseInfo[]>([]);
   const [selectedDatabase, setSelectedDatabase] = useState<number | null>(null);
   const [keyPattern, setKeyPattern] = useState("");
@@ -61,12 +61,13 @@ export function RedisProvider({ children }: { children: ReactNode }) {
   );
 
   const activeRedisConnection = useMemo(() => {
+    const activeConnectionId = getActiveConnectionIdByEngine("redis");
     if (!activeConnectionId) {
       return null;
     }
 
     return getRedisConnectionById(activeConnectionId);
-  }, [activeConnectionId, getRedisConnectionById]);
+  }, [getActiveConnectionIdByEngine, getRedisConnectionById]);
 
   const resetRedisWorkspace = useCallback(() => {
     setDatabases([]);

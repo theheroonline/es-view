@@ -51,8 +51,7 @@ export function DataTabPanel({
   filterDraftTree,
   totalPages,
   filterOperators,
-  // setSelectedCells is no longer used after removing selection summary bar
-  setSelectedCells: _,
+  // setSelectedCells is intentionally omitted here; selection is handled in table callbacks.
   setFilterPanelOpen,
   setFilterDraftTree,
   onPageChange,

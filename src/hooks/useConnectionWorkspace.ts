@@ -18,26 +18,6 @@ interface ConnectionContextMenuState {
   y: number;
 }
 
-// Helper to disconnect MySQL or Redis connection
-async function disconnectEngine(
-  engine: "mysql" | "redis",
-  connectionId: string,
-  source: string
-): Promise<void> {
-  try {
-    if (engine === "mysql") {
-      await mysqlDisconnect(connectionId);
-    } else if (engine === "redis") {
-      await redisDisconnect(connectionId);
-    }
-  } catch (error) {
-    logError(error, {
-      source,
-      message: `Failed to disconnect ${engine.toUpperCase()} connection ${connectionId}`,
-    });
-  }
-}
-
 export function useConnectionWorkspace() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -45,6 +25,8 @@ export function useConnectionWorkspace() {
   const {
     state,
     activeConnectionId,
+    activeConnectionIdByEngine,
+    getActiveConnectionIdByEngine,
     setActiveConnection,
     refreshIndices,
     disconnectActiveConnection,
@@ -133,19 +115,39 @@ export function useConnectionWorkspace() {
   );
 
   const disconnectConnectionForEdit = async (connectionId?: string) => {
-    if (!connectionId || activeConnectionId !== connectionId) {
+    if (!connectionId) {
       return;
     }
 
     const currentProfile = getProfileById(connectionId);
-    if (currentProfile?.engine === "mysql" || currentProfile?.engine === "redis") {
-      await disconnectEngine(currentProfile.engine, connectionId, "app.connection.disconnectBeforeEdit");
+    if ((connectionStatusById[connectionId] ?? "idle") === "success" && currentProfile?.engine === "mysql") {
+      try {
+        await mysqlDisconnect(connectionId);
+      } catch (error) {
+        logError(error, {
+          source: "app.connection.mysql.disconnectBeforeEdit",
+          message: `Failed to disconnect MySQL connection ${connectionId} before editing config`,
+        });
+      }
     }
 
-    await disconnectActiveConnection();
+    if ((connectionStatusById[connectionId] ?? "idle") === "success" && currentProfile?.engine === "redis") {
+      try {
+        await redisDisconnect(connectionId);
+      } catch (error) {
+        logError(error, {
+          source: "app.connection.redis.disconnectBeforeEdit",
+          message: `Failed to disconnect Redis connection ${connectionId} before editing config`,
+        });
+      }
+    }
+
+    await disconnectActiveConnection(connectionId);
     setIsWorkspaceSuspended(false);
-    resetMysqlWorkspace();
-    resetRedisWorkspace();
+    if (connectionId === activeConnectionId) {
+      resetMysqlWorkspace();
+      resetRedisWorkspace();
+    }
     setConnectionStatusById((prev) => ({
       ...prev,
       [connectionId]: "idle",
@@ -196,14 +198,6 @@ export function useConnectionWorkspace() {
     setIsConnectionActionPending(true);
     setConnectionActionError("");
     setContextMenu(null);
-
-    // 立即断开前一个连接，清理状态，防止竞态条件
-    if (activeConnectionId) {
-      const previousProfile = getProfileById(activeConnectionId);
-      if (previousProfile?.engine === "mysql" || previousProfile?.engine === "redis") {
-        await disconnectEngine(previousProfile.engine, activeConnectionId, "app.connection.change.cleanup");
-      }
-    }
 
     const profile = getProfileById(connectionId);
     if (!profile) {
@@ -312,6 +306,7 @@ export function useConnectionWorkspace() {
         source: "app.connection.change",
         message: `Failed to activate connection ${connectionId}`,
       });
+      await disconnectActiveConnection(connectionId);
       setConnectionStatusById((prev) => ({
         ...prev,
         [connectionId]: "failed",
@@ -325,29 +320,51 @@ export function useConnectionWorkspace() {
     }
   };
 
-  const handleDisconnect = async () => {
-    if (isConnectionActionPending || !activeConnectionId) {
+  const handleDisconnect = async (connectionId?: string) => {
+    const targetConnectionId = connectionId ?? activeConnectionId;
+    if (isConnectionActionPending || !targetConnectionId) {
       return;
     }
 
     setIsConnectionActionPending(true);
     setContextMenu(null);
-    const currentProfile = getProfileById(activeConnectionId);
+    const currentProfile = getProfileById(targetConnectionId);
 
     try {
-      if (currentProfile?.engine === "mysql" || currentProfile?.engine === "redis") {
-        await disconnectEngine(currentProfile.engine, activeConnectionId, "app.connection.disconnect");
+      if (currentProfile?.engine === "mysql") {
+        try {
+          await mysqlDisconnect(targetConnectionId);
+        } catch (error) {
+          logError(error, {
+            source: "app.connection.mysql.disconnect",
+            message: `Failed to disconnect MySQL connection ${targetConnectionId}`,
+          });
+        }
       }
 
-      await disconnectActiveConnection();
+      if (currentProfile?.engine === "redis") {
+        try {
+          await redisDisconnect(targetConnectionId);
+        } catch (error) {
+          logError(error, {
+            source: "app.connection.redis.disconnect",
+            message: `Failed to disconnect Redis connection ${targetConnectionId}`,
+          });
+        }
+      }
+
+      await disconnectActiveConnection(targetConnectionId);
       setIsWorkspaceSuspended(false);
-      resetMysqlWorkspace();
-      resetRedisWorkspace();
       setConnectionStatusById((prev) => ({
         ...prev,
-        [activeConnectionId]: "idle",
+        [targetConnectionId]: "idle",
       }));
-      await navigate("/", { replace: true });
+
+      if (targetConnectionId === activeConnectionId) {
+        resetMysqlWorkspace();
+        resetRedisWorkspace();
+        await navigate("/", { replace: true });
+      }
     } finally {
       setIsConnectionActionPending(false);
     }
@@ -380,7 +397,8 @@ export function useConnectionWorkspace() {
     }
 
     const status = connectionStatusById[connectionId] ?? "idle";
-    if (activeConnectionId === connectionId && status === "success" && !isWorkspaceSuspended) {
+    const activeMysqlConnectionId = getActiveConnectionIdByEngine("mysql");
+    if (activeMysqlConnectionId === connectionId && status === "success" && !isWorkspaceSuspended) {
       return true;
     }
 
@@ -420,14 +438,6 @@ export function useConnectionWorkspace() {
   }, [allProfiles]);
 
   useEffect(() => {
-    if (!activeConnectionId) {
-      return;
-    }
-
-    markConnectionSuccess(activeConnectionId);
-  }, [activeConnectionId]);
-
-  useEffect(() => {
     if (activeConnectionId || !isWorkspaceSuspended) {
       return;
     }
@@ -454,6 +464,7 @@ export function useConnectionWorkspace() {
     connectionActionError,
     setConnectionActionError,
     connectionStatusById,
+    activeConnectionIdByEngine,
     isWorkspaceSuspended,
     handleConnectionChange,
     handleDisconnect,

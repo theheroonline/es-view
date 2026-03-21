@@ -3561,20 +3561,3 @@ input:checked + .slider:before {
 .mysql-create-table-new-row td {
   padding: 10px 16px;
 }
-
-/* ✅ FIXED: Extracted inline styles to CSS classes */
-.mdb-sidebar-footer {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.mdb-sidebar-error {
-  padding: 8px 12px;
-  margin-top: auto;
-}
-
-.mdb-context-menu-item {
-  width: 100%;
-  justify-content: flex-start;
-}

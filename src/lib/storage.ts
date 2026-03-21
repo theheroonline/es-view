@@ -35,7 +35,9 @@ export async function loadState(): Promise<LocalState> {
     }
 
     const data = JSON.parse(raw) as LocalState & { cachedIndicesByConnection?: unknown; history?: unknown };
-    const { cachedIndicesByConnection: _legacyCache, history: _legacyHistory, ...rest } = data;
+    const rest = { ...data };
+    delete rest.cachedIndicesByConnection;
+    delete rest.history;
     return { ...defaultState, ...rest };
   } catch (error) {
     logError(error, {
