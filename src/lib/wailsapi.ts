@@ -107,11 +107,18 @@ const OBJECT_PARAM_METHODS: Record<string, boolean> = {
 /**
  * Convert snake_case to PascalCase
  * e.g., "redis_connect" -> "RedisConnect"
+ * Handles special cases like TTL
  */
 function snakeToPascalCase(str: string): string {
   return str
     .split("_")
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .map(word => {
+      // Special case for TTL
+      if (word.toUpperCase() === "TTL") {
+        return "TTL";
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
     .join("");
 }
 

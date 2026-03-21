@@ -8,9 +8,7 @@ import { RedisKeyEditorModal } from "../components/RedisKeyEditorModal";
 import { RedisKeyTtlModal } from "../components/RedisKeyTtlModal";
 import { redisDeleteKey, redisDeleteKeys, redisGetKeyDetail, redisListDatabases, redisScanKeys, redisSetKey, redisUpdateKeyTtl } from "../services/client";
 import type { RedisSetKeyRequest } from "../types";
-import { formatTtl, isEditableKeyType } from "../utils";
-
-const SCAN_COUNT_OPTIONS = [10, 30, 50, 100, 200, 500];
+import { isEditableKeyType } from "../utils";
 
 export default function RedisBrowserPage() {
   const { t } = useTranslation();
@@ -33,10 +31,8 @@ export default function RedisBrowserPage() {
     selectedKeyDetail,
     setSelectedKeyDetail,
   } = useRedisContext();
-  const [loadingDatabases, setLoadingDatabases] = useState(false);
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [selectedKeyNames, setSelectedKeyNames] = useState<string[]>([]);
   const [scanCount, setScanCount] = useState(100);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
@@ -59,7 +55,6 @@ export default function RedisBrowserPage() {
       return;
     }
 
-    setLoadingDatabases(true);
     setError("");
     try {
       const items = await redisListDatabases(activeRedisConnection.id);
@@ -73,8 +68,6 @@ export default function RedisBrowserPage() {
         message: `Failed to load Redis databases for ${activeRedisConnection.name}`
       });
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingDatabases(false);
     }
   }, [activeRedisConnection, selectedDatabase, setDatabases, setSelectedDatabase]);
 
@@ -134,7 +127,6 @@ export default function RedisBrowserPage() {
       setScannedKeys(nextItems);
       setNextCursor(result.nextCursor);
       setHasMoreKeys(result.hasMore);
-      setSelectedKeyNames((current) => current.filter((item) => nextNames.has(item)));
       setSelectedKey(nextSelectedKey);
       setSelectedKeyDetail(null);
 
@@ -208,7 +200,6 @@ export default function RedisBrowserPage() {
     return [{ index: currentDatabase, label: `DB${currentDatabase}`, keyCount: undefined, isDefault: true }];
   }, [databases, currentDatabase]);
 
-  const allVisibleSelected = scannedKeys.length > 0 && scannedKeys.every((item) => selectedKeyNames.includes(item.name));
   const ttlButtonValue = liveTtlMs === null ? -1 : Math.max(0, Math.ceil(liveTtlMs / 1000));
 
   const closeEditor = () => {
@@ -269,21 +260,22 @@ export default function RedisBrowserPage() {
       return;
     }
 
+    const keyName = selectedKeyDetail.name;
     setTtlSaving(true);
     setTtlError("");
 
     try {
       await redisUpdateKeyTtl(activeRedisConnection.id, currentDatabase, {
-        key: selectedKeyDetail.name,
+        key: keyName,
         ttlMs,
       });
       closeTtlModal();
       await loadDatabases();
-      await loadKeys(true, selectedKeyDetail.name);
+      await loadKeys(true, keyName);
     } catch (err) {
       logError(err, {
         source: "redisBrowser.updateTtl",
-        message: `Failed to update Redis TTL ${selectedKeyDetail.name}`,
+        message: `Failed to update Redis TTL ${keyName}`,
         detail: { database: currentDatabase, ttlMs }
       });
       setTtlError(err instanceof Error ? err.message : String(err));
@@ -327,7 +319,6 @@ export default function RedisBrowserPage() {
 
       const removedSelectedKey = selectedKey !== null && deleteTargets.includes(selectedKey);
       closeDeleteModal();
-      setSelectedKeyNames((current) => current.filter((item) => !deleteTargets.includes(item)));
       if (removedSelectedKey) {
         setSelectedKey(null);
         setSelectedKeyDetail(null);
@@ -346,23 +337,6 @@ export default function RedisBrowserPage() {
     }
   };
 
-  const toggleVisibleSelection = () => {
-    if (allVisibleSelected) {
-      setSelectedKeyNames((current) => current.filter((item) => !scannedKeys.some((key) => key.name === item)));
-      return;
-    }
-
-    const merged = new Set(selectedKeyNames);
-    for (const item of scannedKeys) {
-      merged.add(item.name);
-    }
-    setSelectedKeyNames(Array.from(merged));
-  };
-
-  const toggleKeySelection = (key: string) => {
-    setSelectedKeyNames((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
-  };
-
   if (!activeRedisConnection) {
     return (
       <div className="card">
@@ -374,102 +348,103 @@ export default function RedisBrowserPage() {
   return (
     <div className="redis-browser-grid">
       <div className="card redis-browser-panel">
-        <div style={{ padding: "12px 16px", display: "grid", gap: "12px", flexShrink: 0 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div className="module-toolbar-field">
-              <label>DB</label>
-              <select className="form-control" value={currentDatabase} onChange={(event) => setSelectedDatabase(Number(event.target.value))}>
-                {databaseOptions.map((item) => (
-                  <option key={item.index} value={item.index}>
-                    {item.label}{typeof item.keyCount === "number" ? ` (${item.keyCount})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="module-toolbar-field">
-              <label>{t("redis.browser.batchSize", { count: scanCount })}</label>
-              <select className="form-control" value={scanCount} onChange={(event) => setScanCount(Number(event.target.value))}>
-                {SCAN_COUNT_OPTIONS.map((item) => (
-                  <option key={item} value={item}>{t("redis.browser.batchSize", { count: item })}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="module-toolbar-field">
-            <label>{t("common.search")}</label>
-            <input className="form-control" value={keyPattern} onChange={(event) => setKeyPattern(event.target.value)} placeholder={t("redis.browser.patternPlaceholder")} />
-          </div>
-          <div className="redis-toolbar-button-grid">
-            <button className="btn btn-primary" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px" }} onClick={openCreateEditor}>
+        <div className="redis-browser-toolbar">
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <select className="form-control redis-db-select" value={currentDatabase} onChange={(event) => setSelectedDatabase(Number(event.target.value))}>
+              {databaseOptions.map((item) => (
+                <option key={item.index} value={item.index}>
+                  {item.label}{typeof item.keyCount === "number" ? ` (${item.keyCount})` : ""}
+                </option>
+              ))}
+            </select>
+            <button className="btn btn-primary redis-btn-sm" onClick={openCreateEditor} title={t("common.new")}>
               {t("common.new")}
             </button>
-            <button className="btn btn-ghost" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px", backgroundColor: "#fee2e2" }} onClick={() => openDeleteModal(selectedKeyNames)} disabled={selectedKeyNames.length === 0}>
-              {t("redis.browser.deleteSelected", { count: selectedKeyNames.length })}
-            </button>
-            <button className="btn btn-primary" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px" }} onClick={() => void loadKeys(true)} disabled={loadingKeys}>
-              {loadingKeys ? t("common.loading") : t("common.search")}
-            </button>
-            <button className="btn btn-ghost" style={{ minHeight: "24px", padding: "2px 8px", fontSize: "11px", backgroundColor: "#f0f0f0" }} onClick={() => void loadDatabases()} disabled={loadingDatabases}>
-              {t("common.refresh")}
+          </div>
+          <div style={{ display: "flex", gap: "12px", position: "relative" }}>
+            <input
+              className="form-control redis-search-input"
+              value={keyPattern}
+              onChange={(event) => setKeyPattern(event.target.value)}
+              placeholder={t("redis.browser.patternPlaceholder")}
+            />
+            <button
+              className="redis-search-button"
+              onClick={() => void loadKeys(true)}
+              disabled={loadingKeys}
+              title={t("common.search")}
+              style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)" }}
+            >
+              🔍
             </button>
           </div>
         </div>
 
-        {error && <div className="text-danger" style={{ marginBottom: "12px" }}>{error}</div>}
+        {error && <div className="redis-error-banner">{error}</div>}
 
         <div className="table-wrapper redis-key-table-wrapper">
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: "44px" }}>
-                  <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} />
-                </th>
                 <th>{t("redis.browser.key")}</th>
-                <th>{t("redis.browser.type")}</th>
-                <th>{t("redis.browser.ttl")}</th>
+                <th style={{ textAlign: "center" }}>{t("redis.browser.type")}</th>
               </tr>
             </thead>
             <tbody>
-              {scannedKeys.map((item) => {
-                const checked = selectedKeyNames.includes(item.name);
-                return (
+              {scannedKeys.map((item) => (
                   <tr
                     key={item.name}
                     className={selectedKey === item.name ? "redis-row-active" : undefined}
                     onClick={() => void loadKeyDetail(item.name)}
                     style={{ cursor: "pointer" }}
                   >
-                    <td onClick={(event) => event.stopPropagation()}>
-                      <input type="checkbox" checked={checked} onChange={() => toggleKeySelection(item.name)} />
-                    </td>
                     <td style={{ wordBreak: "break-all" }}>{item.name}</td>
-                    <td><span className="pill">{item.keyType}</span></td>
-                    <td>{formatTtl(item.ttlMs)}</td>
+                    <td style={{ textAlign: "center" }}><span className="pill">{item.keyType}</span></td>
                   </tr>
-                );
-              })}
+                ))}
             </tbody>
           </table>
         </div>
 
-        <div className="redis-toolbar-actions" style={{ marginTop: "12px", justifyContent: "space-between" }}>
-          <div className="muted">{t("redis.browser.cursor")}: {nextCursor}</div>
-          <button className="btn btn-ghost" onClick={() => void loadKeys(false)} disabled={!hasMoreKeys || loadingKeys}>
+        <div className="redis-pagination">
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <label style={{ fontSize: "12px", color: "#556274" }}>每页</label>
+            <input
+              type="number"
+              defaultValue={scanCount}
+              onBlur={(e) => {
+                const value = Math.max(1, parseInt(e.target.value) || 100);
+                setScanCount(value);
+              }}
+              style={{
+                width: "60px",
+                padding: "4px 8px",
+                fontSize: "12px",
+                border: "1px solid #d9e1ec",
+                borderRadius: "4px",
+                textAlign: "center"
+              }}
+              min="1"
+            />
+          </div>
+          <button className="btn btn-primary redis-btn-sm" onClick={() => void loadKeys(false)} disabled={!hasMoreKeys || loadingKeys}>
             {t("redis.browser.nextBatch")}
           </button>
         </div>
       </div>
 
       <div className="card redis-browser-panel">
-        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h3 className="card-title">{t("redis.browser.detail")}</h3>
-            {selectedKey && <div className="muted">{selectedKey}</div>}
-          </div>
-          <div className="redis-detail-header-actions">
-            {selectedKeyDetail && <button className="btn btn-ghost redis-ttl-button" onClick={() => setTtlModalOpen(true)} title={t("redis.browser.editTtl")}>TTL {ttlButtonValue}</button>}
-            {selectedKeyDetail && isEditableKeyType(selectedKeyDetail.keyType) && <button className="btn btn-ghost" onClick={openEditEditor}>{t("common.edit")}</button>}
-            {selectedKeyDetail && <button className="btn btn-ghost text-danger" onClick={() => openDeleteModal([selectedKeyDetail.name])}>{t("common.delete")}</button>}
+        <div className="card-header" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
+              <h3 className="card-title">{t("redis.browser.detail")}</h3>
+              {selectedKey && <div className="muted" style={{ fontSize: "12px", wordBreak: "break-all" }}>{selectedKey}</div>}
+            </div>
+            <div className="redis-detail-header-actions" style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+              {selectedKeyDetail && <button className="btn btn-ghost redis-ttl-button" onClick={() => setTtlModalOpen(true)} title={t("redis.browser.editTtl")}>TTL {ttlButtonValue}</button>}
+              {selectedKeyDetail && isEditableKeyType(selectedKeyDetail.keyType) && <button className="btn btn-ghost" onClick={openEditEditor}>{t("common.edit")}</button>}
+              {selectedKeyDetail && <button className="btn btn-ghost text-danger" onClick={() => openDeleteModal([selectedKeyDetail.name])}>{t("common.delete")}</button>}
+            </div>
           </div>
         </div>
 
