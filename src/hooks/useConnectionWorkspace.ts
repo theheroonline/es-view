@@ -3,12 +3,13 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../lib/errorLog";
 import type { ConnectionProfile } from "../lib/types";
-import { pingCluster } from "../modules/es/services/client";
+import { pingEsCluster } from "../modules/es/services/clusterService";
 import { mysqlConnect, mysqlDisconnect, mysqlListDatabases } from "../modules/mysql/services/client";
-import { redisConnect, redisDisconnect, redisListDatabases } from "../modules/redis/services/client";
+import { redisConnect, redisDisconnect } from "../modules/redis/services/connectionClient";
 import { useElasticsearchContext } from "../state/ElasticsearchContext";
 import { useMysqlContext } from "../state/MysqlContext";
 import { useRedisContext } from "../state/RedisContext";
+import { useSharedConnectionState } from "../state/SharedConnectionState";
 
 export type ConnectionStatus = "success" | "idle" | "failed";
 
@@ -22,17 +23,16 @@ export function useConnectionWorkspace() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const { refreshIndices, getConnectionById } = useElasticsearchContext();
   const {
-    state,
+    profiles,
     activeConnectionId,
     activeConnectionIdByEngine,
     getActiveConnectionIdByEngine,
     setActiveConnection,
-    refreshIndices,
     disconnectActiveConnection,
     deleteConnection,
-    getConnectionById,
-  } = useElasticsearchContext();
+  } = useSharedConnectionState();
   const {
     setDatabases,
     setTablesByDb,
@@ -44,28 +44,21 @@ export function useConnectionWorkspace() {
     getMysqlConnectionById,
   } = useMysqlContext();
   const {
-    setDatabases: setRedisDatabases,
     setSelectedDatabase: setSelectedRedisDatabase,
-    setScannedKeys: setRedisScannedKeys,
-    setNextCursor: setRedisNextCursor,
-    setHasMoreKeys: setRedisHasMoreKeys,
-    setSelectedKey: setRedisSelectedKey,
-    setSelectedKeyDetail: setRedisSelectedKeyDetail,
     getRedisConnectionById,
-    resetRedisWorkspace,
   } = useRedisContext();
 
   const esProfiles = useMemo(
-    () => state.profiles.filter((item) => (item.engine ?? "elasticsearch") === "elasticsearch"),
-    [state.profiles]
+    () => profiles.filter((item) => (item.engine ?? "elasticsearch") === "elasticsearch"),
+    [profiles]
   );
   const mysqlProfiles = useMemo(
-    () => state.profiles.filter((item) => item.engine === "mysql"),
-    [state.profiles]
+    () => profiles.filter((item) => item.engine === "mysql"),
+    [profiles]
   );
   const redisProfiles = useMemo(
-    () => state.profiles.filter((item) => item.engine === "redis"),
-    [state.profiles]
+    () => profiles.filter((item) => item.engine === "redis"),
+    [profiles]
   );
   const allProfiles = useMemo(
     () => [...esProfiles, ...mysqlProfiles, ...redisProfiles],
@@ -73,7 +66,7 @@ export function useConnectionWorkspace() {
   );
 
   const activeProfile = activeConnectionId
-    ? state.profiles.find((profile) => profile.id === activeConnectionId) ?? null
+    ? profiles.find((profile) => profile.id === activeConnectionId) ?? null
     : null;
   const activeEngine = activeProfile?.engine ?? "elasticsearch";
 
@@ -109,9 +102,9 @@ export function useConnectionWorkspace() {
         return null;
       }
 
-      return state.profiles.find((profile) => profile.id === connectionId) ?? null;
+      return profiles.find((profile) => profile.id === connectionId) ?? null;
     },
-    [state.profiles]
+    [profiles]
   );
 
   const disconnectConnectionForEdit = async (connectionId?: string) => {
@@ -146,7 +139,7 @@ export function useConnectionWorkspace() {
     setIsWorkspaceSuspended(false);
     if (connectionId === activeConnectionId) {
       resetMysqlWorkspace();
-      resetRedisWorkspace();
+      setSelectedRedisDatabase(null);
     }
     setConnectionStatusById((prev) => ({
       ...prev,
@@ -259,24 +252,7 @@ export function useConnectionWorkspace() {
         }
 
         await setActiveConnection(connectionId);
-        resetRedisWorkspace();
-        try {
-          const databases = await redisListDatabases(connectionId);
-          setRedisDatabases(databases);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.redis.listDatabases",
-            message: "Failed to load Redis databases after switching connection",
-          });
-          setRedisDatabases([]);
-        }
-
         setSelectedRedisDatabase(redisConnection.database ?? 0);
-        setRedisScannedKeys([]);
-        setRedisNextCursor("0");
-        setRedisHasMoreKeys(false);
-        setRedisSelectedKey(null);
-        setRedisSelectedKeyDetail(null);
         markConnectionSuccess(connectionId);
         setIsWorkspaceSuspended(false);
         await navigate("/redis/browser");
@@ -289,7 +265,7 @@ export function useConnectionWorkspace() {
       }
 
       if (shouldValidate) {
-        await pingCluster(connection);
+        await pingEsCluster(connection);
       }
 
       await setActiveConnection(connectionId);
@@ -362,7 +338,7 @@ export function useConnectionWorkspace() {
 
       if (targetConnectionId === activeConnectionId) {
         resetMysqlWorkspace();
-        resetRedisWorkspace();
+        setSelectedRedisDatabase(null);
         await navigate("/", { replace: true });
       }
     } finally {
@@ -446,7 +422,7 @@ export function useConnectionWorkspace() {
   }, [activeConnectionId, isWorkspaceSuspended]);
 
   return {
-    state,
+    profiles,
     activeConnectionId,
     activeProfile,
     activeEngine,

@@ -1,79 +1,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { MysqlConnection } from "../modules/mysql/types";
-import { useElasticsearchContext } from "./ElasticsearchContext";
-
-export type MysqlFilterOperator =
-  | "eq"
-  | "ne"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "between"
-  | "contains"
-  | "startsWith"
-  | "endsWith"
-  | "isNull"
-  | "isNotNull"
-  | "emptyString"
-  | "notEmptyString";
-
-export interface MysqlFilterConditionNode {
-  id: string;
-  kind: "condition";
-  column: string;
-  operator: MysqlFilterOperator;
-  value?: string;
-}
-
-export interface MysqlFilterGroupNode {
-  id: string;
-  kind: "group";
-  mode: "and" | "or";
-  children: MysqlFilterNode[];
-}
-
-export type MysqlFilterNode = MysqlFilterConditionNode | MysqlFilterGroupNode;
-
-export interface MysqlOpenedTable {
-  database: string;
-  table: string;
-  view: "data" | "structure" | "info";
-  filterTree?: MysqlFilterGroupNode;
-  sortColumn?: string;
-  sortDirection?: "asc" | "desc";
-  visibleColumns?: string[];
-}
-
-export function getMysqlOpenedTableKey(database: string, table: string) {
-  return `${database}::${table}`;
-}
-
-export interface MysqlQueryResult {
-  columns: string[];
-  rows: Array<Array<unknown>>;
-  affectedRows: number;
-  isResultSet: boolean;
-}
-
-export interface ExecutedStatementResult {
-  id: string;
-  sql: string;
-  effectiveSql: string;
-  mode: "execute" | "explain";
-  durationMs: number;
-  connectionName: string;
-  databaseUsed?: string;
-  result?: MysqlQueryResult;
-  explainResult?: MysqlQueryResult;
-  error?: string;
-}
-
-export interface SqlQueryState {
-  sql: string;
-  results: ExecutedStatementResult[];
-}
+import type { MysqlConnection, MysqlOpenedTable, SqlQueryState } from "../modules/mysql/types";
+import { useSharedConnectionState } from "./SharedConnectionState";
 
 interface MysqlContextValue {
   activeMysqlConnection: MysqlConnection | null;
@@ -100,7 +28,7 @@ interface MysqlContextValue {
 const MysqlContext = createContext<MysqlContextValue | null>(null);
 
 export function MysqlProvider({ children }: { children: ReactNode }) {
-  const { state, getActiveConnectionIdByEngine } = useElasticsearchContext();
+  const { profiles, getSecretById, getActiveConnectionIdByEngine } = useSharedConnectionState();
   const [databases, setDatabases] = useState<string[]>([]);
   const [tablesByDb, setTablesByDb] = useState<Record<string, string[]>>({});
   const [expandedDatabase, setExpandedDatabase] = useState<string | null>(null);
@@ -110,6 +38,7 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
   const [activeOpenedTableKey, setActiveOpenedTableKey] = useState<string | null>(null);
   const [sqlQueryStates, setSqlQueryStates] = useState<Record<string, SqlQueryState>>({});
 
+  // Context keeps shared runtime state only; MySQL domain types now live in src/modules/mysql/types.ts.
   const defaultSqlQueryState: SqlQueryState = {
     sql: "",
     results: []
@@ -140,9 +69,9 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
 
   const getMysqlConnectionById = useCallback(
     (id: string): MysqlConnection | null => {
-      const profile = state.profiles.find((p) => p.id === id);
+      const profile = profiles.find((p) => p.id === id);
       if (!profile || profile.engine !== "mysql") return null;
-      const secret = state.secrets[id] ?? {};
+      const secret = getSecretById(id);
       return {
         id: profile.id,
         name: profile.name,
@@ -156,7 +85,7 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
         sshPassword: secret.sshPassword,
       };
     },
-    [state]
+    [getSecretById, profiles]
   );
 
   const activeMysqlConnection = useMemo(() => {

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
 import { useMysqlContext } from "../../../state/MysqlContext";
-import { mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/client";
+import { mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/queryClient";
+import { mysqlDescribeTable } from "../services/schemaClient";
 import type { ColumnMeta } from "../types";
 
 interface QueryState {

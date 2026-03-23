@@ -72,6 +72,10 @@ export interface RedisCommandResult {
   output: string;
 }
 
+export interface RedisWorkspaceState {
+  selectedDatabase: number | null;
+}
+
 export interface RedisSetKeyRequest {
   key: string;
   originalKey?: string;

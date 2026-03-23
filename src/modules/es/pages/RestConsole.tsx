@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
-import { esRequestRaw } from "../services/client";
+import { executeEsRawRequest } from "../services/restConsoleService";
 
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"] as const;
 
@@ -365,7 +365,7 @@ export default function RestConsole() {
           let lastError: string | null = null;
           while (attempt <= retryCount) {
             try {
-              const res = await esRequestRaw(activeConnection, cmd.path, {
+              const res = await executeEsRawRequest(activeConnection, cmd.path, {
                 method: cmd.method,
                 body
               });
@@ -459,7 +459,7 @@ export default function RestConsole() {
 
     const start = performance.now();
     try {
-      const res = await esRequestRaw(activeConnection, normalizedPath, {
+      const res = await executeEsRawRequest(activeConnection, normalizedPath, {
         method,
         body
       });

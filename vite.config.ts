@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import type { IncomingMessage, ServerResponse } from "http";
 import { createProxyMiddleware, type RequestHandler } from "http-proxy-middleware";
 import type { Plugin } from "vite";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 function normalizeProxyTarget(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -64,6 +64,10 @@ function esProxyPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), esProxyPlugin()],
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts"
+  },
   base: "./",
   root: "./src",
   build: {

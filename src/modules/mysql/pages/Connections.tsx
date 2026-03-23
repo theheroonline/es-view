@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
-import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
-import { mysqlConnect, mysqlDisconnect } from "../services/client";
+import { useSharedConnectionState } from "../../../state/SharedConnectionState";
+import { mysqlConnect, mysqlDisconnect } from "../services/connectionClient";
 import type { MysqlConnection } from "../types";
 
 const emptyForm = {
@@ -23,7 +23,7 @@ export default function MysqlConnectionsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { state, activeConnectionIdByEngine, saveConnection, deleteConnection } = useElasticsearchContext();
+  const { profiles, getSecretById, activeConnectionIdByEngine, saveConnection, deleteConnection } = useSharedConnectionState();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success">("error");
@@ -34,7 +34,7 @@ export default function MysqlConnectionsPage() {
   const selectedId = searchParams.get("id") ?? "";
   const isConfigVisible = action === "add" || action === "edit" || action === "copy";
 
-  const mysqlProfiles = state.profiles.filter((item) => item.engine === "mysql");
+  const mysqlProfiles = profiles.filter((item) => item.engine === "mysql");
 
   const resetForm = () => {
     setForm(emptyForm);
@@ -92,11 +92,11 @@ export default function MysqlConnectionsPage() {
     setError("");
 
     try {
-      const profile = state.profiles.find((p) => p.id === id);
+      const profile = profiles.find((p) => p.id === id);
       if (!profile) {
         throw new Error(t("connections.connectionNotFound"));
       }
-      const secret = state.secrets[id] ?? {};
+      const secret = getSecretById(id);
       const conn: MysqlConnection = {
         id: profile.id,
         name: profile.name,
@@ -135,12 +135,12 @@ export default function MysqlConnectionsPage() {
     }
 
     if ((action === "edit" || action === "copy") && selectedId) {
-      const profile = state.profiles.find((item) => item.id === selectedId);
+      const profile = profiles.find((item) => item.id === selectedId);
       if (!profile) {
         closeConfig();
         return;
       }
-      const secret = state.secrets[selectedId] ?? {};
+      const secret = getSecretById(selectedId);
       const nextName = action === "copy" ? `${profile.name} - ${t("common.copy")}` : profile.name;
       setForm({
         id: action === "copy" ? "" : selectedId,
@@ -155,7 +155,7 @@ export default function MysqlConnectionsPage() {
     }
 
     closeConfig();
-  }, [isConfigVisible, action, selectedId, state.profiles, state.secrets]);
+  }, [action, getSecretById, isConfigVisible, profiles, selectedId]);
 
   return (
     <div className="page">

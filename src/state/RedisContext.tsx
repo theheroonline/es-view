@@ -1,51 +1,30 @@
-import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { RedisConnection, RedisDatabaseInfo, RedisKeyDetail, RedisKeySummary } from "../modules/redis/types";
-import { useElasticsearchContext } from "./ElasticsearchContext";
+import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { RedisConnection, RedisWorkspaceState } from "../modules/redis/types";
+import { useSharedConnectionState } from "./SharedConnectionState";
 
 interface RedisContextValue {
   activeRedisConnection: RedisConnection | null;
-  databases: RedisDatabaseInfo[];
-  setDatabases: (databases: RedisDatabaseInfo[]) => void;
-  selectedDatabase: number | null;
+  selectedDatabase: RedisWorkspaceState["selectedDatabase"];
   setSelectedDatabase: (database: number | null) => void;
-  keyPattern: string;
-  setKeyPattern: (pattern: string) => void;
-  scannedKeys: RedisKeySummary[];
-  setScannedKeys: Dispatch<SetStateAction<RedisKeySummary[]>>;
-  nextCursor: string;
-  setNextCursor: (cursor: string) => void;
-  hasMoreKeys: boolean;
-  setHasMoreKeys: (hasMore: boolean) => void;
-  selectedKey: string | null;
-  setSelectedKey: (key: string | null) => void;
-  selectedKeyDetail: RedisKeyDetail | null;
-  setSelectedKeyDetail: (detail: RedisKeyDetail | null) => void;
   getRedisConnectionById: (id: string) => RedisConnection | null;
-  resetRedisWorkspace: () => void;
 }
 
 const RedisContext = createContext<RedisContextValue | null>(null);
 
 export function RedisProvider({ children }: { children: ReactNode }) {
-  const { state, getActiveConnectionIdByEngine } = useElasticsearchContext();
-  const [databases, setDatabases] = useState<RedisDatabaseInfo[]>([]);
+  const { profiles, getSecretById, getActiveConnectionIdByEngine } = useSharedConnectionState();
   const [selectedDatabase, setSelectedDatabase] = useState<number | null>(null);
-  const [keyPattern, setKeyPattern] = useState("");
-  const [scannedKeys, setScannedKeys] = useState<RedisKeySummary[]>([]);
-  const [nextCursor, setNextCursor] = useState("0");
-  const [hasMoreKeys, setHasMoreKeys] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [selectedKeyDetail, setSelectedKeyDetail] = useState<RedisKeyDetail | null>(null);
+  const activeConnectionId = getActiveConnectionIdByEngine("redis");
 
   const getRedisConnectionById = useCallback(
     (id: string): RedisConnection | null => {
-      const profile = state.profiles.find((item) => item.id === id);
+      const profile = profiles.find((item) => item.id === id);
       if (!profile || profile.engine !== "redis") {
         return null;
       }
 
-      const secret = state.secrets[id] ?? {};
+      const secret = getSecretById(id);
       return {
         id: profile.id,
         name: profile.name,
@@ -57,63 +36,32 @@ export function RedisProvider({ children }: { children: ReactNode }) {
         password: secret.password,
       };
     },
-    [state]
+    [getSecretById, profiles]
   );
 
   const activeRedisConnection = useMemo(() => {
-    const activeConnectionId = getActiveConnectionIdByEngine("redis");
     if (!activeConnectionId) {
       return null;
     }
 
     return getRedisConnectionById(activeConnectionId);
-  }, [getActiveConnectionIdByEngine, getRedisConnectionById]);
+  }, [activeConnectionId, getRedisConnectionById]);
 
-  const resetRedisWorkspace = useCallback(() => {
-    setDatabases([]);
+  useEffect(() => {
     setSelectedDatabase(null);
-    setKeyPattern("");
-    setScannedKeys([]);
-    setNextCursor("0");
-    setHasMoreKeys(false);
-    setSelectedKey(null);
-    setSelectedKeyDetail(null);
-  }, []);
+  }, [activeConnectionId]);
 
   const value = useMemo(
     () => ({
       activeRedisConnection,
-      databases,
-      setDatabases,
       selectedDatabase,
       setSelectedDatabase,
-      keyPattern,
-      setKeyPattern,
-      scannedKeys,
-      setScannedKeys,
-      nextCursor,
-      setNextCursor,
-      hasMoreKeys,
-      setHasMoreKeys,
-      selectedKey,
-      setSelectedKey,
-      selectedKeyDetail,
-      setSelectedKeyDetail,
       getRedisConnectionById,
-      resetRedisWorkspace,
     }),
     [
       activeRedisConnection,
-      databases,
       selectedDatabase,
-      keyPattern,
-      scannedKeys,
-      nextCursor,
-      hasMoreKeys,
-      selectedKey,
-      selectedKeyDetail,
       getRedisConnectionById,
-      resetRedisWorkspace,
     ]
   );
 

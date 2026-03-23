@@ -1,7 +1,7 @@
 import type { MouseEvent } from "react";
 import { NavLink } from "react-router-dom";
-import type { MysqlOpenedTable } from "../../../state/MysqlContext";
-import { getMysqlOpenedTableKey } from "../../../state/MysqlContext";
+import type { MysqlOpenedTable } from "../types";
+import { getMysqlOpenedTableKey } from "../types";
 
 interface MysqlWorkspaceTabsProps {
   openedTables: MysqlOpenedTable[];

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
 import { useRedisContext } from "../../../state/RedisContext";
-import { redisExecute } from "../services/client";
+import { redisExecute } from "../services/commandClient";
 
 function parseCommandLine(input: string) {
   const tokens: string[] = [];

@@ -1,6 +1,7 @@
 import { logError } from "./errorLog";
+import { invokeDesktop } from "./transport/wails/invokeDesktop";
 import type { LocalState } from "./types";
-import { invoke, isWails } from "./wailsapi";
+import { isWails } from "./wailsapi";
 
 const STORAGE_KEY = "multi-database-browsing.state";
 
@@ -16,7 +17,10 @@ export async function loadState(): Promise<LocalState> {
     // Try to load from Wails backend first
     if (isWails()) {
       try {
-        raw = await invoke<string>("load_state");
+        raw = await invokeDesktop<string>("load_state", undefined, {
+          featureName: "Application state persistence",
+          errorMessage: "Failed to load application state from desktop backend",
+        });
       } catch (error) {
         logError(error, {
           source: "storage.loadState",
@@ -55,7 +59,10 @@ export async function saveState(state: LocalState) {
     // Try to save via Wails backend first
     if (isWails()) {
       try {
-        await invoke("save_state", { data: payload });
+        await invokeDesktop("save_state", { data: payload }, {
+          featureName: "Application state persistence",
+          errorMessage: "Failed to save application state to desktop backend",
+        });
         return;
       } catch (error) {
         logError(error, {

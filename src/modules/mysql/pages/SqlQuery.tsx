@@ -2,9 +2,12 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type 
 import { useTranslation } from "react-i18next";
 import { format as formatSql } from "sql-formatter";
 import { logError } from "../../../lib/errorLog";
-import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
-import { useMysqlContext, type ExecutedStatementResult } from "../../../state/MysqlContext";
-import { mysqlConnect, mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/client";
+import { useMysqlContext } from "../../../state/MysqlContext";
+import { useSharedConnectionState } from "../../../state/SharedConnectionState";
+import { mysqlConnect } from "../services/connectionClient";
+import { mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/queryClient";
+import { mysqlDescribeTable } from "../services/schemaClient";
+import type { ExecutedStatementResult } from "../types";
 
 interface AutocompleteItem {
   label: string;
@@ -34,7 +37,69 @@ const MYSQL_KEYWORDS = [
   "DROP TABLE",
   "SHOW TABLES",
   "DESCRIBE",
-  "USE"
+  "USE",
+  "EXPLAIN",
+  "TRUNCATE",
+  "IF",
+  "ELSE",
+  "END",
+  "CASE",
+  "WHEN",
+  "THEN",
+  "AND",
+  "OR",
+  "NOT",
+  "IN",
+  "IS",
+  "NULL",
+  "LIKE",
+  "BETWEEN",
+  "UNION",
+  "ALL",
+  "DISTINCT",
+  "AS",
+  "ON",
+  "HAVING",
+  "VALUES",
+  "SET",
+  "PRIMARY KEY",
+  "FOREIGN KEY",
+  "AUTO_INCREMENT",
+  "DEFAULT",
+  "CURRENT_TIMESTAMP",
+  "NOW()",
+  "COUNT",
+  "SUM",
+  "AVG",
+  "MIN",
+  "MAX",
+  "IFNULL",
+  "COALESCE",
+  "CAST",
+  "CONVERT",
+  "EXISTS",
+  "ANY",
+  "SOME",
+  "ASC",
+  "DESC",
+  "DATABASE()",
+  "VERSION()",
+  "CHAR_LENGTH",
+  "LENGTH",
+  "SUBSTRING",
+  "CONCAT",
+  "ROUND",
+  "FLOOR",
+  "CEIL",
+  "RAND",
+  "DATE",
+  "TIME",
+  "YEAR",
+  "MONTH",
+  "DAY",
+  "HOUR",
+  "MINUTE",
+  "SECOND"
 ];
 
 function splitSqlStatements(input: string) {
@@ -189,7 +254,7 @@ function getLineStartOffset(source: string, lineNumber: number): number {
 
 export default function MysqlSqlQuery() {
   const { t } = useTranslation();
-  const { getActiveConnectionIdByEngine, setActiveConnection, state } = useElasticsearchContext();
+  const { getActiveConnectionIdByEngine, setActiveConnection, profiles } = useSharedConnectionState();
   const {
     databases,
     setDatabases,
@@ -245,8 +310,8 @@ export default function MysqlSqlQuery() {
 
   const selectedText = sql.slice(selectionRange.start, selectionRange.end).trim();
   const mysqlProfiles = useMemo(
-    () => state.profiles.filter((profile) => profile.engine === "mysql"),
-    [state.profiles]
+    () => profiles.filter((profile) => profile.engine === "mysql"),
+    [profiles]
   );
 
   const selectedDatabaseTables = useMemo(() => {

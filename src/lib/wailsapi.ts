@@ -33,6 +33,17 @@ function getWailsAppApi(): Record<string, (...args: any[]) => Promise<any>> | un
   return go.backend?.App ?? go.main?.App;
 }
 
+export function getWailsRuntimeSnapshot() {
+  return {
+    hasWindow: typeof window !== "undefined",
+    hasGo: typeof window !== "undefined" ? typeof window.go : "undefined",
+    hasBackend: typeof window !== "undefined" ? typeof window.go?.backend : "undefined",
+    hasBackendApp: typeof window !== "undefined" ? typeof window.go?.backend?.App : "undefined",
+    hasMain: typeof window !== "undefined" ? typeof window.go?.main : "undefined",
+    hasMainApp: typeof window !== "undefined" ? typeof window.go?.main?.App : "undefined",
+  };
+}
+
 /**
  * Check if running in Wails environment
  */

@@ -1,0 +1,40 @@
+import { logError } from "../../../lib/errorLog";
+import type { RedisConnection } from "../types";
+import { invokeRedis, requireRedisDesktopMode } from "./runtime";
+
+export async function redisConnect(connection: RedisConnection): Promise<void> {
+  await requireRedisDesktopMode();
+  try {
+    await invokeRedis<void>("redis_connect", {
+      connectionId: connection.id,
+      host: connection.host,
+      port: connection.port,
+      database: connection.database,
+      username: connection.username || undefined,
+      password: connection.password || undefined,
+    }, {
+      errorMessage: `Redis connect failed for ${connection.name}`,
+    });
+  } catch (error) {
+    logError(error, {
+      source: "redisClient.connect",
+      message: `Failed to connect to Redis ${connection.name}`
+    });
+    throw error;
+  }
+}
+
+export async function redisDisconnect(connectionId: string): Promise<void> {
+  await requireRedisDesktopMode();
+  try {
+    await invokeRedis<void>("redis_disconnect", { connectionId }, {
+      errorMessage: `Redis disconnect failed for ${connectionId}`,
+    });
+  } catch (error) {
+    logError(error, {
+      source: "redisClient.disconnect",
+      message: `Failed to disconnect Redis connection ${connectionId}`
+    });
+    throw error;
+  }
+}

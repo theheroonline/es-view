@@ -1,40 +1,13 @@
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { logError } from "../lib/errorLog";
-import { loadState, saveState } from "../lib/storage";
-import type { ConnectionProfile, LocalState, SecretConfig } from "../lib/types";
-import { listIndices } from "../modules/es/services/client";
+import { listEsIndices } from "../modules/es/services/clusterService";
 import type { EsConnection, IndexMeta } from "../modules/es/types";
+import { useSharedConnectionState } from "./SharedConnectionState";
 
-type EngineKey = "elasticsearch" | "mysql" | "redis";
-
-function getProfileEngine(profile?: ConnectionProfile | null): EngineKey {
-  if (!profile || !profile.engine) return "elasticsearch";
-  if (profile.engine === "mysql") return "mysql";
-  if (profile.engine === "redis") return "redis";
-  return "elasticsearch";
-}
-
-const normalizeProfile = (profile: ConnectionProfile): ConnectionProfile => ({
-  ...profile,
-  engine: profile.engine ?? "elasticsearch",
-  ssh: {
-    enabled: profile.ssh?.enabled ?? false,
-    host: profile.ssh?.host ?? "",
-    port: profile.ssh?.port ?? 22,
-    username: profile.ssh?.username ?? ""
-  }
-});
+const isSystemIndex = (name: string) => name.startsWith(".");
 
 interface ElasticsearchContextValue {
-  state: LocalState;
-  activeConnectionId?: string;
-  activeConnectionIdByEngine: Partial<Record<EngineKey, string>>;
-  getActiveConnectionIdByEngine: (engine: EngineKey) => string | undefined;
-  saveConnection: (profile: ConnectionProfile, secret: SecretConfig) => Promise<void>;
-  deleteConnection: (id: string) => Promise<void>;
-  setActiveConnection: (id: string) => Promise<void>;
-  disconnectActiveConnection: (connectionId?: string) => Promise<void>;
   activeConnection: EsConnection | null;
   getActiveConnection: () => EsConnection | null;
   getConnectionById: (id: string) => EsConnection | null;
@@ -45,195 +18,48 @@ interface ElasticsearchContextValue {
   setSelectedIndex: (index: string | undefined) => void;
 }
 
-const defaultState: LocalState = {
-  profiles: [],
-  secrets: {}
-};
-
-const isSystemIndex = (name: string) => name.startsWith(".");
-
 const ElasticsearchContext = createContext<ElasticsearchContextValue | null>(null);
 
 export function ElasticsearchProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<LocalState>(defaultState);
-  const [connectedConnectionId, setConnectedConnectionId] = useState<string | undefined>(undefined);
-  const [activeConnectionIdByEngine, setActiveConnectionIdByEngine] = useState<Partial<Record<EngineKey, string>>>({});
+  const { profiles, getSecretById, getActiveConnectionIdByEngine } = useSharedConnectionState();
   const [selectedIndex, setSelectedIndexState] = useState<string | undefined>(undefined);
   const [indices, setIndices] = useState<string[]>([]);
   const [indicesMeta, setIndicesMeta] = useState<IndexMeta[]>([]);
   const [indicesCacheByConnection, setIndicesCacheByConnection] = useState<Record<string, { indices: string[]; indicesMeta: IndexMeta[] }>>({});
-  const [stateLoaded, setStateLoaded] = useState(false);
 
-  useEffect(() => {
-    loadState()
-      .then((loaded) => {
-        const normalizedProfiles = (loaded.profiles ?? [])
-          .map((item) => normalizeProfile(item));
-        const lastConnectionId = normalizedProfiles.some((item) => item.id === loaded.lastConnectionId)
-          ? loaded.lastConnectionId
-          : normalizedProfiles[0]?.id;
-
-        setState({
-          ...loaded,
-          profiles: normalizedProfiles,
-          lastConnectionId
-        });
-        setStateLoaded(true);
-      })
-      .catch((error) => {
-        logError(error, {
-          source: "elasticsearchContext.loadState",
-          message: "Failed to load local application state"
-        });
-        setState(defaultState);
-        setStateLoaded(true);
-      });
-  }, []);
-
-  const persist = useCallback(async (nextState: LocalState) => {
-    await saveState(nextState);
-    setState(nextState);
-  }, []);
-
-  const saveConnection = useCallback(async (profile: ConnectionProfile, secret: SecretConfig) => {
-    const profiles = [...state.profiles];
-    const index = profiles.findIndex((item) => item.id === profile.id);
-    const normalizedProfile = normalizeProfile(profile);
-    if (index >= 0) {
-      profiles[index] = normalizedProfile;
-    } else {
-      profiles.push(normalizedProfile);
-    }
-    const nextState: LocalState = {
-      ...state,
-      profiles,
-      secrets: {
-        ...state.secrets,
-        [profile.id]: secret
-      },
-      lastConnectionId: normalizedProfile.id
-    };
-    await persist(nextState);
-  }, [state, persist]);
-
-  const deleteConnection = useCallback(async (id: string) => {
-    const profiles = state.profiles.filter((item) => item.id !== id);
-    const secrets = { ...state.secrets };
-    delete secrets[id];
-    const nextState: LocalState = {
-      ...state,
-      profiles,
-      secrets,
-      lastConnectionId: state.lastConnectionId === id ? profiles[0]?.id : state.lastConnectionId
-    };
-    if (connectedConnectionId === id) {
-      setConnectedConnectionId(undefined);
-    }
-    setActiveConnectionIdByEngine((prev) => {
-      const next = { ...prev };
-      (Object.keys(next) as EngineKey[]).forEach((engine) => {
-        if (next[engine] === id) {
-          delete next[engine];
-        }
-      });
-      return next;
-    });
-    setIndicesCacheByConnection((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-    await persist(nextState);
-  }, [state, persist, connectedConnectionId]);
-
-  const setActiveConnection = useCallback(async (id: string) => {
-    const profile = state.profiles.find((item) => item.id === id);
-    const engine = getProfileEngine(profile);
-
-    setConnectedConnectionId(id);
-    setActiveConnectionIdByEngine((prev) => ({
-      ...prev,
-      [engine]: id
-    }));
-
-    const cached = indicesCacheByConnection[id];
-    if (engine === "elasticsearch" && cached) {
-      setIndices(cached.indices);
-      setIndicesMeta(cached.indicesMeta);
-    } else {
-      setIndices([]);
-      setIndicesMeta([]);
-    }
-    await persist({ ...state, lastConnectionId: id });
-  }, [state, persist, indicesCacheByConnection]);
-
-  const disconnectActiveConnection = useCallback(async (connectionId?: string) => {
-    const targetId = connectionId ?? connectedConnectionId;
-    if (!targetId) {
-      return;
-    }
-
-    const targetProfile = state.profiles.find((item) => item.id === targetId);
-    const targetEngine = getProfileEngine(targetProfile);
-
-    setActiveConnectionIdByEngine((prev) => {
-      if (prev[targetEngine] !== targetId) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[targetEngine];
-      return next;
-    });
-
-    if (connectedConnectionId === targetId) {
-      setConnectedConnectionId(undefined);
-    }
-
-    if (targetEngine === "elasticsearch") {
-      setSelectedIndexState(undefined);
-      setIndices([]);
-      setIndicesMeta([]);
-    }
-  }, [connectedConnectionId, state.profiles]);
-
-  const getActiveConnectionIdByEngine = useCallback(
-    (engine: EngineKey) => activeConnectionIdByEngine[engine],
-    [activeConnectionIdByEngine]
-  );
+  const activeEsConnectionId = getActiveConnectionIdByEngine("elasticsearch");
 
   const setSelectedIndex = useCallback((index: string | undefined) => {
     setSelectedIndexState(index);
   }, []);
 
-  const getActiveConnection = useCallback((): EsConnection | null => {
-    const id = activeConnectionIdByEngine.elasticsearch;
-    if (!id) return null;
-    const profile = state.profiles.find((item) => item.id === id);
-    if (!profile) return null;
-    const secret = state.secrets[id] ?? {};
-    return {
-      ...normalizeProfile(profile),
-      username: secret.username,
-      password: secret.password,
-      apiKey: secret.apiKey,
-      sshPassword: secret.sshPassword
-    };
-  }, [state, activeConnectionIdByEngine.elasticsearch]);
-
   const getConnectionById = useCallback((id: string): EsConnection | null => {
-    const profile = state.profiles.find((item) => item.id === id);
-    if (!profile) return null;
-    const secret = state.secrets[id] ?? {};
+    const profile = profiles.find((item) => item.id === id);
+    if (!profile || (profile.engine ?? "elasticsearch") !== "elasticsearch") {
+      return null;
+    }
+
+    const secret = getSecretById(id);
     return {
-      ...normalizeProfile(profile),
+      ...profile,
+      engine: profile.engine ?? "elasticsearch",
+      ssh: {
+        enabled: profile.ssh?.enabled ?? false,
+        host: profile.ssh?.host ?? "",
+        port: profile.ssh?.port ?? 22,
+        username: profile.ssh?.username ?? ""
+      },
       username: secret.username,
       password: secret.password,
       apiKey: secret.apiKey,
       sshPassword: secret.sshPassword
     };
-  }, [state]);
+  }, [getSecretById, profiles]);
 
-
+  const getActiveConnection = useCallback((): EsConnection | null => {
+    if (!activeEsConnectionId) return null;
+    return getConnectionById(activeEsConnectionId);
+  }, [activeEsConnectionId, getConnectionById]);
 
   const refreshIndices = useCallback(async (connection?: EsConnection | null) => {
     const target = connection ?? getActiveConnection();
@@ -242,13 +68,15 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
       setIndicesMeta([]);
       return;
     }
+
     if ((target.engine ?? "elasticsearch") !== "elasticsearch") {
       setIndices([]);
       setIndicesMeta([]);
       return;
     }
+
     try {
-      const data = await listIndices(target);
+      const data = await listEsIndices(target);
       const mapped: IndexMeta[] = data
         .map((item) => ({
           index: item.index,
@@ -282,54 +110,49 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     }
   }, [getActiveConnection]);
 
-  const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
-
   useEffect(() => {
-    if (!connectedConnectionId) return;
-    const exists = state.profiles.some((item) => item.id === connectedConnectionId);
-    if (!exists) {
-      setConnectedConnectionId(undefined);
+    if (!activeEsConnectionId) {
+      setSelectedIndexState(undefined);
       setIndices([]);
       setIndicesMeta([]);
+      return;
     }
-  }, [connectedConnectionId, state.profiles]);
+
+    const cached = indicesCacheByConnection[activeEsConnectionId];
+    if (!cached) {
+      setIndices([]);
+      setIndicesMeta([]);
+      return;
+    }
+
+    setIndices(cached.indices);
+    setIndicesMeta(cached.indicesMeta);
+    setSelectedIndexState((prev) => {
+      if (prev && !cached.indices.includes(prev)) return undefined;
+      return prev;
+    });
+  }, [activeEsConnectionId, indicesCacheByConnection]);
 
   useEffect(() => {
-    setActiveConnectionIdByEngine((prev) => {
-      const profileIdSet = new Set(state.profiles.map((item) => item.id));
+    setIndicesCacheByConnection((prev) => {
+      const profileIdSet = new Set(profiles.map((item) => item.id));
       let changed = false;
-      const next: Partial<Record<EngineKey, string>> = { ...prev };
+      const next = { ...prev };
 
-      (Object.keys(next) as EngineKey[]).forEach((engine) => {
-        const id = next[engine];
-        if (id && !profileIdSet.has(id)) {
-          delete next[engine];
+      Object.keys(next).forEach((connectionId) => {
+        if (!profileIdSet.has(connectionId)) {
+          delete next[connectionId];
           changed = true;
         }
       });
 
       return changed ? next : prev;
     });
-  }, [state.profiles]);
+  }, [profiles]);
 
-  useEffect(() => {
-    if (!stateLoaded) return;
-    if (!activeConnection) return;
-    if ((activeConnection.engine ?? "elasticsearch") !== "elasticsearch") {
-      setIndices([]);
-      setIndicesMeta([]);
-    }
-  }, [activeConnection?.id, activeConnection?.engine, stateLoaded]);
+  const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
 
   const value = useMemo(() => ({
-    state,
-    activeConnectionId: connectedConnectionId,
-    activeConnectionIdByEngine,
-    getActiveConnectionIdByEngine,
-    saveConnection,
-    deleteConnection,
-    setActiveConnection,
-    disconnectActiveConnection,
     activeConnection,
     getActiveConnection,
     getConnectionById,
@@ -338,7 +161,7 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     refreshIndices,
     selectedIndex,
     setSelectedIndex
-  }), [state, connectedConnectionId, activeConnectionIdByEngine, getActiveConnectionIdByEngine, saveConnection, deleteConnection, setActiveConnection, disconnectActiveConnection, activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex]);
+  }), [activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex]);
 
   return <ElasticsearchContext.Provider value={value}>{children}</ElasticsearchContext.Provider>;
 }
@@ -346,7 +169,7 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
 export function useElasticsearchContext() {
   const ctx = useContext(ElasticsearchContext);
   if (!ctx) {
-    throw new Error("ElasticsearchContext 未初始化");
+    throw new Error("ElasticsearchContext not initialized");
   }
   return ctx;
 }

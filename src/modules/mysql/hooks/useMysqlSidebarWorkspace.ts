@@ -3,16 +3,19 @@ import { useEffect, useState, type MouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
-import { getMysqlOpenedTableKey, useMysqlContext } from "../../../state/MysqlContext";
+import { getMysqlOpenedTableKey } from "../types";
+import { useMysqlContext } from "../../../state/MysqlContext";
 import { getCharsetOption, MYSQL_CHARSET_OPTIONS } from "../constants/databaseOptions";
 import {
-    mysqlExportDatabase,
-    mysqlExportTable,
-    mysqlImportSql,
     mysqlListDatabases,
     mysqlListTables,
     mysqlQuery,
-} from "../services/client";
+} from "../services/queryClient";
+import {
+  mysqlExportDatabase,
+  mysqlExportTable,
+  mysqlImportSql,
+} from "../services/transferClient";
 
 interface DatabaseMenuState {
   database: string;

@@ -8,7 +8,8 @@ import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../../../components/FieldFilterButton";
 import { logError } from "../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
-import { extractFieldsFromMapping, getIndexMapping, searchIndex } from "../services/client";
+import { loadEsIndexFields } from "../services/searchService";
+import { executeEsSqlSelect } from "../services/sqlService";
 
 const { RangePicker } = DatePicker;
 
@@ -134,11 +135,10 @@ export default function SqlQuery() {
       return;
     }
     let ignore = false;
-    getIndexMapping(activeConnection, selectedIndex)
-      .then((mapping) => {
+    loadEsIndexFields(activeConnection, selectedIndex)
+      .then((fields) => {
         if (ignore) return;
-        const extracted = extractFieldsFromMapping(mapping, selectedIndex);
-        setAvailableFields(extracted);
+        setAvailableFields(fields);
       })
       .catch(() => {
         if (ignore) return;
@@ -277,41 +277,15 @@ export default function SqlQuery() {
     try {
       // 构建 DSL 查询
       const body = buildDslQuery();
-
-      // 执行 DSL 搜索
-      const response = await searchIndex(activeConnection, selectedIndex, body);
-
-      // 提取列和行数据
-      const hits = response?.hits?.hits ?? [];
-      let columns = availableFields.length > 0 ? availableFields : [];
-
-      // 从结果中自动提取列（如果 mapping 未加载）
-      if (columns.length === 0) {
-        const colSet = new Set<string>();
-        hits.forEach((hit: any) => {
-          Object.keys(hit._source || {}).forEach((key) => colSet.add(key));
-        });
-        columns = Array.from(colSet);
-      }
-
-      // 转换为二维数组格式
-      const rows = hits.map((hit: any) => columns.map((col) => hit._source?.[col]));
-
-      // 应用字段过滤
-      if (fieldFilter.enabled) {
-        const filteredColumns = fieldFilter.fields.filter((f) => columns.includes(f));
-        const filteredRows = rows.map((row: Array<unknown>) =>
-          filteredColumns.map((col) => {
-            const idx = columns.indexOf(col);
-            return idx >= 0 ? row[idx] : undefined;
-          })
-        );
-        setResult({ columns: filteredColumns, rows: filteredRows });
-      } else {
-        setResult({ columns, rows });
-      }
-
-      setTotalRows(hits.length);
+      const { result: nextResult, totalRows: nextTotalRows } = await executeEsSqlSelect(
+        activeConnection,
+        selectedIndex,
+        body,
+        availableFields,
+        fieldFilter,
+      );
+      setResult(nextResult);
+      setTotalRows(nextTotalRows);
     } catch (err) {
       const message = err instanceof Error ? err.message : t('common.error');
       logError(err, {
