@@ -29,14 +29,16 @@ function getWailsAppApi(): Record<string, (...args: any[]) => Promise<any>> | un
     return undefined;
   }
 
-  // Prefer backend package name (current project), keep main as fallback for compatibility.
-  return go.backend?.App ?? go.main?.App;
+  // Prefer app package name (current project), keep backend/main as compatibility fallback.
+  return go.app?.App ?? go.backend?.App ?? go.main?.App;
 }
 
 export function getWailsRuntimeSnapshot() {
   return {
     hasWindow: typeof window !== "undefined",
     hasGo: typeof window !== "undefined" ? typeof window.go : "undefined",
+    hasApp: typeof window !== "undefined" ? typeof window.go?.app : "undefined",
+    hasAppApp: typeof window !== "undefined" ? typeof window.go?.app?.App : "undefined",
     hasBackend: typeof window !== "undefined" ? typeof window.go?.backend : "undefined",
     hasBackendApp: typeof window !== "undefined" ? typeof window.go?.backend?.App : "undefined",
     hasMain: typeof window !== "undefined" ? typeof window.go?.main : "undefined",

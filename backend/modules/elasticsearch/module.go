@@ -1,4 +1,4 @@
-package backend
+package elasticsearch
 
 import (
 	"bytes"
@@ -9,7 +9,13 @@ import (
 	"net/http"
 )
 
-func (m *ElasticsearchModule) HttpRequest(params HttpRequestParams) (string, error) {
+type Module struct{}
+
+func NewModule() *Module {
+	return &Module{}
+}
+
+func (m *Module) HttpRequest(params HttpRequestParams) (string, error) {
 	client := &http.Client{}
 
 	var bodyReader io.Reader

@@ -1,5 +1,5 @@
 import type { MutableRefObject } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 interface UseEsDataBrowserAutoQueryParams {
   activeConnectionId?: string;
@@ -28,8 +28,21 @@ export function useEsDataBrowserAutoQuery({
   size,
   skipNextAutoQueryRef,
 }: UseEsDataBrowserAutoQueryParams) {
+  const executeQueryRef = useRef(executeQuery);
+  const onErrorRef = useRef(onError);
+  const lastAutoQueryKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    executeQueryRef.current = executeQuery;
+  }, [executeQuery]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
   useEffect(() => {
     if (!selectedIndex || !activeConnectionId || page <= 0 || size <= 0) {
+      lastAutoQueryKeyRef.current = null;
       return;
     }
 
@@ -37,6 +50,12 @@ export function useEsDataBrowserAutoQuery({
       skipNextAutoQueryRef.current = false;
       return;
     }
+
+    const autoQueryKey = `${activeConnectionId}::${selectedIndex}::${page}::${size}`;
+    if (lastAutoQueryKeyRef.current === autoQueryKey) {
+      return;
+    }
+    lastAutoQueryKeyRef.current = autoQueryKey;
 
     let ignore = false;
 
@@ -46,12 +65,12 @@ export function useEsDataBrowserAutoQuery({
       setLoadingMessage("");
 
       try {
-        const response = await executeQuery();
+        const response = await executeQueryRef.current();
         if (!ignore) {
           setResult(response);
         }
       } catch (error) {
-        onError(error);
+        onErrorRef.current(error);
         if (!ignore) {
           setError(error instanceof Error ? error.message : String(error));
         }
@@ -65,6 +84,8 @@ export function useEsDataBrowserAutoQuery({
 
     return () => {
       ignore = true;
+      setLoading(false);
+      setLoadingMessage("");
     };
-  }, [activeConnectionId, executeQuery, onError, page, selectedIndex, setError, setLoading, setLoadingMessage, setResult, size, skipNextAutoQueryRef]);
+  }, [activeConnectionId, page, selectedIndex, setError, setLoading, setLoadingMessage, setResult, size, skipNextAutoQueryRef]);
 }

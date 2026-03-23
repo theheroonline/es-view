@@ -35,21 +35,19 @@
 
 ### 2.2 后端
 
-- Wails 入口和模块组织目前都在 `backend/` 平铺目录下
+- Wails 入口和模块组织已经迁移为分层 package
 - 典型文件分布：
-  - App 入口与生命周期：`backend/app.go`、`backend/app_lifecycle.go`
-  - 状态相关：`backend/app_state.go`、`backend/state_store.go`
-  - MySQL：`backend/mysql.go`、`backend/mysql_transfer.go`、`backend/mysql_transfer_service.go`、`backend/mysql_transfer_dump.go`、`backend/mysql_transfer_sql.go`
-  - Redis：`backend/redis.go`
-  - Elasticsearch：`backend/elasticsearch.go`、`backend/elasticsearch_module.go`
+   - App 入口与生命周期：`backend/app/app.go`、`backend/app/lifecycle.go`
+   - 状态相关：`backend/infra/state_store/state_store.go`
+   - MySQL：`backend/modules/mysql/`
+   - Redis：`backend/modules/redis/`
+   - Elasticsearch：`backend/modules/elasticsearch/`
 
 ### 2.3 已知风险
 
 1. Context 仍然承载了部分领域模型，不只是界面态。
-2. MySQL 模块已经形成细分目录，但 Redis 和 ES 还没有对齐。
-3. Wails 调用层有统一封装，但各模块仍然写了不少重复的环境判断和错误包装。
-4. 后端虽然已经开始按文件拆分，但 package 级分层还不够清楚。
-5. 仓库当前缺少前端与 Go 层的自动化测试文件。
+2. Wails 调用层有统一封装，但各模块仍然写了不少重复的环境判断和错误包装。
+3. 仓库当前缺少前端与 Go 层的自动化测试文件。
 
 ## 3. 目标结构
 
@@ -434,20 +432,14 @@ src/modules/<engine>/
 
 将当前平铺目录：
 
-- `backend/app.go`
-- `backend/app_lifecycle.go`
-- `backend/app_state.go`
-- `backend/mysql.go`
-- `backend/mysql_transfer.go`
-- `backend/mysql_transfer_service.go`
-- `backend/mysql_transfer_dump.go`
-- `backend/mysql_transfer_sql.go`
-- `backend/redis.go`
-- `backend/elasticsearch.go`
-- `backend/elasticsearch_module.go`
-- `backend/modules.go`
-- `backend/helpers.go`
-- `backend/state_store.go`
+- `backend/app/app.go`
+- `backend/app/lifecycle.go`
+- `backend/app/state.go`
+- `backend/modules/mysql/`
+- `backend/modules/redis/`
+- `backend/modules/elasticsearch/`
+- `backend/infra/state_store/state_store.go`
+- `backend/shared/db.go`
 
 逐步整理为：
 
@@ -460,18 +452,13 @@ src/modules/<engine>/
 
 ### 文件级动作
 
-1. `backend/app.go` 只保留 App 结构和依赖注入。
-2. `backend/app_lifecycle.go`、`backend/app_state.go` 迁移到 `backend/app/`。
-3. MySQL 相关文件继续沿职责拆分：
-   - `backend/mysql.go` -> query / schema / connection service
-   - `backend/mysql_transfer.go` -> module facade
-   - `backend/mysql_transfer_service.go` -> transfer service
-   - `backend/mysql_transfer_dump.go` -> dump builder
-   - `backend/mysql_transfer_sql.go` -> SQL parser
-4. `backend/redis.go` 独立到 `backend/modules/redis/module.go`。
-5. `backend/elasticsearch.go`、`backend/elasticsearch_module.go` 合并梳理为模块入口和 HTTP 代理服务两层。
-6. `backend/state_store.go` 下沉到 infra 层。
-7. `backend/helpers.go` 中如果存在 MySQL/Redis/ES 专属辅助函数，分别迁回各模块，只保留真正共享的 helper。
+1. `backend/app/app.go` 只保留 App 结构和依赖注入。
+2. `backend/app/lifecycle.go`、`backend/app/state.go` 继续保持为 App 生命周期和状态转发。
+3. MySQL 已完成模块内拆分，继续围绕 `backend/modules/mysql/` 补测试和收尾。
+4. Redis 已完成模块内拆分，继续围绕 `backend/modules/redis/` 补测试和收尾。
+5. Elasticsearch 已完成模块内拆分，继续围绕 `backend/modules/elasticsearch/` 补测试和收尾。
+6. `backend/infra/state_store/state_store.go` 已承接状态持久化。
+7. `backend/shared/db.go` 保留跨模块共享 helper。
 
 ### 注意事项
 
@@ -522,12 +509,14 @@ src/modules/<engine>/
 #### 后端优先补的测试
 
 1. MySQL SQL 拆分和 transfer 逻辑
-   - `backend/mysql_transfer_sql.go`
-   - `backend/mysql_transfer_service.go`
+   - `backend/modules/mysql/transfer.go`
+   - `backend/modules/mysql/helpers.go`
 2. Query 类型判断逻辑
-   - `backend/mysql.go` 中的关键纯函数
+   - `backend/modules/mysql/helpers.go` 中的关键纯函数
 3. Elasticsearch HTTP 请求封装
+   - `backend/modules/elasticsearch/module.go`
 4. Redis 参数解析和结果转换
+   - `backend/modules/redis/helpers.go`
 
 ### 本阶段完成标准
 
@@ -542,9 +531,8 @@ src/modules/<engine>/
 1. 阶段 1：状态层和 App 壳层收口
 2. 阶段 2：MySQL TableManager feature 定型
 3. 阶段 4：统一 transport 和 service 层
-4. 阶段 3：Redis / ES 模块模板对齐
-5. 阶段 5：后端 package 分层
-6. 阶段 6：测试补齐并反向巩固结构
+4. 阶段 5：后端 package 分层收尾
+5. 阶段 6：测试补齐并反向巩固结构
 
 原因：
 
@@ -574,12 +562,12 @@ src/modules/<engine>/
 
 ### 第三优先级
 
-- `backend/app.go`
-- `backend/app_lifecycle.go`
-- `backend/app_state.go`
-- `backend/mysql.go`
-- `backend/redis.go`
-- `backend/elasticsearch.go`
+- `backend/app/app.go`
+- `backend/app/lifecycle.go`
+- `backend/app/state.go`
+- `backend/modules/mysql/`
+- `backend/modules/redis/`
+- `backend/modules/elasticsearch/`
 
 ## 7. 不建议现在就做的事
 

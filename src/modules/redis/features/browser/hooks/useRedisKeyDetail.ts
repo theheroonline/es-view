@@ -27,9 +27,10 @@ export function useRedisKeyDetail({
 
     setLoadingDetail(true);
     setError("");
+    setSelectedKey(key);
+    setSelectedKeyDetail(null);
     try {
       const detail = await loadRedisKeyDetail(connectionId, currentDatabase, key);
-      setSelectedKey(key);
       setSelectedKeyDetail(detail);
     } catch (err) {
       logError(err, {

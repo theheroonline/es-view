@@ -1111,20 +1111,14 @@ ES 模块同时处理浏览器 HTTP 和 Wails HTTP，这是它和另外两个模
 **要改的文件和目录**
 
 - 现有文件：
-  - `backend/app.go`
-  - `backend/app_lifecycle.go`
-  - `backend/app_state.go`
-  - `backend/state_store.go`
-  - `backend/mysql.go`
-  - `backend/mysql_transfer.go`
-  - `backend/mysql_transfer_service.go`
-  - `backend/mysql_transfer_dump.go`
-  - `backend/mysql_transfer_sql.go`
-  - `backend/redis.go`
-  - `backend/elasticsearch.go`
-  - `backend/elasticsearch_module.go`
-  - `backend/helpers.go`
-  - `backend/modules.go`
+  - `backend/app/app.go`
+  - `backend/app/lifecycle.go`
+  - `backend/app/state.go`
+  - `backend/infra/state_store/state_store.go`
+  - `backend/modules/mysql/`
+  - `backend/modules/redis/`
+  - `backend/modules/elasticsearch/`
+  - `backend/shared/db.go`
 - 目标目录：
   - `backend/app/`
   - `backend/modules/mysql/`
@@ -1163,16 +1157,11 @@ ES 模块同时处理浏览器 HTTP 和 Wails HTTP，这是它和另外两个模
 **要改的文件**
 
 - MySQL：
-  - `backend/mysql.go`
-  - `backend/mysql_transfer.go`
-  - `backend/mysql_transfer_service.go`
-  - `backend/mysql_transfer_dump.go`
-  - `backend/mysql_transfer_sql.go`
+  - `backend/modules/mysql/`
 - Redis：
-  - `backend/redis.go`
+  - `backend/modules/redis/`
 - Elasticsearch：
-  - `backend/elasticsearch.go`
-  - `backend/elasticsearch_module.go`
+  - `backend/modules/elasticsearch/`
 
 **影响面**
 

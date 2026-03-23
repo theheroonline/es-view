@@ -1,10 +1,18 @@
-package backend
+package state_store
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+type AppStateStore struct {
+	appName string
+}
+
+func NewAppStateStore(appName string) *AppStateStore {
+	return &AppStateStore{appName: appName}
+}
 
 func (s *AppStateStore) getConfigDir() (string, error) {
 	configHome, err := os.UserConfigDir()
@@ -13,7 +21,7 @@ func (s *AppStateStore) getConfigDir() (string, error) {
 	}
 
 	configDir := filepath.Join(configHome, s.appName)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return "", err
 	}
 
@@ -45,7 +53,7 @@ func (s *AppStateStore) SaveState(data string) error {
 	}
 
 	stateFile := filepath.Join(configDir, s.appName+".state.json")
-	if err := os.WriteFile(stateFile, []byte(data), 0644); err != nil {
+	if err := os.WriteFile(stateFile, []byte(data), 0o644); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 

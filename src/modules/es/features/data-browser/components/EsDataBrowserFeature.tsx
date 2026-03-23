@@ -3,7 +3,7 @@ import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import FieldFilterButton from "../../../../../components/FieldFilterButton";
 import { logError } from "../../../../../lib/errorLog";
@@ -176,15 +176,17 @@ export function EsDataBrowserFeature() {
     t,
   });
 
+  const handleAutoQueryError = useCallback((error: unknown) => {
+    logError(error, {
+      source: "esDataBrowser.autoQuery",
+      message: "Automatic Elasticsearch query failed",
+    });
+  }, []);
+
   useEsDataBrowserAutoQuery({
     activeConnectionId: activeConnection?.id,
     executeQuery,
-    onError: (error) => {
-      logError(error, {
-        source: "esDataBrowser.autoQuery",
-        message: "Automatic Elasticsearch query failed",
-      });
-    },
+    onError: handleAutoQueryError,
     page,
     selectedIndex,
     setError,

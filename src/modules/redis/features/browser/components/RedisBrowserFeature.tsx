@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useRedisContext } from "../../../../../state/RedisContext";
 import { RedisKeyDeleteModal } from "../../../components/RedisKeyDeleteModal";
@@ -94,7 +94,6 @@ export function RedisBrowserFeature() {
     setTtlModalOpen,
     ttlSaving,
     ttlError,
-    ttlButtonValue,
     closeTtlModal,
     handleSaveTtl,
   } = useRedisKeyTtl({
@@ -123,33 +122,83 @@ export function RedisBrowserFeature() {
     refreshKeys,
   });
 
+  const activeRedisConnectionId = activeRedisConnection?.id;
+  const selectedKeyRef = useRef(selectedKey);
+  const selectedKeyDetailRef = useRef(selectedKeyDetail);
+  const openEditEditorRef = useRef(openEditEditor);
+
+  const refreshDatabasesRef = useRef(refreshDatabases);
+  const refreshKeysRef = useRef(refreshKeys);
+
+  useEffect(() => {
+    selectedKeyRef.current = selectedKey;
+  }, [selectedKey]);
+
+  useEffect(() => {
+    selectedKeyDetailRef.current = selectedKeyDetail;
+  }, [selectedKeyDetail]);
+
+  useEffect(() => {
+    openEditEditorRef.current = openEditEditor;
+  }, [openEditEditor]);
+
+  useEffect(() => {
+    refreshDatabasesRef.current = refreshDatabases;
+  }, [refreshDatabases]);
+
+  useEffect(() => {
+    refreshKeysRef.current = refreshKeys;
+  }, [refreshKeys]);
+
   useEffect(() => {
     resetBrowserState();
-  }, [activeRedisConnection?.id, resetBrowserState]);
+  }, [activeRedisConnectionId, resetBrowserState]);
 
   useEffect(() => {
-    if (!activeRedisConnection) {
+    if (!activeRedisConnectionId) {
       return;
     }
 
-    void refreshDatabases();
-  }, [activeRedisConnection?.id, refreshDatabases]);
+    void refreshDatabasesRef.current();
+  }, [activeRedisConnectionId]);
 
   useEffect(() => {
-    if (!activeRedisConnection) {
+    if (!activeRedisConnectionId) {
       return;
     }
 
-    void refreshKeys(true);
-  }, [activeRedisConnection?.id, currentDatabase, scanCount, refreshKeys]);
+    void refreshKeysRef.current(true);
+  }, [activeRedisConnectionId, currentDatabase, keyPattern, scanCount]);
 
-  useEffect(() => {
-    if (!activeRedisConnection) {
+  const handleDeleteSelectedKey = useCallback(() => {
+    const detail = selectedKeyDetailRef.current;
+    if (!detail) {
       return;
     }
+    openDeleteModal([detail.name]);
+  }, [openDeleteModal]);
 
-    void refreshKeys(true);
-  }, [keyPattern, activeRedisConnection, refreshKeys]);
+  const handleEditSelectedKey = useCallback(() => {
+    if (!selectedKeyRef.current || !selectedKeyDetailRef.current) {
+      return;
+    }
+    void openEditEditorRef.current();
+  }, []);
+
+  const handleOpenTtl = useCallback(() => {
+    if (!selectedKeyRef.current || !selectedKeyDetailRef.current) {
+      return;
+    }
+    setTtlModalOpen(true);
+  }, [setTtlModalOpen]);
+
+  const handleRefreshSelectedKey = useCallback(() => {
+    const key = selectedKeyRef.current;
+    if (!key) {
+      return;
+    }
+    void refreshKeyDetail(key);
+  }, [refreshKeyDetail]);
 
 
   if (!activeRedisConnection) {
@@ -189,11 +238,10 @@ export function RedisBrowserFeature() {
         loadingDetail={loadingDetail}
         selectedKey={selectedKey}
         selectedKeyDetail={selectedKeyDetail}
-        t={t}
-        ttlButtonValue={ttlButtonValue}
-        onDeleteKey={openDeleteModal}
-        onEditKey={openEditEditor}
-        onOpenTtl={() => setTtlModalOpen(true)}
+        onRefreshKey={handleRefreshSelectedKey}
+        onDeleteKey={handleDeleteSelectedKey}
+        onEditKey={handleEditSelectedKey}
+        onOpenTtl={handleOpenTtl}
       />
 
       <RedisKeyEditorModal

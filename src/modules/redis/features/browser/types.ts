@@ -37,9 +37,8 @@ export interface RedisBrowserDetailPaneProps {
   loadingDetail: boolean;
   selectedKey: string | null;
   selectedKeyDetail: RedisKeyDetail | null;
-  t: TFunction;
-  ttlButtonValue: number;
-  onDeleteKey: (keys: string[]) => void;
+  onRefreshKey: () => void;
+  onDeleteKey: () => void;
   onEditKey: () => void;
   onOpenTtl: () => void;
 }

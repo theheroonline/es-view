@@ -1,4 +1,4 @@
-module github.com/multi-database-browsing
+module multi-database-browsing
 
 go 1.22.0
 

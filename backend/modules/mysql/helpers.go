@@ -1,6 +1,78 @@
-package backend
+package mysql
 
-import "strings"
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+func firstMysqlKeyword(statement string) string {
+	remaining := strings.TrimSpace(statement)
+
+	for remaining != "" {
+		switch {
+		case strings.HasPrefix(remaining, "("):
+			remaining = strings.TrimSpace(remaining[1:])
+			continue
+		case strings.HasPrefix(remaining, "--"):
+			if newline := strings.IndexByte(remaining, '\n'); newline >= 0 {
+				remaining = strings.TrimSpace(remaining[newline+1:])
+				continue
+			}
+			return ""
+		case strings.HasPrefix(remaining, "#"):
+			if newline := strings.IndexByte(remaining, '\n'); newline >= 0 {
+				remaining = strings.TrimSpace(remaining[newline+1:])
+				continue
+			}
+			return ""
+		case strings.HasPrefix(remaining, "/*"):
+			end := strings.Index(remaining, "*/")
+			if end >= 0 {
+				remaining = strings.TrimSpace(remaining[end+2:])
+				continue
+			}
+			return ""
+		}
+		break
+	}
+
+	if remaining == "" {
+		return ""
+	}
+
+	idx := -1
+	for i, r := range remaining {
+		if !unicode.IsLetter(r) {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		idx = len(remaining)
+	}
+
+	return strings.ToLower(remaining[:idx])
+}
+
+func isMysqlResultSetQuery(statement string) bool {
+	switch firstMysqlKeyword(statement) {
+	case "select", "show", "describe", "desc", "explain", "with":
+		return true
+	default:
+		return false
+	}
+}
+
+func escapeMysqlIdentifier(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
+
+func escapeMysqlLiteral(value string) string {
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
+}
 
 func splitMysqlStatements(input string) []string {
 	statements := make([]string, 0)
@@ -113,4 +185,22 @@ func shouldExecuteMysqlStatement(statement string) bool {
 	}
 
 	return true
+}
+
+func formatMysqlValue(value any) string {
+	if value == nil {
+		return "NULL"
+	}
+
+	switch typed := value.(type) {
+	case []byte:
+		if sql.RawBytes(typed) != nil {
+			return escapeMysqlLiteral(string(typed))
+		}
+		return escapeMysqlLiteral(string(typed))
+	case string:
+		return escapeMysqlLiteral(typed)
+	default:
+		return escapeMysqlLiteral(fmt.Sprint(typed))
+	}
 }

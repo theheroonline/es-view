@@ -3,7 +3,8 @@ package main
 import (
 	"embed"
 
-	"github.com/multi-database-browsing/backend"
+	backendapp "multi-database-browsing/backend/app"
+
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -13,7 +14,7 @@ import (
 var assets embed.FS
 
 func main() {
-	app := backend.NewApp()
+	app := backendapp.NewApp()
 
 	err := wails.Run(&options.App{
 		Title:  "Multi-Database Browsing",
