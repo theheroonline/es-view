@@ -171,7 +171,7 @@ export function useExcelTable({
   // 获取所有行
   const rows = table.getRowModel().rows;
 
-  // 虚拟滚动器（固定行高，禁用动态测量以防止闪烁）
+  // 虚拟滚动器（固定行高）
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => tableContainerRef.current as any,

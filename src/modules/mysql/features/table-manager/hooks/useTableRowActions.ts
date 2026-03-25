@@ -75,7 +75,9 @@ export function useTableRowActions({
       } else if (typeof val === "boolean") {
         setParts.push(`\`${col}\` = ${val ? 1 : 0}`);
       } else {
-        setParts.push(`\`${col}\` = '${String(val).replace(/'/g, "''")}'`);
+        // 对于字符串，直接使用用户输入的值（前端已经格式化好了）
+        const strVal = String(val).replace(/'/g, "''");
+        setParts.push(`\`${col}\` = '${strVal}'`);
       }
     }
 
@@ -135,14 +137,18 @@ export function useTableRowActions({
       const row = dataState.rows[rowIndex];
       const oldValue = row[columnIndex];
 
-      if (oldValue === (newValue === "" ? null : newValue)) {
+      // 比较原值和新值，处理空字符串和 null 的情况
+      const normalizedOldValue = oldValue === null ? "" : String(oldValue);
+      const normalizedNewValue = newValue === "" ? null : newValue;
+
+      if (normalizedOldValue === (newValue === "" ? "" : newValue)) {
         return;
       }
 
-      const updateData: Record<string, unknown> = {};
-      dataState.columns.forEach((column, index) => {
-        updateData[column] = index === columnIndex ? (newValue === "" ? null : newValue) : row[index];
-      });
+      // 只更新修改的那一列
+      const updateData: Record<string, unknown> = {
+        [columnName]: normalizedNewValue
+      };
 
       await updateRowByIndex(rowIndex, updateData, { refresh: false });
     } catch (err) {
@@ -152,7 +158,7 @@ export function useTableRowActions({
       });
       throw err;
     }
-  }, [connectionId, dataState.columns, dataState.rows, selectedTableInfo, updateRowByIndex]);
+  }, [connectionId, dataState.rows, selectedTableInfo, updateRowByIndex]);
 
   const handleDeleteRow = useCallback(async (index: number) => {
     if (!connectionId || !selectedTableInfo) return;

@@ -52,7 +52,7 @@ function ExcelLikeTableInner({
   const [resizeStartX, setResizeStartX] = useState<number>(0);
 
   // 行内编辑状态
-  const { editingCell, startEditing, updateEditValue, saveEdit, cancelEdit } = useInlineEditor();
+  const { editingCell, startEditing, cancelEdit } = useInlineEditor();
   const editInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   // 当编辑单元格时，自动聚焦输入框
@@ -87,15 +87,11 @@ function ExcelLikeTableInner({
     [onRowContextMenu]
   );
 
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      updateEditValue(e.target.value);
-    },
-    [updateEditValue]
-  );
-
   const handleInputKeyDown = useCallback(
-    async (e: React.KeyboardEvent<HTMLInputElement>, onSaveCellFn: typeof onSaveCell) => {
+    async (e: React.KeyboardEvent<HTMLInputElement>) => {
+      const inputEl = editInputRef.current as HTMLInputElement;
+      if (!inputEl || !editingCell) return;
+
       if (e.key === "Escape") {
         e.preventDefault();
         cancelEdit();
@@ -104,33 +100,49 @@ function ExcelLikeTableInner({
 
       if (e.key === "Enter") {
         e.preventDefault();
-        const current = editingCell;
-        await saveEdit(onSaveCellFn);
+        const newValue = inputEl.value;
+        const originalValue = editingCell.originalValue === null ? "" : String(editingCell.originalValue);
 
-        if (current) {
-          const nextRowIndex = current.rowIndex + 1;
-          if (nextRowIndex < data.length) {
-            const nextCellValue = data[nextRowIndex]?.[current.columnIndex];
-            startEditing(nextRowIndex, current.columnIndex, current.columnName, nextCellValue);
-          }
+        if (newValue !== originalValue) {
+          await onSaveCell(editingCell.rowIndex, editingCell.columnIndex, editingCell.columnName, newValue);
+        }
+
+        const nextRowIndex = editingCell.rowIndex + 1;
+        if (nextRowIndex < data.length) {
+          const nextCellValue = data[nextRowIndex]?.[editingCell.columnIndex];
+          startEditing(nextRowIndex, editingCell.columnIndex, editingCell.columnName, nextCellValue);
+        } else {
+          cancelEdit();
         }
         return;
       }
 
       if (e.key === "Tab") {
         e.preventDefault();
-        await saveEdit(onSaveCellFn);
+        const newValue = inputEl.value;
+        const originalValue = editingCell.originalValue === null ? "" : String(editingCell.originalValue);
+
+        if (newValue !== originalValue) {
+          await onSaveCell(editingCell.rowIndex, editingCell.columnIndex, editingCell.columnName, newValue);
+        }
+        cancelEdit();
       }
     },
-    [cancelEdit, data, editingCell, saveEdit, startEditing]
+    [editingCell, onSaveCell, data, startEditing, cancelEdit]
   );
 
-  const handleInputBlur = useCallback(
-    (onSaveCellFn: typeof onSaveCell) => {
-      saveEdit(onSaveCellFn);
-    },
-    [saveEdit]
-  );
+  const handleInputBlur = useCallback(() => {
+    const inputEl = editInputRef.current as HTMLInputElement;
+    if (!inputEl || !editingCell) return;
+
+    const newValue = inputEl.value;
+    const originalValue = editingCell.originalValue === null ? "" : String(editingCell.originalValue);
+
+    if (newValue !== originalValue) {
+      onSaveCell(editingCell.rowIndex, editingCell.columnIndex, editingCell.columnName, newValue);
+    }
+    cancelEdit();
+  }, [editingCell, onSaveCell, cancelEdit]);
 
   const handleInputClick = useCallback((e: React.MouseEvent<HTMLInputElement>) => {
     e.stopPropagation();
@@ -341,11 +353,12 @@ function ExcelLikeTableInner({
                               ref={editInputRef as any}
                               type="text"
                               className="excel-table-cell-input"
-                              value={editingCell.editValue}
-                              onChange={handleInputChange}
-                              onKeyDown={(e) => handleInputKeyDown(e, onSaveCell)}
-                              onBlur={() => handleInputBlur(onSaveCell)}
+                              defaultValue={editingCell.originalValue === null ? "" : String(editingCell.originalValue)}
+                              onKeyDown={handleInputKeyDown}
+                              onBlur={handleInputBlur}
                               onClick={handleInputClick}
+                              autoComplete="off"
+                              spellCheck="false"
                             />
                           ) : cellValue === null ? (
                             <span className="excel-table-cell-null">NULL</span>

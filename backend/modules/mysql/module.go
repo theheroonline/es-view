@@ -33,7 +33,10 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	config.Net = "tcp"
 	config.Addr = fmt.Sprintf("%s:%d", req.Host, req.Port)
 	config.DBName = req.Database
-	config.Params = map[string]string{"charset": "utf8mb4"}
+	config.Params = map[string]string{
+		"charset":   "utf8mb4",
+		"collation": "utf8mb4_unicode_ci",
+	}
 	config.ParseTime = true
 	config.Loc = time.Local
 	config.Timeout = 3 * time.Second
@@ -148,6 +151,10 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 			return MysqlQueryResult{}, fmt.Errorf("scan failed: %w", err)
 		}
 
+		for i, value := range values {
+			values[i] = normalizeMysqlValue(value)
+		}
+
 		result.Rows = append(result.Rows, values)
 	}
 
@@ -156,6 +163,21 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	}
 
 	return result, nil
+}
+
+func normalizeMysqlValue(value interface{}) interface{} {
+	if value == nil {
+		return nil
+	}
+
+	switch typed := value.(type) {
+	case []byte:
+		return string(typed)
+	case sql.RawBytes:
+		return string(typed)
+	default:
+		return value
+	}
 }
 
 func (m *Module) MysqlListDatabases(connectionID string) ([]string, error) {

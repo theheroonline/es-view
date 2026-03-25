@@ -2462,6 +2462,8 @@ body {
   box-sizing: border-box;
   font-size: 12px;
   line-height: 38px;
+  margin: 0;
+  display: block;
 }
 
 .excel-table-header-content {

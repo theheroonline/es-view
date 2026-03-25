@@ -20,21 +20,16 @@ export interface EditingCell {
   columnIndex: number;
   columnName: string;
   originalValue: unknown;
-  editValue: string;
 }
 
 export interface UseInlineEditorReturn {
   editingCell: EditingCell | null;
   startEditing: (rowIndex: number, columnIndex: number, columnName: string, currentValue: unknown) => void;
-  updateEditValue: (newValue: string) => void;
-  saveEdit: (onSave: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>) => Promise<void>;
   cancelEdit: () => void;
-  handleKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
 }
 
 export function useInlineEditor(): UseInlineEditorReturn {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
 
   const startEditing = (
     rowIndex: number,
@@ -47,70 +42,16 @@ export function useInlineEditor(): UseInlineEditorReturn {
       columnIndex,
       columnName,
       originalValue: currentValue,
-      editValue: currentValue === null ? "" : String(currentValue),
     });
-  };
-
-  const updateEditValue = (newValue: string) => {
-    setEditingCell((prev) => (prev ? { ...prev, editValue: newValue } : null));
-  };
-
-  const saveEdit = async (
-    onSave: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>
-  ) => {
-    if (!editingCell || isSaving) return;
-
-    const originalValue = editingCell.originalValue === null ? "" : String(editingCell.originalValue);
-    if (editingCell.editValue === originalValue) {
-      setEditingCell(null);
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await onSave(
-        editingCell.rowIndex,
-        editingCell.columnIndex,
-        editingCell.columnName,
-        editingCell.editValue
-      );
-      setEditingCell(null);
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const cancelEdit = () => {
     setEditingCell(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (!editingCell) return;
-
-    switch (e.key) {
-      case "Escape":
-        e.preventDefault();
-        cancelEdit();
-        break;
-      case "Enter":
-        // Enter: 保存并移动到下一行相同列
-        e.preventDefault();
-        // 由调用者处理保存和移动逻辑
-        break;
-      case "Tab":
-        // Tab: 保存并移动到下一列
-        e.preventDefault();
-        // 由调用者处理保存和移动逻辑
-        break;
-    }
-  };
-
   return {
     editingCell,
     startEditing,
-    updateEditValue,
-    saveEdit,
     cancelEdit,
-    handleKeyDown,
   };
 }
