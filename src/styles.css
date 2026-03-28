@@ -657,7 +657,8 @@ body {
 
 
 .redis-db-select {
-  width: 120px;
+  width: 100px;
+  max-width: 100%;
   padding: 7px 10px;
   font-size: 12px;
   border: 1px solid #d9e1ec;
@@ -665,6 +666,7 @@ body {
   background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
   color: #2c3d4f;
   transition: border-color 0.2s ease, background-color 0.2s ease;
+  flex-shrink: 1;
 }
 
 .redis-db-select:hover {
@@ -1093,7 +1095,7 @@ body {
 }
 
 .redis-ttl-button {
-  min-width: 80px;
+  min-width: 110px;
   font-variant-numeric: tabular-nums;
   background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
   border: 1px solid #f59e0b;

@@ -1,12 +1,13 @@
 import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { RedisKeyDetailValue } from "../../../components/RedisKeyDetailValue";
-import { isEditableKeyType } from "../../../utils";
+import { isEditableKeyType, formatTtl } from "../../../utils";
 import type { RedisBrowserDetailPaneProps } from "../types";
 
-const RedisBrowserDetailHeader = memo(function RedisBrowserDetailHeader({
+function RedisBrowserDetailHeader({
   hasSelection,
   selectedKey,
+  selectedKeyDetail,
   onRefreshKey,
   onDeleteKey,
   onEditKey,
@@ -14,12 +15,18 @@ const RedisBrowserDetailHeader = memo(function RedisBrowserDetailHeader({
 }: {
   hasSelection: boolean;
   selectedKey: string | null;
+  selectedKeyDetail?: { ttlMs: number | null } | null;
   onRefreshKey: () => void;
   onDeleteKey: () => void;
   onEditKey: () => void;
   onOpenTtl: () => void;
 }) {
   const { t } = useTranslation();
+
+  const ttlDisplay = useMemo(() => {
+    if (!selectedKeyDetail) return "TTL";
+    return `TTL: ${formatTtl(selectedKeyDetail.ttlMs)}`;
+  }, [selectedKeyDetail?.ttlMs]);
 
   return (
     <div className="card-header redis-detail-header">
@@ -29,10 +36,10 @@ const RedisBrowserDetailHeader = memo(function RedisBrowserDetailHeader({
       </div>
       <div className="redis-detail-header-actions">
         <button className="btn btn-ghost redis-ttl-button" onClick={onOpenTtl} disabled={!hasSelection} title={t("redis.browser.editTtl")}>
-          TTL
+          {ttlDisplay}
         </button>
-        <button className="btn btn-ghost" onClick={onRefreshKey} disabled={!hasSelection} title={t("common.refresh")}>
-          {t("common.refresh")}
+        <button className="btn btn-ghost" onClick={onRefreshKey} disabled={!hasSelection} title={t("redis.browser.refreshKey")}>
+          {t("redis.browser.refreshKey")}
         </button>
         <button className="btn btn-ghost" onClick={onEditKey} disabled={!hasSelection}>
           {t("common.edit")}
@@ -43,7 +50,7 @@ const RedisBrowserDetailHeader = memo(function RedisBrowserDetailHeader({
       </div>
     </div>
   );
-});
+}
 
 const RedisBrowserDetailContent = memo(function RedisBrowserDetailContent({
   loadingDetail,
@@ -93,6 +100,7 @@ export function RedisBrowserDetailPane({
       <RedisBrowserDetailHeader
         hasSelection={hasSelection}
         selectedKey={selectedKey}
+        selectedKeyDetail={selectedKeyDetail}
         onRefreshKey={onRefreshKey}
         onDeleteKey={onDeleteKey}
         onEditKey={onEditKey}

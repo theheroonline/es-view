@@ -21,7 +21,7 @@ export function RedisBrowserListPane({
   return (
     <div className="card redis-browser-panel">
       <div className="redis-browser-toolbar">
-        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", minWidth: 0 }}>
           <select className="form-control redis-db-select" value={currentDatabase} onChange={(event) => onChangeDatabase(Number(event.target.value))}>
             {databaseOptions.map((item) => (
               <option key={item.index} value={item.index}>
@@ -29,7 +29,16 @@ export function RedisBrowserListPane({
               </option>
             ))}
           </select>
-          <button className="btn btn-primary redis-btn-sm" onClick={onCreateKey} title={t("common.new")}>
+          <button
+            className="btn btn-ghost redis-btn-sm"
+            onClick={() => onLoadKeys(true)}
+            disabled={loadingKeys}
+            title={t("common.refresh")}
+            style={{ flexShrink: 0 }}
+          >
+            {t("common.refresh")}
+          </button>
+          <button className="btn btn-primary redis-btn-sm" onClick={onCreateKey} title={t("common.new")} style={{ flexShrink: 0 }}>
             {t("common.new")}
           </button>
         </div>
