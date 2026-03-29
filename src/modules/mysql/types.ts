@@ -109,3 +109,24 @@ export interface SqlQueryState {
   sql: string;
   results: ExecutedStatementResult[];
 }
+
+// Query Generator Types
+export type FilterOperator =
+  | "=" | "!=" | ">" | "<" | ">=" | "<="
+  | "LIKE" | "NOT LIKE"
+  | "IN"
+  | "BETWEEN"
+  | "IS NULL" | "IS NOT NULL";
+
+export interface FilterCondition {
+  id: string;
+  field: string;
+  operator: FilterOperator;
+  value: string | number | boolean | null;
+  dataType?: string;
+}
+
+export interface FilterGroup {
+  conditions: FilterCondition[];
+  operator: "AND" | "OR";
+}

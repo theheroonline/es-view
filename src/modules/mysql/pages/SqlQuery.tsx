@@ -7,99 +7,108 @@ import { useSharedConnectionState } from "../../../state/SharedConnectionState";
 import { mysqlConnect } from "../services/connectionClient";
 import { mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/queryClient";
 import { mysqlDescribeTable } from "../services/schemaClient";
-import type { ExecutedStatementResult } from "../types";
+import QueryGeneratorModal from "../components/QueryGeneratorModal";
+import type { ExecutedStatementResult, ColumnMeta } from "../types";
 
 interface AutocompleteItem {
   label: string;
   insertText: string;
   type: "keyword" | "table" | "column" | "database";
   detail?: string;
+  weight?: number;
 }
 
 type AutocompleteContext = "mixed" | "keyword" | "table" | "column" | "database";
 
 const MYSQL_KEYWORDS = [
-  "SELECT",
-  "FROM",
-  "WHERE",
-  "ORDER BY",
-  "GROUP BY",
-  "LIMIT",
-  "INSERT INTO",
-  "UPDATE",
-  "DELETE FROM",
-  "JOIN",
-  "LEFT JOIN",
-  "RIGHT JOIN",
-  "INNER JOIN",
-  "CREATE TABLE",
-  "ALTER TABLE",
-  "DROP TABLE",
-  "SHOW TABLES",
-  "DESCRIBE",
-  "USE",
-  "EXPLAIN",
-  "TRUNCATE",
-  "IF",
-  "ELSE",
-  "END",
-  "CASE",
-  "WHEN",
-  "THEN",
-  "AND",
-  "OR",
-  "NOT",
-  "IN",
-  "IS",
-  "NULL",
-  "LIKE",
-  "BETWEEN",
-  "UNION",
-  "ALL",
-  "DISTINCT",
-  "AS",
-  "ON",
-  "HAVING",
-  "VALUES",
-  "SET",
-  "PRIMARY KEY",
-  "FOREIGN KEY",
-  "AUTO_INCREMENT",
-  "DEFAULT",
-  "CURRENT_TIMESTAMP",
-  "NOW()",
-  "COUNT",
-  "SUM",
-  "AVG",
-  "MIN",
-  "MAX",
-  "IFNULL",
-  "COALESCE",
-  "CAST",
-  "CONVERT",
-  "EXISTS",
-  "ANY",
-  "SOME",
-  "ASC",
-  "DESC",
-  "DATABASE()",
-  "VERSION()",
-  "CHAR_LENGTH",
-  "LENGTH",
-  "SUBSTRING",
-  "CONCAT",
-  "ROUND",
-  "FLOOR",
-  "CEIL",
-  "RAND",
-  "DATE",
-  "TIME",
-  "YEAR",
-  "MONTH",
-  "DAY",
-  "HOUR",
-  "MINUTE",
-  "SECOND"
+  // 常用关键词（权重 10）
+  { keyword: "SELECT", weight: 10 },
+  { keyword: "FROM", weight: 10 },
+  { keyword: "WHERE", weight: 10 },
+  { keyword: "JOIN", weight: 10 },
+  { keyword: "LEFT JOIN", weight: 10 },
+  { keyword: "ORDER BY", weight: 9 },
+  { keyword: "GROUP BY", weight: 9 },
+  { keyword: "LIMIT", weight: 9 },
+  { keyword: "AND", weight: 9 },
+  { keyword: "OR", weight: 9 },
+  { keyword: "ON", weight: 9 },
+  { keyword: "AS", weight: 8 },
+
+  // 次常用关键词（权重 6-8）
+  { keyword: "INSERT INTO", weight: 7 },
+  { keyword: "UPDATE", weight: 7 },
+  { keyword: "DELETE FROM", weight: 7 },
+  { keyword: "CREATE TABLE", weight: 6 },
+  { keyword: "ALTER TABLE", weight: 6 },
+  { keyword: "DESCRIBE", weight: 6 },
+  { keyword: "INNER JOIN", weight: 6 },
+  { keyword: "RIGHT JOIN", weight: 6 },
+  { keyword: "CASE", weight: 6 },
+  { keyword: "WHEN", weight: 6 },
+  { keyword: "THEN", weight: 6 },
+  { keyword: "END", weight: 6 },
+  { keyword: "NULL", weight: 7 },
+  { keyword: "IN", weight: 7 },
+  { keyword: "IS", weight: 7 },
+  { keyword: "COUNT", weight: 7 },
+  { keyword: "SUM", weight: 7 },
+  { keyword: "AVG", weight: 7 },
+  { keyword: "MIN", weight: 7 },
+  { keyword: "MAX", weight: 7 },
+  { keyword: "IFNULL", weight: 7 },
+  { keyword: "LENGTH", weight: 7 },
+
+  // 不常用关键词（权重 3-5）
+  { keyword: "DROP TABLE", weight: 5 },
+  { keyword: "SHOW TABLES", weight: 5 },
+  { keyword: "USE", weight: 5 },
+  { keyword: "EXPLAIN", weight: 5 },
+  { keyword: "TRUNCATE", weight: 4 },
+  { keyword: "IF", weight: 4 },
+  { keyword: "ELSE", weight: 4 },
+  { keyword: "NOT", weight: 4 },
+  { keyword: "LIKE", weight: 4 },
+  { keyword: "BETWEEN", weight: 3 },
+  { keyword: "UNION", weight: 3 },
+  { keyword: "ALL", weight: 3 },
+  { keyword: "DISTINCT", weight: 3 },
+  { keyword: "HAVING", weight: 3 },
+  { keyword: "VALUES", weight: 3 },
+  { keyword: "SET", weight: 3 },
+  { keyword: "PRIMARY KEY", weight: 3 },
+  { keyword: "FOREIGN KEY", weight: 3 },
+  { keyword: "AUTO_INCREMENT", weight: 3 },
+  { keyword: "DEFAULT", weight: 3 },
+
+  // 函数和特殊关键词（权重 1-2）
+  { keyword: "CURRENT_TIMESTAMP", weight: 2 },
+  { keyword: "NOW()", weight: 2 },
+  { keyword: "EXISTS", weight: 2 },
+  { keyword: "ANY", weight: 2 },
+  { keyword: "SOME", weight: 2 },
+  { keyword: "ASC", weight: 2 },
+  { keyword: "DESC", weight: 2 },
+  { keyword: "COALESCE", weight: 1 },
+  { keyword: "CAST", weight: 1 },
+  { keyword: "CONVERT", weight: 1 },
+  { keyword: "DATABASE()", weight: 1 },
+  { keyword: "VERSION()", weight: 1 },
+  { keyword: "CHAR_LENGTH", weight: 1 },
+  { keyword: "SUBSTRING", weight: 1 },
+  { keyword: "CONCAT", weight: 1 },
+  { keyword: "ROUND", weight: 1 },
+  { keyword: "FLOOR", weight: 1 },
+  { keyword: "CEIL", weight: 1 },
+  { keyword: "RAND", weight: 1 },
+  { keyword: "DATE", weight: 1 },
+  { keyword: "TIME", weight: 1 },
+  { keyword: "YEAR", weight: 1 },
+  { keyword: "MONTH", weight: 1 },
+  { keyword: "DAY", weight: 1 },
+  { keyword: "HOUR", weight: 1 },
+  { keyword: "MINUTE", weight: 1 },
+  { keyword: "SECOND", weight: 1 }
 ];
 
 function splitSqlStatements(input: string) {
@@ -275,6 +284,8 @@ export default function MysqlSqlQuery() {
   const [error, setError] = useState("");
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [columnMap, setColumnMap] = useState<Record<string, string[]>>({});
+  const [columnMetaMap, setColumnMetaMap] = useState<Record<string, ColumnMeta[]>>({});
+  const [queryGeneratorOpen, setQueryGeneratorOpen] = useState(false);
   const [autocompleteOpen, setAutocompleteOpen] = useState(false);
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [autocompleteItems, setAutocompleteItems] = useState<AutocompleteItem[]>([]);
@@ -343,10 +354,11 @@ export default function MysqlSqlQuery() {
       }))
     );
 
-    const keywordItems = MYSQL_KEYWORDS.map((keyword) => ({
+    const keywordItems = MYSQL_KEYWORDS.map(({ keyword, weight }) => ({
       label: keyword,
       insertText: `${keyword} `,
-      type: "keyword" as const
+      type: "keyword" as const,
+      weight
     }));
 
     return [...keywordItems, ...databaseItems, ...tableItems, ...columnItems];
@@ -381,25 +393,35 @@ export default function MysqlSqlQuery() {
   useEffect(() => {
     if (!autocompleteOpen || !textareaRef.current) return;
 
-    // 计算自动补全弹窗的位置
     const textarea = textareaRef.current;
     const rect = textarea.getBoundingClientRect();
+    const scrollTop = textarea.scrollTop;
 
-    // 计算光标位置在文本中的行列
+    // 计算光标在文本中的行列
     const textBeforeCursor = sql.slice(0, selectionRange.start);
     const lines = textBeforeCursor.split('\n');
     const currentLine = lines.length;
     const currentCol = lines[lines.length - 1].length;
 
-    // 估算光标的像素位置
-    const lineHeight = 13 * 1.6; // 与编辑器的lineHeight一致
-    const charWidth = 7.8; // monospace字体的平均字符宽度
-    const cursorTop = rect.top + (currentLine - 1) * lineHeight + lineHeight;
-    const cursorLeft = rect.left + 46 + 12 + currentCol * charWidth; // 46px行号宽度 + padding
+    // 计算实际像素位置
+    const lineHeight = 13 * 1.6;
+    const charWidth = 7.8;
+
+    // 相对于 textarea 内部的位置
+    const relativeTop = (currentLine - 1) * lineHeight + lineHeight;
+    const relativeLeft = 46 + 12 + currentCol * charWidth; // 46px 行号 + 12px padding + 列偏移
+
+    // 相对于视口的位置（考虑 textarea 滚动）
+    const absoluteTop = rect.top + relativeTop - scrollTop + 4; // 光标下方 4px
+    const absoluteLeft = rect.left + relativeLeft;
+
+    // 防止超出视口
+    const maxLeft = window.innerWidth - 300; // 预留最小宽度空间
+    const finalLeft = Math.min(absoluteLeft, maxLeft);
 
     setAutocompletePosition({
-      top: cursorTop,
-      left: cursorLeft
+      top: absoluteTop,
+      left: finalLeft
     });
 
     const activeOption = autocompleteOptionRefs.current[autocompleteIndex];
@@ -492,16 +514,27 @@ export default function MysqlSqlQuery() {
         const missingTables = tables.filter((table) => !columnMap[table]);
         if (missingTables.length === 0) return;
 
-        const entries = await Promise.all(
+        // Single query pass - fetch metadata once per table
+        const metaEntries = await Promise.all(
           missingTables.map(async (table) => {
-            const columns = await mysqlDescribeTable(connectionId, selectedDatabase, table);
-            return [table, columns.map((column) => column.field)] as const;
+            const columnMetas = await mysqlDescribeTable(connectionId, selectedDatabase, table);
+            return [table, columnMetas] as const;
           })
+        );
+
+        // Derive column names from metadata
+        const entries = metaEntries.map(([table, metas]) =>
+          [table, metas.map((meta) => meta.field)] as const
         );
 
         setColumnMap((prev) => ({
           ...prev,
           ...Object.fromEntries(entries)
+        }));
+
+        setColumnMetaMap((prev) => ({
+          ...prev,
+          ...Object.fromEntries(metaEntries)
         }));
       } catch (err) {
         logError(err, {
@@ -525,7 +558,25 @@ export default function MysqlSqlQuery() {
       return;
     }
 
-    const filtered = autocompleteSource
+    // 根据上下文智能过滤
+    let contextFiltered = autocompleteSource.filter((item) => {
+      // database 上下文：只显示数据库
+      if (context === "database") {
+        return item.type === "database";
+      }
+      // table 上下文：只显示表和关键词
+      if (context === "table") {
+        return item.type === "table" || item.type === "keyword";
+      }
+      // column 上下文：只显示列、关键词和函数
+      if (context === "column") {
+        return item.type === "column" || item.type === "keyword";
+      }
+      // mixed 上下文：全部显示
+      return true;
+    });
+
+    const filtered = contextFiltered
       .filter((item) => item.label.toLowerCase().includes(lookupToken))
       .sort((left, right) => {
         const leftStarts = left.label.toLowerCase().startsWith(lookupToken) ? 0 : 1;
@@ -533,6 +584,11 @@ export default function MysqlSqlQuery() {
         const typeDiff = getTypePriority(context, left.type) - getTypePriority(context, right.type);
         if (typeDiff !== 0) return typeDiff;
         if (leftStarts !== rightStarts) return leftStarts - rightStarts;
+        // 如果都是关键词，按权重排序（权重高的在前）
+        if (left.type === "keyword" && right.type === "keyword") {
+          const weightDiff = (right.weight ?? 0) - (left.weight ?? 0);
+          if (weightDiff !== 0) return weightDiff;
+        }
         return left.label.localeCompare(right.label);
       })
       .slice(0, 12);
@@ -868,7 +924,6 @@ export default function MysqlSqlQuery() {
         <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
           <div className="module-toolbar-grid" style={{ flex: 1 }}>
             <div className="module-toolbar-field" style={{ display: "grid", gap: "6px" }}>
-              <label style={{ fontSize: "12px", color: "#6b7280", whiteSpace: "nowrap" }}>{t("mysql.query.connection")}</label>
               <select
                 className="form-control"
                 style={{ width: "100%" }}
@@ -882,7 +937,6 @@ export default function MysqlSqlQuery() {
               </select>
             </div>
             <div className="module-toolbar-field" style={{ display: "grid", gap: "6px" }}>
-              <label style={{ fontSize: "12px", color: "#6b7280", whiteSpace: "nowrap" }}>{t("mysql.query.database")}</label>
               <select
                 className="form-control"
                 style={{ width: "100%" }}
@@ -901,16 +955,24 @@ export default function MysqlSqlQuery() {
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end", marginLeft: "auto" }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => void handleExplain()} disabled={loading || (!sql.trim() && !selectedText)}>
+            <button
+              className="btn btn-sm btn-ghost"
+              style={{ background: "transparent" }}
+              onClick={() => setQueryGeneratorOpen(true)}
+              disabled={!selectedDatabase || !selectedDatabaseTables.length}
+            >
+              {t("mysql.query.quickGenerate")}
+            </button>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={() => void handleExplain()} disabled={loading || (!sql.trim() && !selectedText)}>
               {loading ? t("common.loading") : t("mysql.query.explain")}
             </button>
-            <button className="btn btn-sm btn-ghost" onClick={handleFormatSql} disabled={!sql.trim() || loading || metaLoading}>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={handleFormatSql} disabled={!sql.trim() || loading || metaLoading}>
               {t("mysql.query.formatSql")}
             </button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setSql("")}>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={() => setSql("")}>
               {t("common.clear")}
             </button>
-            <button className="btn btn-sm btn-ghost" onClick={() => void handleExecuteSelection()} disabled={loading || !selectedText}>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={() => void handleExecuteSelection()} disabled={loading || !selectedText}>
               {loading ? t("common.loading") : t("mysql.query.executeSelection")}
             </button>
             <button className="btn btn-sm btn-primary" onClick={() => void handleExecuteAll()} disabled={loading || !sql.trim()}>
@@ -991,7 +1053,6 @@ export default function MysqlSqlQuery() {
               }}
               onFocus={(e) => updateAutocomplete(e.currentTarget.value, e.currentTarget.selectionStart)}
               onKeyDown={handleKeyDown}
-              placeholder="SELECT * FROM table_name LIMIT 100;"
               spellCheck={false}
               onScroll={(event) => {
                 if (lineNumberRef.current) {
@@ -1013,9 +1074,8 @@ export default function MysqlSqlQuery() {
                   borderRadius: "8px",
                   boxShadow: "0 10px 28px rgba(15,23,42,0.14)",
                   overflow: "auto",
-                  width: "max-content",
                   minWidth: "260px",
-                  maxWidth: "min(440px, 100%)",
+                  maxWidth: "600px",
                   maxHeight: "200px"
                 }}
               >
@@ -1246,6 +1306,25 @@ export default function MysqlSqlQuery() {
           <span className="muted">{t("mysql.query.empty")}</span>
         </div>
       )}
+
+      {/* Query Generator Modal */}
+      <QueryGeneratorModal
+        isOpen={queryGeneratorOpen}
+        databases={databases}
+        tablesByDb={tablesByDb}
+        columnMetaMap={columnMetaMap}
+        selectedDatabase={selectedDatabase}
+        onClose={() => setQueryGeneratorOpen(false)}
+        onConfirm={(generatedSql) => {
+          setSql(generatedSql);
+          setQueryGeneratorOpen(false);
+        }}
+        onConfirmAndExecute={(generatedSql) => {
+          setSql(generatedSql);
+          setQueryGeneratorOpen(false);
+          void executeStatements(generatedSql);
+        }}
+      />
     </div>
   );
 }
