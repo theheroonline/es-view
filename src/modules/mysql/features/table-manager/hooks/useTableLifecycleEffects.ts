@@ -1,5 +1,5 @@
 import type { MutableRefObject } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { MysqlOpenedTable } from "../../../types";
 import type { DataState, RightPanelTab, TableInfo } from "../utils";
 
@@ -52,14 +52,28 @@ export function useTableLifecycleEffects({
   setRightPanelTab,
   defaultDataState,
 }: UseTableLifecycleEffectsProps) {
+  // Use a ref for handleOpenTable to avoid re-triggering the effect when the function identity changes
+  const handleOpenTableRef = useRef(handleOpenTable);
+  handleOpenTableRef.current = handleOpenTable;
+
+  // Track previously opened table to skip redundant re-fetches on double-click
+  const prevOpenedTableRef = useRef<{ database: string; table: string } | null>(null);
+
   useEffect(() => {
     selectedOverviewTablesRef.current = selectedOverviewTables;
   }, [selectedOverviewTables, selectedOverviewTablesRef]);
 
   useEffect(() => {
     if (!isTableWorkspace || !activeOpenedTable) return;
-    void handleOpenTable(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
-  }, [activeOpenedTable, handleOpenTable, isTableWorkspace]);
+    if (
+      prevOpenedTableRef.current?.database === activeOpenedTable.database &&
+      prevOpenedTableRef.current?.table === activeOpenedTable.table
+    ) {
+      return;
+    }
+    prevOpenedTableRef.current = { database: activeOpenedTable.database, table: activeOpenedTable.table };
+    void handleOpenTableRef.current(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
+  }, [activeOpenedTable, isTableWorkspace]);
 
   useEffect(() => {
     if (!activeOpenedTable) return;

@@ -153,7 +153,7 @@ export default function MysqlDataBrowser() {
         error: err instanceof Error ? err.message : String(err)
       }));
     }
-  }, [connectionId, selectedDatabase, selectedTable, queryState.page, queryState.pageSize]);
+  }, [connectionId, selectedDatabase, selectedTable]);
 
   // Auto-query when table selected
   useEffect(() => {

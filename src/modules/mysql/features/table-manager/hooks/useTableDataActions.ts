@@ -169,7 +169,7 @@ export function useTableDataActions({
         error: err instanceof Error ? err.message : String(err)
       }));
     }
-  }, [activeDataRequestKeyRef, activeOpenedTable, connectionId, dataState.page, dataState.pageSize, getWhereClause, latestDataRequestRef, selectedTableInfo?.database, selectedTableInfo?.table, setDataState]);
+  }, [activeDataRequestKeyRef, activeOpenedTable, connectionId, getWhereClause, latestDataRequestRef, selectedTableInfo?.database, selectedTableInfo?.table, setDataState]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(dataState.total / dataState.pageSize)), [dataState.pageSize, dataState.total]);
 
