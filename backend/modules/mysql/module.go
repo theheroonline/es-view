@@ -9,6 +9,8 @@ import (
 	"time"
 
 	goMySQL "github.com/go-sql-driver/mysql"
+
+	"multi-database-browsing/backend/infra/sshtunnel"
 )
 
 type Module struct {
@@ -31,7 +33,6 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	config.User = req.Username
 	config.Passwd = req.Password
 	config.Net = "tcp"
-	config.Addr = fmt.Sprintf("%s:%d", req.Host, req.Port)
 	config.DBName = req.Database
 	config.Params = map[string]string{
 		"charset":   "utf8mb4",
@@ -42,6 +43,26 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	config.Timeout = 3 * time.Second
 	config.ReadTimeout = 5 * time.Second
 	config.WriteTimeout = 5 * time.Second
+
+	var addr string
+	if req.SshEnabled {
+		sshCfg := sshtunnel.Config{
+			Host:     req.SshHost,
+			Port:     req.SshPort,
+			Username: req.SshUsername,
+			Password: req.SshPassword,
+		}
+		tunnel := m.connManager.sshTunnels.GetOrCreate(req.ConnectionID, sshCfg)
+		targetAddr := fmt.Sprintf("%s:%d", req.Host, req.Port)
+		localPort, err := tunnel.ConnectAndForward(targetAddr)
+		if err != nil {
+			return "", fmt.Errorf("failed to establish SSH tunnel: %w", err)
+		}
+		addr = fmt.Sprintf("127.0.0.1:%d", localPort)
+	} else {
+		addr = fmt.Sprintf("%s:%d", req.Host, req.Port)
+	}
+	config.Addr = addr
 
 	dsn := config.FormatDSN()
 
@@ -81,6 +102,8 @@ func (m *Module) MysqlDisconnect(connectionID string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to close connection: %w", err)
 		}
+		// Close SSH tunnel if present.
+		_ = m.connManager.sshTunnels.Close(connectionID)
 		return "Disconnected successfully", nil
 	}
 	return "", fmt.Errorf("connection not found: %s", connectionID)

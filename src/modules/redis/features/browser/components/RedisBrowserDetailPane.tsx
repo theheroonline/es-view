@@ -6,7 +6,6 @@ import type { RedisBrowserDetailPaneProps } from "../types";
 
 function RedisBrowserDetailHeader({
   hasSelection,
-  selectedKey,
   selectedKeyDetail,
   onRefreshKey,
   onDeleteKey,
@@ -14,7 +13,6 @@ function RedisBrowserDetailHeader({
   onOpenTtl,
 }: {
   hasSelection: boolean;
-  selectedKey: string | null;
   selectedKeyDetail?: { ttlMs: number | null } | null;
   onRefreshKey: () => void;
   onDeleteKey: () => void;
@@ -30,10 +28,7 @@ function RedisBrowserDetailHeader({
 
   return (
     <div className="card-header redis-detail-header">
-      <div className="redis-detail-header-main">
-        <h3 className="card-title">{t("redis.browser.detail")}</h3>
-        <div className="redis-detail-selected-key muted">{selectedKey ?? t("redis.browser.noKeySelected")}</div>
-      </div>
+      <h3 className="card-title">{t("redis.browser.detail")}</h3>
       <div className="redis-detail-header-actions">
         <button className="btn btn-ghost redis-ttl-button" onClick={onOpenTtl} disabled={!hasSelection} title={t("redis.browser.editTtl")}>
           {ttlDisplay}
@@ -93,13 +88,13 @@ export function RedisBrowserDetailPane({
   onEditKey,
   onOpenTtl,
 }: RedisBrowserDetailPaneProps) {
+  const { t } = useTranslation();
   const hasSelection = Boolean(selectedKey);
 
   return (
     <div className="card redis-browser-panel">
       <RedisBrowserDetailHeader
         hasSelection={hasSelection}
-        selectedKey={selectedKey}
         selectedKeyDetail={selectedKeyDetail}
         onRefreshKey={onRefreshKey}
         onDeleteKey={onDeleteKey}
@@ -110,6 +105,8 @@ export function RedisBrowserDetailPane({
           }
         }}
       />
+
+      <div className="redis-detail-key-bar muted">{selectedKey ?? t("redis.browser.noKeySelected")}</div>
 
       <div className="redis-detail-body">
         <RedisBrowserDetailContent

@@ -12,6 +12,11 @@ export async function mysqlConnect(connection: MysqlConnection): Promise<void> {
       username: connection.username ?? "",
       password: connection.password ?? "",
       database: connection.database || undefined,
+      sshEnabled: connection.ssh?.enabled ?? false,
+      sshHost: connection.ssh?.host ?? "",
+      sshPort: connection.ssh?.port ?? 22,
+      sshUsername: connection.ssh?.username ?? "",
+      sshPassword: connection.sshPassword ?? "",
     });
   } catch (error) {
     logError(error, {

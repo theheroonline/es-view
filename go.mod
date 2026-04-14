@@ -1,11 +1,12 @@
 module multi-database-browsing
 
-go 1.22.0
+go 1.25.0
 
 require (
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/wailsapp/wails/v2 v2.11.0
+	golang.org/x/crypto v0.50.0
 )
 
 require (
@@ -34,8 +35,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 )

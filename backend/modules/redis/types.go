@@ -7,6 +7,8 @@ import (
 	"time"
 
 	goRedis "github.com/redis/go-redis/v9"
+
+	"multi-database-browsing/backend/infra/sshtunnel"
 )
 
 type RedisConnectRequest struct {
@@ -16,6 +18,11 @@ type RedisConnectRequest struct {
 	Database     int    `json:"database"`
 	Username     string `json:"username"`
 	Password     string `json:"password"`
+	SshEnabled   bool   `json:"sshEnabled"`
+	SshHost      string `json:"sshHost"`
+	SshPort      int    `json:"sshPort"`
+	SshUsername  string `json:"sshUsername"`
+	SshPassword  string `json:"sshPassword"`
 }
 
 type RedisDatabaseInfo struct {
@@ -108,12 +115,14 @@ type RedisConnectionManager struct {
 	mu          sync.RWMutex
 	connections map[string]map[int]*goRedis.Client
 	options     map[string]*goRedis.Options
+	sshTunnels  *sshtunnel.Manager
 }
 
 func NewRedisConnectionManager() *RedisConnectionManager {
 	return &RedisConnectionManager{
 		connections: make(map[string]map[int]*goRedis.Client),
 		options:     make(map[string]*goRedis.Options),
+		sshTunnels:  sshtunnel.NewManager(),
 	}
 }
 
@@ -129,6 +138,7 @@ func (r *RedisConnectionManager) CloseAll() {
 	}
 	r.connections = make(map[string]map[int]*goRedis.Client)
 	r.options = make(map[string]*goRedis.Options)
+	r.sshTunnels.CloseAll()
 }
 
 func cloneRedisOptions(opts *goRedis.Options, database int) *goRedis.Options {

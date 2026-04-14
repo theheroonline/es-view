@@ -3,6 +3,8 @@ package mysql
 import (
 	"database/sql"
 	"sync"
+
+	"multi-database-browsing/backend/infra/sshtunnel"
 )
 
 // MysqlConnectRequest represents MySQL connection parameters.
@@ -13,6 +15,11 @@ type MysqlConnectRequest struct {
 	Username     string `json:"username"`
 	Password     string `json:"password"`
 	Database     string `json:"database"`
+	SshEnabled   bool   `json:"sshEnabled"`
+	SshHost      string `json:"sshHost"`
+	SshPort      int    `json:"sshPort"`
+	SshUsername  string `json:"sshUsername"`
+	SshPassword  string `json:"sshPassword"`
 }
 
 // MysqlQueryResult represents the result of a query.
@@ -88,11 +95,15 @@ type MysqlImportSqlRequest struct {
 type MysqlConnectionManager struct {
 	mu          sync.RWMutex
 	connections map[string]*sql.DB
+	sshTunnels  *sshtunnel.Manager
 }
 
 // NewMysqlConnectionManager creates a new manager.
 func NewMysqlConnectionManager() *MysqlConnectionManager {
-	return &MysqlConnectionManager{connections: make(map[string]*sql.DB)}
+	return &MysqlConnectionManager{
+		connections: make(map[string]*sql.DB),
+		sshTunnels:  sshtunnel.NewManager(),
+	}
 }
 
 func (m *MysqlConnectionManager) CloseAll() {
@@ -104,4 +115,5 @@ func (m *MysqlConnectionManager) CloseAll() {
 		}
 	}
 	m.connections = make(map[string]*sql.DB)
+	m.sshTunnels.CloseAll()
 }

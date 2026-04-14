@@ -15,7 +15,12 @@ const emptyForm = {
   port: 3306,
   database: "",
   username: "root",
-  password: ""
+  password: "",
+  sshEnabled: false,
+  sshHost: "",
+  sshPort: 22,
+  sshUsername: "",
+  sshPassword: "",
 };
 
 export default function MysqlConnectionsPage() {
@@ -29,6 +34,7 @@ export default function MysqlConnectionsPage() {
   const [messageType, setMessageType] = useState<"error" | "success">("error");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showSshPassword, setShowSshPassword] = useState(false);
 
   const action = searchParams.get("action");
   const selectedId = searchParams.get("id") ?? "";
@@ -68,12 +74,19 @@ export default function MysqlConnectionsPage() {
       mysqlPort: form.port,
       mysqlDatabase: form.database || undefined,
       authType: "basic",
-      verifyTls: false
+      verifyTls: false,
+      ssh: form.sshEnabled ? {
+        enabled: true,
+        host: form.sshHost,
+        port: form.sshPort,
+        username: form.sshUsername,
+      } : undefined,
     };
 
     await saveConnection(profile, {
       username: form.username,
-      password: form.password
+      password: form.password,
+      sshPassword: form.sshEnabled ? form.sshPassword : undefined,
     });
     resetForm();
     closeConfig();
@@ -105,7 +118,9 @@ export default function MysqlConnectionsPage() {
         port: profile.mysqlPort ?? 3306,
         database: profile.mysqlDatabase,
         username: secret.username,
-        password: secret.password
+        password: secret.password,
+        ssh: profile.ssh,
+        sshPassword: secret.sshPassword,
       };
       await mysqlConnect(conn);
       await mysqlDisconnect(id);
@@ -149,7 +164,12 @@ export default function MysqlConnectionsPage() {
         port: profile.mysqlPort ?? 3306,
         database: profile.mysqlDatabase ?? "",
         username: secret.username ?? "",
-        password: secret.password ?? ""
+        password: secret.password ?? "",
+        sshEnabled: profile.ssh?.enabled ?? false,
+        sshHost: profile.ssh?.host ?? "",
+        sshPort: profile.ssh?.port ?? 22,
+        sshUsername: profile.ssh?.username ?? "",
+        sshPassword: secret.sshPassword ?? "",
       });
       return;
     }
@@ -265,6 +285,53 @@ export default function MysqlConnectionsPage() {
               </button>
             </div>
           </div>
+          <div className="ssh-section-divider" />
+          <div>
+            <label className="ssh-toggle-label">
+              <input
+                type="checkbox"
+                checked={form.sshEnabled}
+                onChange={(event) => setForm({ ...form, sshEnabled: event.target.checked })}
+              />
+              {t("connections.useSshTunnel")}
+            </label>
+          </div>
+          {form.sshEnabled && (
+            <>
+              <div>
+                <label>{t("connections.sshHost")}</label>
+                <input className="form-control" value={form.sshHost} onChange={(event) => setForm({ ...form, sshHost: event.target.value })} placeholder="127.0.0.1" />
+              </div>
+              <div>
+                <label>{t("connections.sshPort")}</label>
+                <input className="form-control" type="number" value={form.sshPort} onChange={(event) => setForm({ ...form, sshPort: Number(event.target.value) || 22 })} placeholder="22" />
+              </div>
+              <div>
+                <label>{t("connections.sshUsername")}</label>
+                <input className="form-control" value={form.sshUsername} onChange={(event) => setForm({ ...form, sshUsername: event.target.value })} placeholder="root" />
+              </div>
+              <div />
+              <div>
+                <label>{t("connections.sshPassword")}</label>
+                <div className="password-field-wrap">
+                  <input
+                    className="form-control password-field-input"
+                    type={showSshPassword ? "text" : "password"}
+                    value={form.sshPassword}
+                    onChange={(event) => setForm({ ...form, sshPassword: event.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon password-toggle-button"
+                    onClick={() => setShowSshPassword(!showSshPassword)}
+                    title={showSshPassword ? t("connections.hidePassword") : t("connections.showPassword")}
+                  >
+                    {showSshPassword ? "🙈" : "👁️"}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
         {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback`}>{error}</div>}
       </Modal>

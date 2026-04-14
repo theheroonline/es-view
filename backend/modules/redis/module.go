@@ -9,6 +9,8 @@ import (
 	"time"
 
 	goRedis "github.com/redis/go-redis/v9"
+
+	"multi-database-browsing/backend/infra/sshtunnel"
 )
 
 type Module struct {
@@ -70,7 +72,25 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 }
 
 func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
-	addr := fmt.Sprintf("%s:%d", req.Host, req.Port)
+	var addr string
+	if req.SshEnabled {
+		sshCfg := sshtunnel.Config{
+			Host:     req.SshHost,
+			Port:     req.SshPort,
+			Username: req.SshUsername,
+			Password: req.SshPassword,
+		}
+		tunnel := m.connManager.sshTunnels.GetOrCreate(req.ConnectionID, sshCfg)
+		targetAddr := fmt.Sprintf("%s:%d", req.Host, req.Port)
+		localPort, err := tunnel.ConnectAndForward(targetAddr)
+		if err != nil {
+			return "", fmt.Errorf("failed to establish SSH tunnel: %w", err)
+		}
+		addr = fmt.Sprintf("127.0.0.1:%d", localPort)
+	} else {
+		addr = fmt.Sprintf("%s:%d", req.Host, req.Port)
+	}
+
 	baseOpts := &goRedis.Options{
 		Addr:         addr,
 		Password:     req.Password,
@@ -126,6 +146,8 @@ func (m *Module) RedisDisconnect(connectionID string) (string, error) {
 
 	delete(m.connManager.connections, connectionID)
 	delete(m.connManager.options, connectionID)
+	// Close SSH tunnel if present.
+	_ = m.connManager.sshTunnels.Close(connectionID)
 	return "Disconnected successfully", nil
 }
 

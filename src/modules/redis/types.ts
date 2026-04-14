@@ -1,4 +1,4 @@
-import type { EngineType } from "../../lib/types";
+import type { EngineType, SshTunnelConfig } from "../../lib/types";
 
 export type RedisKeyType = "string" | "hash" | "list" | "set" | "zset" | "unknown";
 
@@ -11,6 +11,8 @@ export interface RedisConnection {
   database: number;
   username?: string;
   password?: string;
+  ssh?: SshTunnelConfig;
+  sshPassword?: string;
 }
 
 export interface RedisDatabaseInfo {

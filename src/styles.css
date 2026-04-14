@@ -981,28 +981,19 @@ body {
   gap: 12px;
 }
 
-.redis-detail-header-main {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .redis-detail-header .card-title {
   margin: 0;
   text-align: left;
 }
 
-.redis-detail-selected-key {
-  min-width: 0;
-  max-width: 100%;
-  font-size: 11px;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: 0.01em;
+.redis-detail-key-bar {
+  padding: 6px 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #f5f7fb;
+  border-bottom: 1px solid #e5e5ea;
+  word-break: break-all;
+  min-height: 30px;
 }
 
 .redis-detail-header-actions .btn {

@@ -12,6 +12,11 @@ export async function redisConnect(connection: RedisConnection): Promise<void> {
       database: connection.database,
       username: connection.username || undefined,
       password: connection.password || undefined,
+      sshEnabled: connection.ssh?.enabled ?? false,
+      sshHost: connection.ssh?.host ?? "",
+      sshPort: connection.ssh?.port ?? 22,
+      sshUsername: connection.ssh?.username ?? "",
+      sshPassword: connection.sshPassword ?? "",
     }, {
       errorMessage: `Redis connect failed for ${connection.name}`,
     });

@@ -34,6 +34,8 @@ export function RedisProvider({ children }: { children: ReactNode }) {
         database: profile.redisDatabase ?? 0,
         username: secret.username,
         password: secret.password,
+        ssh: profile.ssh,
+        sshPassword: secret.sshPassword,
       };
     },
     [getSecretById, profiles]
