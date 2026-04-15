@@ -319,6 +319,7 @@ function ExcelLikeTableInner({
                 return (
                   <tr
                     key={row.id}
+                    data-index={virtualItem.index}
                     ref={(node) => {
                       if (node) {
                         rowVirtualizer.measureElement(node);

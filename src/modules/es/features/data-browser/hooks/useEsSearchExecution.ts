@@ -81,7 +81,12 @@ export function useEsSearchExecution({
     }
 
     const from = (page - 1) * size;
-    const sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
+    let sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
+
+    // search_after requires at least one unique sort field to work correctly
+    if (sortParams.length === 0) {
+      sortParams = [{ _doc: { order: "asc" } }];
+    }
 
     return {
       from,
@@ -99,16 +104,81 @@ export function useEsSearchExecution({
     }
 
     const { from, query, sortParams } = buildSearchContext("esDataBrowser.parseRange");
-    const adjustedFrom = Math.min(from, 10000 - size);
-    const body: Record<string, unknown> = {
-      from: adjustedFrom,
+
+    if (from + size <= 10000) {
+      const body: Record<string, unknown> = {
+        from,
+        size,
+        query,
+        sort: sortParams,
+        track_total_hits: true,
+      };
+      return await searchDocuments(activeConnection, selectedIndex, body);
+    }
+
+    // Deep pagination using search_after
+    const batchSize = 1000;
+    const targetFrom = from;
+    let currentPosition = 0;
+    let searchAfter: any[] | undefined;
+
+    while (currentPosition + batchSize < targetFrom) {
+      const skipBody: Record<string, unknown> = {
+        size: batchSize,
+        query,
+        sort: sortParams,
+        track_total_hits: true,
+        _source: false,
+      };
+      if (searchAfter) {
+        skipBody.search_after = searchAfter;
+      }
+
+      const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
+      const hits = skipResult?.hits?.hits ?? [];
+
+      if (hits.length === 0) {
+        break;
+      }
+
+      searchAfter = hits[hits.length - 1]?.sort;
+      currentPosition += hits.length;
+
+      if (hits.length < batchSize) {
+        break;
+      }
+    }
+
+    const remaining = targetFrom - currentPosition;
+    if (remaining > 0 && searchAfter) {
+      const skipBody: Record<string, unknown> = {
+        size: remaining,
+        query,
+        sort: sortParams,
+        track_total_hits: true,
+        _source: false,
+      };
+      skipBody.search_after = searchAfter;
+
+      const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
+      const hits = skipResult?.hits?.hits ?? [];
+
+      if (hits.length > 0) {
+        searchAfter = hits[hits.length - 1]?.sort;
+      }
+    }
+
+    const finalBody: Record<string, unknown> = {
       size,
       query,
       sort: sortParams,
       track_total_hits: true,
     };
+    if (searchAfter) {
+      finalBody.search_after = searchAfter;
+    }
 
-    return await searchDocuments(activeConnection, selectedIndex, body);
+    return await searchDocuments(activeConnection, selectedIndex, finalBody);
   }, [activeConnection, buildSearchContext, selectedIndex, size, t]);
 
   const execute = useCallback(async () => {
