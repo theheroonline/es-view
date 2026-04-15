@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { useConnectionWorkspace } from "../../hooks/useConnectionWorkspace";
-import type { ConnectionProfile } from "../../lib/types";
+import type { ConnectionProfile, EngineType } from "../../lib/types";
 import EsSidebarSection from "../../modules/es/components/EsSidebarSection";
 import MysqlSidebarSection from "../../modules/mysql/components/MysqlSidebarSection";
 import type { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
@@ -18,6 +18,7 @@ interface AppSidebarContentProps {
   onToggleEs: () => void;
   onToggleMysql: () => void;
   onToggleRedis: () => void;
+  openConnectionDialog: (engine: EngineType, mode: "add" | "edit" | "copy", profileId?: string) => void;
 }
 
 export function AppSidebarContent({
@@ -29,6 +30,7 @@ export function AppSidebarContent({
   onToggleEs,
   onToggleMysql,
   onToggleRedis,
+  openConnectionDialog,
 }: AppSidebarContentProps) {
   const { t } = useTranslation();
 
@@ -88,6 +90,10 @@ export function AppSidebarContent({
       <EsSidebarSection
         expanded={esExpanded}
         onToggle={onToggleEs}
+        label={t("sidebar.engineNames.elasticsearch")}
+        onCreateConnection={() => {
+          openConnectionDialog("elasticsearch", "add");
+        }}
         emptyText={t("connections.noConnections")}
         createConnectionTitle={t("connections.createConnection")}
         hasConnections={connection.esProfiles.length > 0}
@@ -108,14 +114,10 @@ export function AppSidebarContent({
         emptyText={t("connections.noConnections")}
         noTablesText={t("mysql.data.noTables")}
         createConnectionTitle={t("connections.createConnection")}
-        refreshTitle={t("common.refresh")}
         renderConnectionItem={renderConnectionItem}
         onToggle={onToggleMysql}
         onCreateConnection={() => {
-          void connection.openConnectionConfig("mysql", "add");
-        }}
-        onRefresh={() => {
-          void mysql.refreshMysqlDatabases();
+          openConnectionDialog("mysql", "add");
         }}
         onOpenDatabase={(database) => {
           void mysql.handleMysqlOpenDatabase(database);
@@ -139,7 +141,7 @@ export function AppSidebarContent({
         expanded={redisExpanded}
         onToggle={onToggleRedis}
         onCreateConnection={() => {
-          void connection.openConnectionConfig("redis", "add");
+          openConnectionDialog("redis", "add");
         }}
         emptyText={t("connections.noConnections")}
         createConnectionTitle={t("connections.createConnection")}

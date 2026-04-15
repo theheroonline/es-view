@@ -35,6 +35,11 @@ export const sharedResources = {
       restConsole: "Advanced",
       indexManager: "Index Manager",
       connections: "Connections",
+      engineNames: {
+        elasticsearch: "Elasticsearch",
+        mysql: "MySQL",
+        redis: "Redis",
+      },
     },
     app: {
       switchLanguage: "{{language}}",
@@ -105,6 +110,8 @@ export const sharedResources = {
       elasticsearchEntry: "Elasticsearch Connections",
       mysqlEntry: "MySQL Connections",
       redisEntry: "Redis Connections",
+      verifyTls: "Verify TLS Certificate",
+      authType: "Authentication Method",
     },
   },
   zh: {
@@ -143,6 +150,11 @@ export const sharedResources = {
       restConsole: "高级操作",
       indexManager: "索引管理",
       connections: "连接配置",
+      engineNames: {
+        elasticsearch: "Elasticsearch",
+        mysql: "MySQL",
+        redis: "Redis",
+      },
     },
     app: {
       switchLanguage: "{{language}}",
@@ -213,6 +225,8 @@ export const sharedResources = {
       elasticsearchEntry: "Elasticsearch 连接",
       mysqlEntry: "MySQL 连接",
       redisEntry: "Redis 连接",
+      verifyTls: "校验 TLS 证书",
+      authType: "认证方式",
     },
   },
 };

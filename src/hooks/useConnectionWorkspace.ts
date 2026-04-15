@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { logError } from "../lib/errorLog";
 import type { ConnectionProfile } from "../lib/types";
 import { pingEsCluster } from "../modules/es/services/clusterService";
@@ -12,6 +12,7 @@ import { useRedisContext } from "../state/RedisContext";
 import { useSharedConnectionState } from "../state/SharedConnectionState";
 
 export type ConnectionStatus = "success" | "idle" | "failed";
+export type EngineType = "elasticsearch" | "mysql" | "redis";
 
 interface ConnectionContextMenuState {
   connectionId: string;
@@ -19,10 +20,41 @@ interface ConnectionContextMenuState {
   y: number;
 }
 
+interface EngineConfig {
+  defaultRoute: string;
+  label: string;
+  needsConnect: boolean;
+  needsDisconnect: boolean;
+  connectionsRoute: string;
+}
+
+const ENGINE_CONFIG: Record<EngineType, EngineConfig> = {
+  elasticsearch: {
+    defaultRoute: "/data",
+    label: "Elasticsearch",
+    needsConnect: false,
+    needsDisconnect: false,
+    connectionsRoute: "/es/connections",
+  },
+  mysql: {
+    defaultRoute: "/mysql/tables",
+    label: "MySQL",
+    needsConnect: true,
+    needsDisconnect: true,
+    connectionsRoute: "/mysql/connections",
+  },
+  redis: {
+    defaultRoute: "/redis/browser",
+    label: "Redis",
+    needsConnect: true,
+    needsDisconnect: true,
+    connectionsRoute: "/redis/connections",
+  },
+};
+
 export function useConnectionWorkspace() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const location = useLocation();
   const { refreshIndices, getConnectionById } = useElasticsearchContext();
   const {
     profiles,
@@ -68,7 +100,7 @@ export function useConnectionWorkspace() {
   const activeProfile = activeConnectionId
     ? profiles.find((profile) => profile.id === activeConnectionId) ?? null
     : null;
-  const activeEngine = activeProfile?.engine ?? "elasticsearch";
+  const activeEngine = activeProfile?.engine ?? null as EngineType | null;
 
   const [focusedConnectionId, setFocusedConnectionId] = useState<string | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<ConnectionContextMenuState | null>(null);
@@ -78,7 +110,7 @@ export function useConnectionWorkspace() {
   const [isWorkspaceSuspended, setIsWorkspaceSuspended] = useState(false);
 
   const activeConnectionStatus = activeConnectionId ? connectionStatusById[activeConnectionId] ?? "idle" : "idle";
-  const activeEngineLabel = activeEngine === "mysql" ? "MySQL" : activeEngine === "redis" ? "Redis" : "Elasticsearch";
+  const activeEngineLabel = activeEngine ? ENGINE_CONFIG[activeEngine]?.label ?? "" : "";
 
   const markConnectionSuccess = (connectionId: string) => {
     setConnectionStatusById((prev) => ({
@@ -113,24 +145,20 @@ export function useConnectionWorkspace() {
     }
 
     const currentProfile = getProfileById(connectionId);
-    if ((connectionStatusById[connectionId] ?? "idle") === "success" && currentProfile?.engine === "mysql") {
-      try {
-        await mysqlDisconnect(connectionId);
-      } catch (error) {
-        logError(error, {
-          source: "app.connection.mysql.disconnectBeforeEdit",
-          message: `Failed to disconnect MySQL connection ${connectionId} before editing config`,
-        });
-      }
-    }
+    const engine = (currentProfile?.engine ?? "elasticsearch") as EngineType;
+    const config = ENGINE_CONFIG[engine];
 
-    if ((connectionStatusById[connectionId] ?? "idle") === "success" && currentProfile?.engine === "redis") {
+    if ((connectionStatusById[connectionId] ?? "idle") === "success" && config.needsDisconnect) {
       try {
-        await redisDisconnect(connectionId);
+        if (engine === "mysql") {
+          await mysqlDisconnect(connectionId);
+        } else if (engine === "redis") {
+          await redisDisconnect(connectionId);
+        }
       } catch (error) {
         logError(error, {
-          source: "app.connection.redis.disconnectBeforeEdit",
-          message: `Failed to disconnect Redis connection ${connectionId} before editing config`,
+          source: `app.connection.${engine}.disconnectBeforeEdit`,
+          message: `Failed to disconnect ${engine} connection ${connectionId} before editing config`,
         });
       }
     }
@@ -148,23 +176,13 @@ export function useConnectionWorkspace() {
   };
 
   const openConnectionConfig = async (
-    engine: "mysql" | "redis",
-    action: "add" | "edit" | "copy",
+    _engine: EngineType,
+    _action: "add" | "edit" | "copy",
     connectionId?: string
   ) => {
-    if (action === "edit") {
+    if (_action === "edit") {
       await disconnectConnectionForEdit(connectionId);
     }
-
-    const params = new URLSearchParams({ action });
-    if (connectionId) {
-      params.set("id", connectionId);
-    }
-
-    const basePath = engine === "mysql" ? "/mysql/connections" : "/redis/connections";
-    navigate(`${basePath}?${params.toString()}`, {
-      state: { from: location.pathname },
-    });
   };
 
   const handleConnectionChange = async (connectionId: string, options?: { forceValidate?: boolean }) => {
@@ -177,11 +195,8 @@ export function useConnectionWorkspace() {
         setConnectionActionError("");
         setIsWorkspaceSuspended(false);
         const profile = getProfileById(connectionId);
-        const targetRoute = profile?.engine === "mysql"
-          ? "/mysql/tables"
-          : profile?.engine === "redis"
-            ? "/redis/browser"
-            : "/data";
+        const engine = (profile?.engine ?? "elasticsearch") as EngineType;
+        const targetRoute = ENGINE_CONFIG[engine]?.defaultRoute ?? "/data";
         await navigate(targetRoute);
       }
 
@@ -199,11 +214,14 @@ export function useConnectionWorkspace() {
       return false;
     }
 
+    const engine = (profile.engine ?? "elasticsearch") as EngineType;
+    const config = ENGINE_CONFIG[engine];
+
     try {
       const currentStatus = connectionStatusById[connectionId] ?? "idle";
       const shouldValidate = options?.forceValidate ?? currentStatus !== "success";
 
-      if (profile.engine === "mysql") {
+      if (engine === "mysql") {
         const mysqlConnection = getMysqlConnectionById(connectionId);
         if (!mysqlConnection) {
           throw new Error("CONNECTION_FAILED");
@@ -237,11 +255,11 @@ export function useConnectionWorkspace() {
         resetMysqlWorkspace();
         markConnectionSuccess(connectionId);
         setIsWorkspaceSuspended(false);
-        await navigate("/mysql/tables");
+        await navigate(config.defaultRoute);
         return true;
       }
 
-      if (profile.engine === "redis") {
+      if (engine === "redis") {
         const redisConnection = getRedisConnectionById(connectionId);
         if (!redisConnection) {
           throw new Error("CONNECTION_FAILED");
@@ -255,10 +273,11 @@ export function useConnectionWorkspace() {
         setSelectedRedisDatabase(redisConnection.database ?? 0);
         markConnectionSuccess(connectionId);
         setIsWorkspaceSuspended(false);
-        await navigate("/redis/browser");
+        await navigate(config.defaultRoute);
         return true;
       }
 
+      // elasticsearch
       const connection = getConnectionById(connectionId);
       if (!connection) {
         throw new Error("CONNECTION_FAILED");
@@ -275,7 +294,7 @@ export function useConnectionWorkspace() {
 
       markConnectionSuccess(connectionId);
       setIsWorkspaceSuspended(false);
-      await navigate("/data");
+      await navigate(config.defaultRoute);
       return true;
     } catch (error) {
       logError(error, {
@@ -305,26 +324,21 @@ export function useConnectionWorkspace() {
     setIsConnectionActionPending(true);
     setContextMenu(null);
     const currentProfile = getProfileById(targetConnectionId);
+    const engine = (currentProfile?.engine ?? "elasticsearch") as EngineType;
+    const config = ENGINE_CONFIG[engine];
 
     try {
-      if (currentProfile?.engine === "mysql") {
+      if (config.needsDisconnect) {
         try {
-          await mysqlDisconnect(targetConnectionId);
+          if (engine === "mysql") {
+            await mysqlDisconnect(targetConnectionId);
+          } else if (engine === "redis") {
+            await redisDisconnect(targetConnectionId);
+          }
         } catch (error) {
           logError(error, {
-            source: "app.connection.mysql.disconnect",
-            message: `Failed to disconnect MySQL connection ${targetConnectionId}`,
-          });
-        }
-      }
-
-      if (currentProfile?.engine === "redis") {
-        try {
-          await redisDisconnect(targetConnectionId);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.redis.disconnect",
-            message: `Failed to disconnect Redis connection ${targetConnectionId}`,
+            source: `app.connection.${engine}.disconnect`,
+            message: `Failed to disconnect ${engine} connection ${targetConnectionId}`,
           });
         }
       }

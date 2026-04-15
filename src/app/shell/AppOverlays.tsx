@@ -1,20 +1,33 @@
 import { useTranslation } from "react-i18next";
 import type { useConnectionWorkspace } from "../../hooks/useConnectionWorkspace";
+import type { EngineType } from "../../lib/types";
 import { FloatingMenu, FloatingMenuDivider } from "../../layout/FloatingMenu";
 import { getCharsetOption, MYSQL_CHARSET_OPTIONS } from "../../modules/mysql/constants/databaseOptions";
 import type { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
+import EsConnectionDialog from "../../modules/es/components/EsConnectionDialog";
+import MysqlConnectionDialog from "../../modules/mysql/components/MysqlConnectionDialog";
+import RedisConnectionDialog from "../../modules/redis/components/RedisConnectionDialog";
 
 type ConnectionWorkspaceState = ReturnType<typeof useConnectionWorkspace>;
 type MysqlSidebarWorkspaceState = ReturnType<typeof useMysqlSidebarWorkspace>;
 
 const menuButtonStyle = { width: "100%", justifyContent: "flex-start" } as const;
 
+interface ConnectionDialogState {
+  mode: "add" | "edit" | "copy";
+  engine: EngineType;
+  profileId?: string;
+}
+
 interface AppOverlaysProps {
   connection: ConnectionWorkspaceState;
   mysql: MysqlSidebarWorkspaceState;
+  connectionDialog: ConnectionDialogState | null;
+  closeConnectionDialog: () => void;
+  openConnectionDialog: (engine: EngineType, mode: "add" | "edit" | "copy", profileId?: string) => void;
 }
 
-export default function AppOverlays({ connection, mysql }: AppOverlaysProps) {
+export default function AppOverlays({ connection, mysql, connectionDialog, closeConnectionDialog, openConnectionDialog }: AppOverlaysProps) {
   const { t } = useTranslation();
   const connectionMenu = connection.contextMenu;
   const mysqlDatabaseMenu = mysql.mysqlDatabaseContextMenu;
@@ -84,11 +97,11 @@ export default function AppOverlays({ connection, mysql }: AppOverlaysProps) {
 
           {(() => {
             const profile = connection.getProfileById(connectionMenu.connectionId);
-            if (profile?.engine !== "mysql" && profile?.engine !== "redis") {
+            if (!profile) {
               return null;
             }
 
-            const targetEngine = profile.engine === "mysql" ? "mysql" : "redis";
+            const engine = (profile.engine ?? "elasticsearch") as EngineType;
 
             return (
               <>
@@ -98,7 +111,7 @@ export default function AppOverlays({ connection, mysql }: AppOverlaysProps) {
                   style={menuButtonStyle}
                   onClick={() => {
                     connection.closeConnectionContextMenu();
-                    void connection.openConnectionConfig(targetEngine, "edit", connectionMenu.connectionId);
+                    openConnectionDialog(engine, "edit", connectionMenu.connectionId);
                   }}
                 >
                   {t("common.edit")}
@@ -109,7 +122,7 @@ export default function AppOverlays({ connection, mysql }: AppOverlaysProps) {
                   style={menuButtonStyle}
                   onClick={() => {
                     connection.closeConnectionContextMenu();
-                    void connection.openConnectionConfig(targetEngine, "copy", connectionMenu.connectionId);
+                    openConnectionDialog(engine, "copy", connectionMenu.connectionId);
                   }}
                 >
                   {t("common.copy")}
@@ -590,7 +603,7 @@ export default function AppOverlays({ connection, mysql }: AppOverlaysProps) {
                               : t("mysql.tableManager.transferTaskFailed")}
                       </span>
                     </div>
-                    {item.error ? <div className="text-danger tm-transfer-task-error">{item.error}</div> : null}
+                    {item.error ? <div className="text-danger gm-transfer-task-error">{item.error}</div> : null}
                   </div>
                 ))}
               </div>
@@ -606,6 +619,31 @@ export default function AppOverlays({ connection, mysql }: AppOverlaysProps) {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {connectionDialog ? (
+        connectionDialog.engine === "mysql" ? (
+          <MysqlConnectionDialog
+            mode={connectionDialog.mode}
+            profileId={connectionDialog.profileId}
+            onClose={closeConnectionDialog}
+            onSuccess={closeConnectionDialog}
+          />
+        ) : connectionDialog.engine === "redis" ? (
+          <RedisConnectionDialog
+            mode={connectionDialog.mode}
+            profileId={connectionDialog.profileId}
+            onClose={closeConnectionDialog}
+            onSuccess={closeConnectionDialog}
+          />
+        ) : (
+          <EsConnectionDialog
+            mode={connectionDialog.mode}
+            profileId={connectionDialog.profileId}
+            onClose={closeConnectionDialog}
+            onSuccess={closeConnectionDialog}
+          />
+        )
       ) : null}
 
       {/* ERROR LOG MODAL HIDDEN - DO NOT DELETE */}

@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 interface EsSidebarSectionProps {
   expanded: boolean;
   onToggle: () => void;
+  onCreateConnection: () => void;
+  label: string;
   emptyText: string;
   createConnectionTitle: string;
   hasConnections: boolean;
@@ -12,19 +14,21 @@ interface EsSidebarSectionProps {
 export default function EsSidebarSection({
   expanded,
   onToggle,
+  onCreateConnection,
+  label,
   emptyText,
   createConnectionTitle,
   hasConnections,
   children,
 }: EsSidebarSectionProps) {
   return (
-    <div className="mdb-tree-group">
+    <div className="mdb-tree-group mdb-tree-group-spaced">
       <div className="mdb-tree-label mdb-tree-header">
         <button type="button" className="btn btn-sm btn-ghost mdb-tree-toggle" onClick={onToggle}>
           <span>{expanded ? "▾" : "▸"}</span>
-          <span>Elasticsearch</span>
+          <span>{label}</span>
         </button>
-        <button type="button" className="btn btn-sm btn-ghost mdb-tree-action" disabled title={createConnectionTitle}>
+        <button type="button" className="btn btn-sm btn-ghost mdb-tree-action" onClick={onCreateConnection} title={createConnectionTitle}>
           +
         </button>
       </div>

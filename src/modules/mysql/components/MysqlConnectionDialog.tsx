@@ -1,7 +1,5 @@
-import { Modal } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
 import { useSharedConnectionState } from "../../../state/SharedConnectionState";
@@ -23,44 +21,73 @@ const emptyForm = {
   sshPassword: "",
 };
 
-export default function MysqlConnectionsPage() {
+interface MysqlConnectionDialogProps {
+  mode: "add" | "edit" | "copy";
+  profileId?: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+export default function MysqlConnectionDialog({
+  mode,
+  profileId,
+  onClose,
+  onSuccess,
+}: MysqlConnectionDialogProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { profiles, getSecretById, activeConnectionIdByEngine, saveConnection, deleteConnection } = useSharedConnectionState();
+  const { profiles, getSecretById, saveConnection } = useSharedConnectionState();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success">("error");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showSshPassword, setShowSshPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const action = searchParams.get("action");
-  const selectedId = searchParams.get("id") ?? "";
-  const isConfigVisible = action === "add" || action === "edit" || action === "copy";
+  const isEditing = mode === "edit" || mode === "copy";
 
-  const mysqlProfiles = profiles.filter((item) => item.engine === "mysql");
-
-  const resetForm = () => {
-    setForm(emptyForm);
+  useEffect(() => {
     setError("");
-  };
+    setShowPassword(false);
+    setShowSshPassword(false);
 
-  const handleAdd = () => {
-    setSearchParams({ action: "add" });
-  };
+    if (mode === "add") {
+      setForm(emptyForm);
+      return;
+    }
 
-  const closeConfig = () => {
-    const from = (location.state as { from?: string } | null)?.from;
-    navigate(from && from !== "/mysql/connections" ? from : "/mysql/data", { replace: true });
-  };
+    if (isEditing && profileId) {
+      const profile = profiles.find((item) => item.id === profileId);
+      if (!profile) {
+        onClose();
+        return;
+      }
+      const secret = getSecretById(profileId);
+      const nextName = mode === "copy" ? `${profile.name} - ${t("common.copy")}` : profile.name;
+      setForm({
+        id: mode === "copy" ? "" : profileId,
+        name: nextName,
+        host: profile.mysqlHost ?? "127.0.0.1",
+        port: profile.mysqlPort ?? 3306,
+        database: profile.mysqlDatabase ?? "",
+        username: secret.username ?? "",
+        password: secret.password ?? "",
+        sshEnabled: profile.ssh?.enabled ?? false,
+        sshHost: profile.ssh?.host ?? "",
+        sshPort: profile.ssh?.port ?? 22,
+        sshUsername: profile.ssh?.username ?? "",
+        sshPassword: secret.sshPassword ?? "",
+      });
+    }
+  }, [mode, profileId, profiles, getSecretById, t, onClose]);
 
   const handleSave = async () => {
     setError("");
+    setSaving(true);
     if (!form.name || !form.host) {
       setMessageType("error");
       setError(t("connections.nameAndAddressRequired"));
+      setSaving(false);
       return;
     }
 
@@ -83,33 +110,35 @@ export default function MysqlConnectionsPage() {
       } : undefined,
     };
 
-    await saveConnection(profile, {
-      username: form.username,
-      password: form.password,
-      sshPassword: form.sshEnabled ? form.sshPassword : undefined,
-    });
-    resetForm();
-    closeConfig();
+    try {
+      await saveConnection(profile, {
+        username: form.username,
+        password: form.password,
+        sshPassword: form.sshEnabled ? form.sshPassword : undefined,
+      });
+      onSuccess();
+    } catch (err) {
+      logError(err, { source: "mysqlConnectionDialog.save", message: "Failed to save MySQL connection" });
+      setMessageType("error");
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEdit = (id: string) => {
-    setSearchParams({ action: "edit", id });
-  };
+  const handleTest = async () => {
+    const targetId = profileId ?? form.id;
+    if (!targetId) return;
 
-  const handleCopy = (id: string) => {
-    setSearchParams({ action: "copy", id });
-  };
-
-  const handleTest = async (id: string) => {
-    setTestingId(id);
+    setTestingId(targetId);
     setError("");
 
     try {
-      const profile = profiles.find((p) => p.id === id);
+      const profile = profiles.find((p) => p.id === targetId);
       if (!profile) {
         throw new Error(t("connections.connectionNotFound"));
       }
-      const secret = getSecretById(id);
+      const secret = getSecretById(targetId);
       const conn: MysqlConnection = {
         id: profile.id,
         name: profile.name,
@@ -123,13 +152,13 @@ export default function MysqlConnectionsPage() {
         sshPassword: secret.sshPassword,
       };
       await mysqlConnect(conn);
-      await mysqlDisconnect(id);
+      await mysqlDisconnect(targetId);
       setMessageType("success");
       setError(t("connections.connectionSuccess", { name: profile.name }));
     } catch (err) {
       logError(err, {
-        source: "mysqlConnections.testConnection",
-        message: `Failed to test MySQL connection ${id}`
+        source: "mysqlConnectionDialog.testConnection",
+        message: `Failed to test MySQL connection ${targetId}`
       });
       setMessageType("error");
       setError(t("connections.connectionFailed", { error: err instanceof Error ? err.message : String(err) }));
@@ -138,109 +167,16 @@ export default function MysqlConnectionsPage() {
     }
   };
 
-  useEffect(() => {
-    if (!isConfigVisible) return;
-
-    setError("");
-    setShowPassword(false);
-
-    if (action === "add") {
-      setForm(emptyForm);
-      return;
-    }
-
-    if ((action === "edit" || action === "copy") && selectedId) {
-      const profile = profiles.find((item) => item.id === selectedId);
-      if (!profile) {
-        closeConfig();
-        return;
-      }
-      const secret = getSecretById(selectedId);
-      const nextName = action === "copy" ? `${profile.name} - ${t("common.copy")}` : profile.name;
-      setForm({
-        id: action === "copy" ? "" : selectedId,
-        name: nextName,
-        host: profile.mysqlHost ?? "127.0.0.1",
-        port: profile.mysqlPort ?? 3306,
-        database: profile.mysqlDatabase ?? "",
-        username: secret.username ?? "",
-        password: secret.password ?? "",
-        sshEnabled: profile.ssh?.enabled ?? false,
-        sshHost: profile.ssh?.host ?? "",
-        sshPort: profile.ssh?.port ?? 22,
-        sshUsername: profile.ssh?.username ?? "",
-        sshPassword: secret.sshPassword ?? "",
-      });
-      return;
-    }
-
-    closeConfig();
-  }, [action, getSecretById, isConfigVisible, profiles, selectedId]);
-
   return (
-    <div className="page">
-      <div className="card">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="card modal-card modal-card-md modal-card-scroll" onClick={(event) => event.stopPropagation()}>
         <div className="card-header page-section-header">
-          <h3 className="card-title">{t("connections.savedConnections")}</h3>
-          <button className="btn btn-primary" onClick={handleAdd}>
-            + {t("connections.createConnection")}
-          </button>
+          <h3 className="card-title">
+            {mode === "edit" ? t("common.edit") : mode === "copy" ? t("common.copy") : t("connections.createConnection")}
+          </h3>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>{t("common.close")}</button>
         </div>
-        <div className="table-wrapper">
-          <table className="table">
-            <thead>
-              <tr>
-                <th className="col-w-25">{t("connections.connectionName")}</th>
-                <th className="col-w-15">{t("connections.engine")}</th>
-                <th className="col-w-30">{t("connections.address")}</th>
-                <th className="col-w-15">{t("connections.mysqlDatabase")}</th>
-                <th className="table-col-actions-header">{t("connections.operations")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mysqlProfiles.map((profile) => (
-                <tr key={profile.id}>
-                  <td className="table-cell-strong">
-                    {profile.name}
-                    {profile.id === activeConnectionIdByEngine.mysql && <span className="status-badge-current">{t("connections.currentInUse")}</span>}
-                  </td>
-                  <td><span className="pill">MySQL</span></td>
-                  <td className="muted">{profile.mysqlHost ?? "127.0.0.1"}:{profile.mysqlPort ?? 3306}</td>
-                  <td className="muted">{profile.mysqlDatabase ?? "-"}</td>
-                  <td className="table-actions table-col-actions">
-                    <div className="flex-gap justify-end table-action-group-tight">
-                      <button className="btn btn-sm btn-ghost" title={t("connections.testConnection")} onClick={() => handleTest(profile.id)} disabled={testingId === profile.id}>
-                        {testingId === profile.id ? "..." : t("connections.test")}
-                      </button>
-                      <button className="btn btn-sm btn-ghost" title={t("common.edit")} onClick={() => handleEdit(profile.id)}>{t("common.edit")}</button>
-                      <button className="btn btn-sm btn-ghost" title={t("common.copy")} onClick={() => handleCopy(profile.id)}>{t("common.copy")}</button>
-                      <button className="btn btn-sm btn-ghost text-danger" title={t("common.delete")} onClick={() => deleteConnection(profile.id)}>{t("common.delete")}</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {mysqlProfiles.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="muted table-empty-cell">{t("connections.noConnections")}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback-padded`}>{error}</div>}
-
-      <Modal
-        title={action === "edit" ? t("common.edit") : action === "copy" ? t("common.copy") : t("connections.createConnection")}
-        open={isConfigVisible}
-        onOk={handleSave}
-        onCancel={closeConfig}
-        width={600}
-        okText={t("connections.saveConnection")}
-        cancelText={t("common.cancel")}
-      >
-        <div className="form-grid form-grid-spaced">
+        <div className="modal-card-body modal-card-grid">
           <div>
             <label>{t("connections.name")}</label>
             <input className="form-control" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Production MySQL" />
@@ -332,9 +268,28 @@ export default function MysqlConnectionsPage() {
               </div>
             </>
           )}
+          {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback`}>{error}</div>}
         </div>
-        {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback`}>{error}</div>}
-      </Modal>
+        <div className="modal-card-footer" style={{ justifyContent: "space-between" }}>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <div style={{ display: "flex", gap: "8px" }}>
+            {isEditing && (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={handleTest}
+                disabled={testingId === (profileId ?? form.id)}
+              >
+                {testingId ? "..." : t("connections.test")}
+              </button>
+            )}
+            <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={saving}>
+              {t("connections.saveConnection")}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

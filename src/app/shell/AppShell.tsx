@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
-import { useConnectionWorkspace } from "../../hooks/useConnectionWorkspace";
+import { useConnectionWorkspace, type EngineType } from "../../hooks/useConnectionWorkspace";
 import { useFloatingMenuDismiss } from "../../hooks/useFloatingMenuDismiss";
 import WorkspaceChrome from "../../layout/WorkspaceChrome";
 import { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
@@ -9,6 +9,12 @@ import AppOverlays from "./AppOverlays";
 import { AppSidebarContent, AppSidebarFooter } from "./AppSidebar";
 import AppTopbarStatus from "./AppTopbarStatus";
 import AppWorkspace, { canShowWorkspace } from "./AppWorkspace";
+
+interface ConnectionDialogState {
+  mode: "add" | "edit" | "copy";
+  engine: EngineType;
+  profileId?: string;
+}
 
 export default function AppShell() {
   const { t } = useTranslation();
@@ -26,6 +32,18 @@ export default function AppShell() {
   const [redisExpanded, setRedisExpanded] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(266);
+  const [connectionDialog, setConnectionDialog] = useState<ConnectionDialogState | null>(null);
+
+  const openConnectionDialog = async (engine: EngineType, mode: "add" | "edit" | "copy", profileId?: string) => {
+    if (mode === "edit") {
+      await connection.openConnectionConfig(engine, "edit", profileId);
+    }
+    setConnectionDialog({ engine, mode, profileId });
+  };
+
+  const closeConnectionDialog = () => {
+    setConnectionDialog(null);
+  };
 
   useFloatingMenuDismiss(
     Boolean(
@@ -80,6 +98,7 @@ export default function AppShell() {
             onToggleEs={() => setEsExpanded((prev) => !prev)}
             onToggleMysql={() => setMysqlExpanded((prev) => !prev)}
             onToggleRedis={() => setRedisExpanded((prev) => !prev)}
+            openConnectionDialog={openConnectionDialog}
           />
         }
         sidebarFooter={<AppSidebarFooter />}
@@ -93,7 +112,13 @@ export default function AppShell() {
         canShowWorkspace={workspaceVisible}
       />
 
-      <AppOverlays connection={connection} mysql={mysql} />
+      <AppOverlays
+        connection={connection}
+        mysql={mysql}
+        connectionDialog={connectionDialog}
+        closeConnectionDialog={closeConnectionDialog}
+        openConnectionDialog={openConnectionDialog}
+      />
     </>
   );
 }

@@ -1,7 +1,5 @@
-import { Modal } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
 import { useSharedConnectionState } from "../../../state/SharedConnectionState";
@@ -23,44 +21,73 @@ const emptyForm = {
   sshPassword: "",
 };
 
-export default function RedisConnectionsPage() {
+interface RedisConnectionDialogProps {
+  mode: "add" | "edit" | "copy";
+  profileId?: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+export default function RedisConnectionDialog({
+  mode,
+  profileId,
+  onClose,
+  onSuccess,
+}: RedisConnectionDialogProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { profiles, getSecretById, activeConnectionIdByEngine, saveConnection, deleteConnection } = useSharedConnectionState();
+  const { profiles, getSecretById, saveConnection } = useSharedConnectionState();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success">("error");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showSshPassword, setShowSshPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const action = searchParams.get("action");
-  const selectedId = searchParams.get("id") ?? "";
-  const isConfigVisible = action === "add" || action === "edit" || action === "copy";
+  const isEditing = mode === "edit" || mode === "copy";
 
-  const redisProfiles = profiles.filter((item) => item.engine === "redis");
-
-  const resetForm = () => {
-    setForm(emptyForm);
+  useEffect(() => {
     setError("");
-  };
+    setShowPassword(false);
+    setShowSshPassword(false);
 
-  const closeConfig = () => {
-    const from = (location.state as { from?: string } | null)?.from;
-    navigate(from && from !== "/redis/connections" ? from : "/redis/browser", { replace: true });
-  };
+    if (mode === "add") {
+      setForm(emptyForm);
+      return;
+    }
 
-  const handleAdd = () => {
-    setSearchParams({ action: "add" });
-  };
+    if (isEditing && profileId) {
+      const profile = profiles.find((item) => item.id === profileId);
+      if (!profile) {
+        onClose();
+        return;
+      }
+      const secret = getSecretById(profileId);
+      const nextName = mode === "copy" ? `${profile.name} - ${t("common.copy")}` : profile.name;
+      setForm({
+        id: mode === "copy" ? "" : profileId,
+        name: nextName,
+        host: profile.redisHost ?? "127.0.0.1",
+        port: profile.redisPort ?? 6379,
+        database: profile.redisDatabase ?? 0,
+        username: secret.username ?? "",
+        password: secret.password ?? "",
+        sshEnabled: profile.ssh?.enabled ?? false,
+        sshHost: profile.ssh?.host ?? "",
+        sshPort: profile.ssh?.port ?? 22,
+        sshUsername: profile.ssh?.username ?? "",
+        sshPassword: secret.sshPassword ?? "",
+      });
+    }
+  }, [mode, profileId, profiles, getSecretById, t, onClose]);
 
   const handleSave = async () => {
     setError("");
+    setSaving(true);
     if (!form.name || !form.host) {
       setMessageType("error");
       setError(t("connections.nameAndAddressRequired"));
+      setSaving(false);
       return;
     }
 
@@ -83,35 +110,36 @@ export default function RedisConnectionsPage() {
       } : undefined,
     };
 
-    await saveConnection(profile, {
-      username: form.username || undefined,
-      password: form.password || undefined,
-      sshPassword: form.sshEnabled ? form.sshPassword : undefined,
-    });
-
-    resetForm();
-    closeConfig();
+    try {
+      await saveConnection(profile, {
+        username: form.username || undefined,
+        password: form.password || undefined,
+        sshPassword: form.sshEnabled ? form.sshPassword : undefined,
+      });
+      onSuccess();
+    } catch (err) {
+      logError(err, { source: "redisConnectionDialog.save", message: "Failed to save Redis connection" });
+      setMessageType("error");
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEdit = (id: string) => {
-    setSearchParams({ action: "edit", id });
-  };
+  const handleTest = async () => {
+    const targetId = profileId ?? form.id;
+    if (!targetId) return;
 
-  const handleCopy = (id: string) => {
-    setSearchParams({ action: "copy", id });
-  };
-
-  const handleTest = async (id: string) => {
-    setTestingId(id);
+    setTestingId(targetId);
     setError("");
 
     try {
-      const profile = profiles.find((item) => item.id === id);
+      const profile = profiles.find((item) => item.id === targetId);
       if (!profile) {
         throw new Error(t("connections.connectionNotFound"));
       }
 
-      const secret = getSecretById(id);
+      const secret = getSecretById(targetId);
       const connection: RedisConnection = {
         id: profile.id,
         name: profile.name,
@@ -126,13 +154,13 @@ export default function RedisConnectionsPage() {
       };
 
       await redisConnect(connection);
-      await redisDisconnect(id);
+      await redisDisconnect(targetId);
       setMessageType("success");
       setError(t("connections.connectionSuccess", { name: profile.name }));
     } catch (err) {
       logError(err, {
-        source: "redisConnections.testConnection",
-        message: `Failed to test Redis connection ${id}`
+        source: "redisConnectionDialog.testConnection",
+        message: `Failed to test Redis connection ${targetId}`
       });
       setMessageType("error");
       setError(t("connections.connectionFailed", { error: err instanceof Error ? err.message : String(err) }));
@@ -141,112 +169,16 @@ export default function RedisConnectionsPage() {
     }
   };
 
-  useEffect(() => {
-    if (!isConfigVisible) {
-      return;
-    }
-
-    setError("");
-    setShowPassword(false);
-
-    if (action === "add") {
-      setForm(emptyForm);
-      return;
-    }
-
-    if ((action === "edit" || action === "copy") && selectedId) {
-      const profile = profiles.find((item) => item.id === selectedId);
-      if (!profile) {
-        closeConfig();
-        return;
-      }
-
-      const secret = getSecretById(selectedId);
-      const nextName = action === "copy" ? `${profile.name} - ${t("common.copy")}` : profile.name;
-      setForm({
-        id: action === "copy" ? "" : selectedId,
-        name: nextName,
-        host: profile.redisHost ?? "127.0.0.1",
-        port: profile.redisPort ?? 6379,
-        database: profile.redisDatabase ?? 0,
-        username: secret.username ?? "",
-        password: secret.password ?? "",
-        sshEnabled: profile.ssh?.enabled ?? false,
-        sshHost: profile.ssh?.host ?? "",
-        sshPort: profile.ssh?.port ?? 22,
-        sshUsername: profile.ssh?.username ?? "",
-        sshPassword: secret.sshPassword ?? "",
-      });
-      return;
-    }
-
-    closeConfig();
-  }, [action, getSecretById, isConfigVisible, profiles, selectedId]);
-
   return (
-    <div className="page">
-      <div className="card">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="card modal-card modal-card-md modal-card-scroll" onClick={(event) => event.stopPropagation()}>
         <div className="card-header page-section-header">
-          <h3 className="card-title">{t("connections.savedConnections")}</h3>
-          <button className="btn btn-primary" onClick={handleAdd}>
-            + {t("connections.createConnection")}
-          </button>
+          <h3 className="card-title">
+            {mode === "edit" ? t("common.edit") : mode === "copy" ? t("common.copy") : t("connections.createConnection")}
+          </h3>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>{t("common.close")}</button>
         </div>
-        <div className="table-wrapper">
-          <table className="table">
-            <thead>
-              <tr>
-                <th className="col-w-25">{t("connections.connectionName")}</th>
-                <th className="col-w-15">{t("connections.engine")}</th>
-                <th className="col-w-25">{t("connections.address")}</th>
-                <th className="col-w-10">{t("connections.redisDatabase")}</th>
-                <th className="table-col-actions-header">{t("connections.operations")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {redisProfiles.map((profile) => (
-                <tr key={profile.id}>
-                  <td className="table-cell-strong">
-                    {profile.name}
-                    {profile.id === activeConnectionIdByEngine.redis && <span className="status-badge-current">{t("connections.currentInUse")}</span>}
-                  </td>
-                  <td><span className="pill">Redis</span></td>
-                  <td className="muted">{profile.redisHost ?? "127.0.0.1"}:{profile.redisPort ?? 6379}</td>
-                  <td className="muted">DB {profile.redisDatabase ?? 0}</td>
-                  <td className="table-actions table-col-actions">
-                    <div className="flex-gap justify-end table-action-group-tight">
-                      <button className="btn btn-sm btn-ghost" title={t("connections.testConnection")} onClick={() => handleTest(profile.id)} disabled={testingId === profile.id}>
-                        {testingId === profile.id ? "..." : t("connections.test")}
-                      </button>
-                      <button className="btn btn-sm btn-ghost" title={t("common.edit")} onClick={() => handleEdit(profile.id)}>{t("common.edit")}</button>
-                      <button className="btn btn-sm btn-ghost" title={t("common.copy")} onClick={() => handleCopy(profile.id)}>{t("common.copy")}</button>
-                      <button className="btn btn-sm btn-ghost text-danger" title={t("common.delete")} onClick={() => deleteConnection(profile.id)}>{t("common.delete")}</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {redisProfiles.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="muted table-empty-cell">{t("connections.noConnections")}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback-padded`}>{error}</div>}
-
-      <Modal
-        title={action === "edit" ? t("common.edit") : action === "copy" ? t("common.copy") : t("connections.createConnection")}
-        open={isConfigVisible}
-        onOk={handleSave}
-        onCancel={closeConfig}
-        width={600}
-        okText={t("connections.saveConnection")}
-        cancelText={t("common.cancel")}
-      >
-        <div className="form-grid form-grid-spaced">
+        <div className="modal-card-body modal-card-grid">
           <div>
             <label>{t("connections.name")}</label>
             <input className="form-control" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. local redis" />
@@ -338,9 +270,28 @@ export default function RedisConnectionsPage() {
               </div>
             </>
           )}
+          {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback`}>{error}</div>}
         </div>
-        {error && <div className={`${messageType === "success" ? "text-success" : "text-danger"} inline-feedback`}>{error}</div>}
-      </Modal>
+        <div className="modal-card-footer" style={{ justifyContent: "space-between" }}>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <div style={{ display: "flex", gap: "8px" }}>
+            {isEditing && (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={handleTest}
+                disabled={testingId === (profileId ?? form.id)}
+              >
+                {testingId ? "..." : t("connections.test")}
+              </button>
+            )}
+            <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={saving}>
+              {t("connections.saveConnection")}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

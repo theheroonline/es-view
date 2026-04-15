@@ -9,8 +9,6 @@ interface MysqlWorkspaceTabsProps {
   locationPathname: string;
   tableManagerLabel: string;
   sqlQueryLabel: string;
-  connectionsLabel: string;
-  showConnectionsTab: boolean;
   visible: boolean;
   onActivateTable: (database: string, table: string) => void;
   onCloseTable: (database: string, table: string) => void;
@@ -23,8 +21,6 @@ export default function MysqlWorkspaceTabs({
   locationPathname,
   tableManagerLabel,
   sqlQueryLabel,
-  connectionsLabel,
-  showConnectionsTab,
   visible,
   onActivateTable,
   onCloseTable,
@@ -63,11 +59,6 @@ export default function MysqlWorkspaceTabs({
       <NavLink to="/mysql/sql" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
         {sqlQueryLabel}
       </NavLink>
-      {showConnectionsTab ? (
-        <NavLink to="/mysql/connections" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-          {connectionsLabel}
-        </NavLink>
-      ) : null}
     </div>
   );
 }

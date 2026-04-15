@@ -14,11 +14,9 @@ interface MysqlSidebarSectionProps {
   emptyText: string;
   noTablesText: string;
   createConnectionTitle: string;
-  refreshTitle: string;
   renderConnectionItem: (profile: ConnectionProfile) => ReactNode;
   onToggle: () => void;
   onCreateConnection: () => void;
-  onRefresh: () => void;
   onOpenDatabase: (database: string) => void;
   onDatabaseContextMenu: (event: MouseEvent<HTMLDivElement>, database: string) => void;
   onToggleSidebarTables: (database: string) => void;
@@ -42,11 +40,9 @@ export default function MysqlSidebarSection({
   emptyText,
   noTablesText,
   createConnectionTitle,
-  refreshTitle,
   renderConnectionItem,
   onToggle,
   onCreateConnection,
-  onRefresh,
   onOpenDatabase,
   onDatabaseContextMenu,
   onToggleSidebarTables,
@@ -75,9 +71,6 @@ export default function MysqlSidebarSection({
         </button>
         <button type="button" className="btn btn-sm btn-ghost mdb-tree-action" onClick={onCreateConnection} title={createConnectionTitle}>
           +
-        </button>
-        <button type="button" className="btn btn-sm btn-ghost mdb-tree-action" onClick={onRefresh} title={refreshTitle}>
-          ↻
         </button>
       </div>
 
