@@ -727,7 +727,7 @@ export default function MysqlSqlQuery() {
     setMetaLoading(true);
     try {
       await ensureConnectionDatabase(nextConnectionId, nextConnection.database);
-      await setActiveConnection(nextConnectionId);
+      await setActiveConnection(nextConnectionId, "mysql");
       setTablesByDb({});
       setColumnMap({});
       await ensureDatabasesLoaded(nextConnectionId, nextConnection.database);

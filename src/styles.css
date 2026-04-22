@@ -435,6 +435,11 @@ body {
   text-transform: uppercase;
 }
 
+.mdb-connection-badge-active {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
 .mdb-tree-count {
   flex-shrink: 0;
   font-size: 11px;

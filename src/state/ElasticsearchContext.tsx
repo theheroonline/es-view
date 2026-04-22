@@ -21,17 +21,21 @@ interface ElasticsearchContextValue {
 const ElasticsearchContext = createContext<ElasticsearchContextValue | null>(null);
 
 export function ElasticsearchProvider({ children }: { children: ReactNode }) {
-  const { profiles, getSecretById, getActiveConnectionIdByEngine } = useSharedConnectionState();
-  const [selectedIndex, setSelectedIndexState] = useState<string | undefined>(undefined);
+  const { profiles, getSecretById, getFocusedConnectionIdByEngine } = useSharedConnectionState();
+  const [selectedIndexByConnection, setSelectedIndexByConnection] = useState<Record<string, string | undefined>>({});
   const [indices, setIndices] = useState<string[]>([]);
   const [indicesMeta, setIndicesMeta] = useState<IndexMeta[]>([]);
   const [indicesCacheByConnection, setIndicesCacheByConnection] = useState<Record<string, { indices: string[]; indicesMeta: IndexMeta[] }>>({});
 
-  const activeEsConnectionId = getActiveConnectionIdByEngine("elasticsearch");
+  const activeEsConnectionId = getFocusedConnectionIdByEngine("elasticsearch");
 
   const setSelectedIndex = useCallback((index: string | undefined) => {
-    setSelectedIndexState(index);
-  }, []);
+    if (!activeEsConnectionId) return;
+    setSelectedIndexByConnection((prev) => ({
+      ...prev,
+      [activeEsConnectionId]: index,
+    }));
+  }, [activeEsConnectionId]);
 
   const getConnectionById = useCallback((id: string): EsConnection | null => {
     const profile = profiles.find((item) => item.id === id);
@@ -96,8 +100,11 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
         }
       }));
 
-      setSelectedIndexState((prev) => {
-        if (prev && !nextIndices.includes(prev)) return undefined;
+      setSelectedIndexByConnection((prev) => {
+        const current = prev[target.id];
+        if (current && !nextIndices.includes(current)) {
+          return { ...prev, [target.id]: undefined };
+        }
         return prev;
       });
     } catch (error) {
@@ -112,7 +119,6 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!activeEsConnectionId) {
-      setSelectedIndexState(undefined);
       setIndices([]);
       setIndicesMeta([]);
       return;
@@ -127,10 +133,6 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
 
     setIndices(cached.indices);
     setIndicesMeta(cached.indicesMeta);
-    setSelectedIndexState((prev) => {
-      if (prev && !cached.indices.includes(prev)) return undefined;
-      return prev;
-    });
   }, [activeEsConnectionId, indicesCacheByConnection]);
 
   useEffect(() => {
@@ -151,6 +153,10 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
   }, [profiles]);
 
   const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
+
+  const selectedIndex = activeEsConnectionId
+    ? (selectedIndexByConnection[activeEsConnectionId] ?? undefined)
+    : undefined;
 
   const value = useMemo(() => ({
     activeConnection,

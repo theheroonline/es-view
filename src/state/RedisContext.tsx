@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { RedisConnection, RedisWorkspaceState } from "../modules/redis/types";
 import { useSharedConnectionState } from "./SharedConnectionState";
 
@@ -13,9 +13,9 @@ interface RedisContextValue {
 const RedisContext = createContext<RedisContextValue | null>(null);
 
 export function RedisProvider({ children }: { children: ReactNode }) {
-  const { profiles, getSecretById, getActiveConnectionIdByEngine } = useSharedConnectionState();
-  const [selectedDatabase, setSelectedDatabase] = useState<number | null>(null);
-  const activeConnectionId = getActiveConnectionIdByEngine("redis");
+  const { profiles, getSecretById, getFocusedConnectionIdByEngine } = useSharedConnectionState();
+  const [selectedDbByConnection, setSelectedDbByConnection] = useState<Record<string, number | null>>({});
+  const activeConnectionId = getFocusedConnectionIdByEngine("redis");
 
   const getRedisConnectionById = useCallback(
     (id: string): RedisConnection | null => {
@@ -49,8 +49,16 @@ export function RedisProvider({ children }: { children: ReactNode }) {
     return getRedisConnectionById(activeConnectionId);
   }, [activeConnectionId, getRedisConnectionById]);
 
-  useEffect(() => {
-    setSelectedDatabase(null);
+  const selectedDatabase = activeConnectionId
+    ? (selectedDbByConnection[activeConnectionId] ?? null)
+    : null;
+
+  const setSelectedDatabase = useCallback((database: number | null) => {
+    if (!activeConnectionId) return;
+    setSelectedDbByConnection((prev) => ({
+      ...prev,
+      [activeConnectionId]: database,
+    }));
   }, [activeConnectionId]);
 
   const value = useMemo(
@@ -63,6 +71,7 @@ export function RedisProvider({ children }: { children: ReactNode }) {
     [
       activeRedisConnection,
       selectedDatabase,
+      setSelectedDatabase,
       getRedisConnectionById,
     ]
   );

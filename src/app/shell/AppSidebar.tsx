@@ -34,20 +34,26 @@ export function AppSidebarContent({
 }: AppSidebarContentProps) {
   const { t } = useTranslation();
 
-  const isConnectionActiveNow = (profile: ConnectionProfile) => connection.activeConnectionId === profile.id;
+  const isConnectionFocused = (profile: ConnectionProfile) =>
+    connection.focusedConnectionIdByEngine[profile.engine ?? "elasticsearch"] === profile.id;
+
+  const isConnectionActive = (profile: ConnectionProfile) =>
+    connection.activeConnectionIdsByEngine[profile.engine ?? "elasticsearch"]?.includes(profile.id) ?? false;
 
   const renderConnectionItem = (profile: ConnectionProfile) => {
     const status = connection.connectionStatusById[profile.id] ?? "idle";
 
     const handleActivateConnection = () => {
       connection.setFocusedConnectionId(profile.id);
-      if (isConnectionActiveNow(profile)) {
+      if (isConnectionActive(profile)) {
+        // Already connected -- just focus (backend stays alive)
         if (connection.isWorkspaceSuspended) {
           void connection.handleConnectionChange(profile.id, { forceValidate: false });
         }
         return;
       }
 
+      // Not yet connected -- full connect flow
       void connection.handleConnectionChange(profile.id, { forceValidate: status !== "success" });
     };
 
@@ -73,8 +79,10 @@ export function AppSidebarContent({
           <span className={`mdb-status-dot status-${status}`} />
           <span className="mdb-connection-name">{profile.name}</span>
         </span>
-        {isConnectionActiveNow(profile) ? (
+        {isConnectionFocused(profile) ? (
           <span className="mdb-connection-badge">{t("connections.currentInUse")}</span>
+        ) : isConnectionActive(profile) ? (
+          <span className="mdb-connection-badge mdb-connection-badge-active">{t("connections.connected")}</span>
         ) : null}
       </div>
     );
