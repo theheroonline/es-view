@@ -19,6 +19,7 @@ interface UseCreateTableReturn {
   setEditingRows: (rows: EditingRow[] | ((prev: EditingRow[]) => EditingRow[])) => void;
   handleAddColumn: () => void;
   handleDeleteColumn: (columnId: string) => void;
+  openCreateTable: (database: string) => void;
   generateCreateTableSQL: (state: CreateTableModalState) => string;
   handleCreateTable: () => Promise<void>;
 }
@@ -90,6 +91,19 @@ export function useCreateTable({
         columns: prev.columns.filter(col => col.id !== columnId)
       };
     });
+  }, [createTableModal]);
+
+  const openCreateTable = useCallback((database: string) => {
+    setCreateTableModal({
+      database,
+      tableName: "",
+      columns: [],
+      charset: "utf8mb4",
+      engine: "InnoDB"
+    });
+    setCreateTableError("");
+    setSelectedEditingRowId(null);
+    setEditingRows([{ ...DEFAULT_EDITING_ROW, id: Date.now().toString() }]);
   }, []);
 
   const generateCreateTableSQL = useCallback((state: CreateTableModalState): string => {
@@ -265,6 +279,7 @@ export function useCreateTable({
     setEditingRows,
     handleAddColumn,
     handleDeleteColumn,
+    openCreateTable,
     generateCreateTableSQL,
     handleCreateTable
   };

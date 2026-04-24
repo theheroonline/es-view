@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMysqlContext } from "../../../state/MysqlContext";
-import type { MysqlFilterOperator } from "../types";
 import { getMysqlOpenedTableKey } from "../types";
 import { AddRowModal } from "../features/table-manager/components/AddRowModal";
 import { BatchEditModal } from "../features/table-manager/components/BatchEditModal";
@@ -38,6 +37,7 @@ import { useTableSqlExecution } from "../features/table-manager/hooks/useTableSq
 import { useTableTreeMenuActions } from "../features/table-manager/hooks/useTableTreeMenuActions";
 import { useTableManagerState } from "../features/table-manager/state/useTableManagerState";
 import {
+  buildFilterOperators,
   defaultDataState,
   escapeSqlIdentifier,
   mysqlColumnTypeOptions,
@@ -183,7 +183,6 @@ export default function MysqlTableManager() {
     createTableModal,
     setCreateTableModal,
     createTableError,
-    setCreateTableError,
     createTableLoading,
     createTableSuccess,
     setCreateTableSuccess,
@@ -193,6 +192,7 @@ export default function MysqlTableManager() {
     setEditingRows,
     handleAddColumn,
     handleDeleteColumn,
+    openCreateTable,
     handleCreateTable
   } = useCreateTable({
     connectionId,
@@ -205,22 +205,7 @@ export default function MysqlTableManager() {
     ? openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey) ?? null
     : null;
 
-  const filterOperators: Array<{ value: MysqlFilterOperator; label: string }> = [
-    { value: "eq", label: t("mysql.tableManager.operatorEq") },
-    { value: "ne", label: t("mysql.tableManager.operatorNe") },
-    { value: "gt", label: t("mysql.tableManager.operatorGt") },
-    { value: "gte", label: t("mysql.tableManager.operatorGte") },
-    { value: "lt", label: t("mysql.tableManager.operatorLt") },
-    { value: "lte", label: t("mysql.tableManager.operatorLte") },
-    { value: "between", label: t("mysql.tableManager.operatorBetween") },
-    { value: "contains", label: t("mysql.tableManager.operatorContains") },
-    { value: "startsWith", label: t("mysql.tableManager.operatorStartsWith") },
-    { value: "endsWith", label: t("mysql.tableManager.operatorEndsWith") },
-    { value: "isNull", label: t("mysql.tableManager.operatorIsNull") },
-    { value: "isNotNull", label: t("mysql.tableManager.operatorIsNotNull") },
-    { value: "emptyString", label: t("mysql.tableManager.operatorEmptyString") },
-    { value: "notEmptyString", label: t("mysql.tableManager.operatorNotEmptyString") }
-  ];
+  const filterOperators = buildFilterOperators(t);
 
   const activeFilterTree = activeOpenedTable?.filterTree ?? null;
   const overviewTables = tablesByDb[expandedDatabase ?? ""] ?? [];
@@ -587,35 +572,6 @@ export default function MysqlTableManager() {
     );
   }
 
-  const handleOpenCreateTable = () => {
-    setCreateTableModal({
-      database: expandedDatabase ?? "",
-      tableName: "",
-      columns: [],
-      charset: "utf8mb4",
-      engine: "InnoDB"
-    });
-    setCreateTableError("");
-    setSelectedEditingRowId(null);
-    setEditingRows([
-      {
-        id: Date.now().toString(),
-        name: "",
-        type: "varchar",
-        length: "255",
-        scale: "",
-        nullable: true,
-        defaultValue: "",
-        isPrimary: false,
-        autoIncrement: false,
-        comment: "",
-        timestampDefault: "none",
-        timestampOnUpdate: false,
-        extraAttributes: ""
-      }
-    ]);
-  };
-
   const handleSelectWorkspaceTab = (nextTab: RightPanelTab) => {
     if (!activeOpenedTable) return;
     setRightPanelTab(nextTab);
@@ -643,7 +599,7 @@ export default function MysqlTableManager() {
               onTableDragStart: handleOverviewTableDragStart,
               onTableContextMenu: handleTableContextMenu,
               onRefreshTables: refreshTablesForDb,
-              onOpenCreateTable: handleOpenCreateTable,
+              onOpenCreateTable: () => openCreateTable(expandedDatabase ?? ""),
             }}
             dataPaneProps={{
               selectedTableInfo,

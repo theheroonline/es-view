@@ -130,10 +130,10 @@ export function useConnectionWorkspace() {
     }));
   };
 
-  const switchViewSync = (connectionId: string, engine: EngineType) => {
+  const switchViewSync = async (connectionId: string, engine: EngineType) => {
     setConnectionActionError("");
     setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: false }));
-    activateConnection(connectionId, engine, true);
+    await activateConnection(connectionId, engine, true);
   };
 
   const resetMysqlWorkspace = (connectionId: string) => {
@@ -259,7 +259,7 @@ export function useConnectionWorkspace() {
           throw new Error("CONNECTION_FAILED");
         }
 
-        switchViewSync(connectionId, "mysql");
+        await switchViewSync(connectionId, "mysql");
         resetMysqlWorkspace(connectionId);
 
         if (shouldValidate) {
@@ -296,7 +296,7 @@ export function useConnectionWorkspace() {
           throw new Error("CONNECTION_FAILED");
         }
 
-        switchViewSync(connectionId, "redis");
+        await switchViewSync(connectionId, "redis");
         setSelectedRedisDatabase(redisConnection.database ?? 0);
 
         if (shouldValidate) {
@@ -314,7 +314,7 @@ export function useConnectionWorkspace() {
         throw new Error("CONNECTION_FAILED");
       }
 
-      switchViewSync(connectionId, "elasticsearch");
+      await switchViewSync(connectionId, "elasticsearch");
 
       if (shouldValidate) {
         await pingEsCluster(connection);
