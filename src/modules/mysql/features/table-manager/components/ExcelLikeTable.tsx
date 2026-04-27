@@ -180,6 +180,13 @@ function ExcelLikeTableInner({
   // ==================== 列拖拽处理 ====================
 
   const handleHeaderDragStart = (e: React.DragEvent<HTMLTableCellElement>, columnName: string) => {
+    // Check if drag originated from the resizer area (use elementUnderPoint since e.target is always <th>)
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el?.closest(".excel-table-column-resizer")) {
+      e.preventDefault();
+      return;
+    }
+
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", columnName);
     setDraggedColumn(columnName);
@@ -217,6 +224,7 @@ function ExcelLikeTableInner({
 
   const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>, columnName: string) => {
     e.preventDefault();
+    e.stopPropagation();
     setResizeStartX(e.clientX);
 
     const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {

@@ -46,10 +46,8 @@ export function AppSidebarContent({
     const handleActivateConnection = () => {
       connection.setFocusedConnectionId(profile.id);
       if (isConnectionActive(profile)) {
-        // Already connected -- just focus (backend stays alive)
-        if (connection.isWorkspaceSuspended) {
-          void connection.handleConnectionChange(profile.id, { forceValidate: false });
-        }
+        // Already connected -- switch focus and restore workspace data
+        void connection.handleConnectionChange(profile.id, { forceValidate: false });
         return;
       }
 
