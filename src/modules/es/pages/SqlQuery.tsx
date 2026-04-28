@@ -3,7 +3,7 @@ import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import dayjs, { Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../../../components/FieldFilterButton";
 import { logError } from "../../../lib/errorLog";
@@ -35,6 +35,13 @@ type SqlQueryCacheState = {
 
 const sqlQueryCacheByConnection = new Map<string, SqlQueryCacheState>();
 
+/** 提取 enabledConditions 逻辑，消除重复 */
+function getEnabledConditions(conds: WhereCondition[]) {
+  return conds.filter((c) =>
+    c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
+  );
+}
+
 export default function SqlQuery() {
   const { t, i18n } = useTranslation();
   const { activeConnection, indices } = useElasticsearchContext();
@@ -52,17 +59,15 @@ export default function SqlQuery() {
   const [totalRows, setTotalRows] = useState(0);
   const [expandedSqlRows, setExpandedSqlRows] = useState<Set<number>>(new Set());
   const [showConditions, setShowConditions] = useState(false);
-
-  // Field Filter State (shared component)
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
-  
-  const presets = [
+
+  const presets = useMemo(() => [
     { label: t('presets.lastHour'), value: [dayjs().subtract(1, 'hour'), dayjs()] as [Dayjs, Dayjs] },
     { label: t('presets.last24Hours'), value: [dayjs().subtract(24, 'hour'), dayjs()] as [Dayjs, Dayjs] },
     { label: t('presets.last7Days'), value: [dayjs().subtract(7, 'day'), dayjs()] as [Dayjs, Dayjs] },
     { label: t('presets.today'), value: [dayjs().startOf('day'), dayjs().endOf('day')] as [Dayjs, Dayjs] },
     { label: t('presets.yesterday'), value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] as [Dayjs, Dayjs] },
-  ];
+  ], [t]);
 
   useEffect(() => {
     dayjs.locale(i18n.language === "zh" ? "zh-cn" : "en");
@@ -128,7 +133,6 @@ export default function SqlQuery() {
     });
   }, [activeConnection?.id, selectedIndex, result, operation, whereConditions, payload, limit, fieldFilter]);
 
-  // 获取索引字段
   useEffect(() => {
     if (!activeConnection || !selectedIndex) {
       setAvailableFields([]);
@@ -154,15 +158,11 @@ export default function SqlQuery() {
     const name = selectedIndex || "your_index";
     let displaySql = "";
     switch (operation) {
-      case "select":
+      case "select": {
         const fieldsPart = !fieldFilter.enabled ? "*" : fieldFilter.fields.join(", ");
-        const enabledConditions = whereConditions.filter((c) =>
-          c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
-        );
+        const enabledConditions = getEnabledConditions(whereConditions);
 
-        // 构建 WHERE 条件文本显示
-        let conditions: string[] = [];
-        conditions = enabledConditions.map((c) => {
+        const conditions: string[] = enabledConditions.map((c) => {
           if (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]) {
             const startStr = formatDateTime(c.rangeValue[0]);
             const endStr = formatDateTime(c.rangeValue[1]);
@@ -184,6 +184,7 @@ export default function SqlQuery() {
         const wherePart = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
         displaySql = `SELECT ${fieldsPart} FROM ${name}${wherePart} LIMIT ${limit}`;
         break;
+      }
       case "insert":
         displaySql = `INSERT INTO ${name} VALUES ${payload}`;
         break;
@@ -196,14 +197,13 @@ export default function SqlQuery() {
       default:
         displaySql = "";
     }
-    setSql(displaySql);
+    // 避免相同 SQL 触发不必要的重渲染
+    setSql((prev) => prev === displaySql ? prev : displaySql);
   }, [operation, selectedIndex, whereConditions, payload, limit, fieldFilter.enabled, fieldFilter.fields]);
 
   // 构建 Elasticsearch DSL 查询
   const buildDslQuery = () => {
-    const enabledConditions = whereConditions.filter((c) =>
-      c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
-    );
+    const enabledConditions = getEnabledConditions(whereConditions);
 
     let query: any = { match_all: {} };
     const boolBuckets: Record<string, any[]> = { must: [] };
@@ -249,13 +249,11 @@ export default function SqlQuery() {
       query = { bool: { must: boolBuckets.must } };
     }
 
-    const body: Record<string, any> = {
+    return {
       size: limit,
       query,
       track_total_hits: true
     };
-
-    return body;
   };
 
   const execute = async () => {
@@ -275,7 +273,6 @@ export default function SqlQuery() {
     }
 
     try {
-      // 构建 DSL 查询
       const body = buildDslQuery();
       const { result: nextResult, totalRows: nextTotalRows } = await executeEsSqlSelect(
         activeConnection,
@@ -308,9 +305,7 @@ export default function SqlQuery() {
   const addCondition = () => {
     if (!showConditions) {
       setShowConditions(true);
-      return;
     }
-    setShowConditions(true);
     setWhereConditions((prev) => [...prev, { field: "", operator: "=", value: "", enabled: true }]);
   };
 
@@ -338,7 +333,6 @@ export default function SqlQuery() {
     });
   };
 
-  // Format ISO datetime strings to readable local format, otherwise fallback to plain rendering
   const formatDateString = (input: string) => {
     const isoPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
     if (!isoPattern.test(input)) return null;
@@ -360,8 +354,6 @@ export default function SqlQuery() {
       </span>
     );
   };
-
-
 
   return (
     <>
@@ -457,7 +449,6 @@ export default function SqlQuery() {
         </div>
       </div>
 
-      {/* WHERE 条件构建器 */}
       {operation === "select" && showConditions && (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '16px' }}>
@@ -474,18 +465,18 @@ export default function SqlQuery() {
                 padding: '16px'
               }}>
                 {whereConditions.map((cond, idx) => (
-                  <div key={idx} style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: '40px 1fr 120px 1fr 80px', 
-                    gap: '8px', 
+                  <div key={idx} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '40px 1fr 120px 1fr 80px',
+                    gap: '8px',
                     marginBottom: idx < whereConditions.length - 1 ? '8px' : '0',
                     opacity: cond.enabled ? 1 : 0.5
                   }}>
                     <label className="switch" style={{ margin: 'auto' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={cond.enabled} 
-                        onChange={() => toggleCondition(idx)} 
+                      <input
+                        type="checkbox"
+                        checked={cond.enabled}
+                        onChange={() => toggleCondition(idx)}
                       />
                       <span className="slider"></span>
                     </label>
@@ -596,41 +587,38 @@ export default function SqlQuery() {
                 </tr>
               </thead>
               <tbody>
-                {result.rows.map((row, rowIndex) => {
-                  const detailObject = result.columns.reduce<Record<string, unknown>>((acc, col, colIndex) => {
-                    acc[col] = row[colIndex];
-                    return acc;
-                  }, {});
-                  return (
-                    <Fragment key={`row-${rowIndex}`}>
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            className="btn btn-ghost btn-icon"
-                            onClick={() => toggleSqlRowExpand(rowIndex)}
-                            style={{ fontSize: '10px', padding: '2px 6px' }}
-                          >
-                            {expandedSqlRows.has(rowIndex) ? '▼' : '▶'}
-                          </button>
+                {result.rows.map((row, rowIndex) => (
+                  <Fragment key={`row-${rowIndex}`}>
+                    <tr>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          onClick={() => toggleSqlRowExpand(rowIndex)}
+                          style={{ fontSize: '10px', padding: '2px 6px' }}
+                        >
+                          {expandedSqlRows.has(rowIndex) ? '▼' : '▶'}
+                        </button>
+                      </td>
+                      {result.columns.map((col, colIndex) => (
+                        <td key={`row${rowIndex}-${colIndex}-${col}`}>
+                          {renderSqlCellValue(row[colIndex])}
                         </td>
-                        {result.columns.map((col, colIndex) => (
-                          <td key={`${rowIndex}-${col}`}>
-                            {renderSqlCellValue(row[colIndex])}
-                          </td>
-                        ))}
+                      ))}
+                    </tr>
+                    {expandedSqlRows.has(rowIndex) && (
+                      <tr className="expanded-row">
+                        <td colSpan={result.columns.length + 1} style={{ background: '#f8fafc', padding: '12px 16px' }}>
+                          <pre style={{ margin: 0, fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                            {JSON.stringify(
+                              Object.fromEntries(result.columns.map((col, ci) => [col, row[ci]])),
+                              null, 2
+                            )}
+                          </pre>
+                        </td>
                       </tr>
-                      {expandedSqlRows.has(rowIndex) && (
-                        <tr className="expanded-row">
-                          <td colSpan={result.columns.length + 1} style={{ background: '#f8fafc', padding: '12px 16px' }}>
-                            <pre style={{ margin: 0, fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                              {JSON.stringify(detailObject, null, 2)}
-                            </pre>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
+                    )}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>

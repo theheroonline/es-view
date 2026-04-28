@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "react-router-dom";
 import { useConnectionWorkspace, type EngineType } from "../../hooks/useConnectionWorkspace";
 import { useFloatingMenuDismiss } from "../../hooks/useFloatingMenuDismiss";
 import WorkspaceChrome from "../../layout/WorkspaceChrome";
@@ -8,7 +7,7 @@ import { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSide
 import AppOverlays from "./AppOverlays";
 import { AppSidebarContent, AppSidebarFooter } from "./AppSidebar";
 import AppTopbarStatus from "./AppTopbarStatus";
-import AppWorkspace, { canShowWorkspace } from "./AppWorkspace";
+import AppWorkspace from "./AppWorkspace";
 
 interface ConnectionDialogState {
   mode: "add" | "edit" | "copy";
@@ -18,7 +17,6 @@ interface ConnectionDialogState {
 
 export default function AppShell() {
   const { t } = useTranslation();
-  const location = useLocation();
   const connection = useConnectionWorkspace();
   const mysql = useMysqlSidebarWorkspace({
     activeConnectionId: connection.activeConnectionIdByEngine.mysql,
@@ -58,11 +56,7 @@ export default function AppShell() {
     }
   );
 
-  const workspaceVisible = canShowWorkspace(
-    connection.activeConnectionIdByEngine,
-    connection.isWorkspaceSuspended,
-    location.pathname
-  );
+  const workspaceVisible = connection.activeEngine != null;
 
   const emptyState = (
     <section className="mdb-content mdb-content-empty">

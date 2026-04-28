@@ -118,6 +118,7 @@ export const esResources = {
       notConnected: "Please connect to Elasticsearch first",
       refreshStatus: "🔄 Refresh",
       refreshFailed: "Refresh failed",
+      selected: "Selected",
     },
     presets: {
       lastHour: "Last 1 hour",
@@ -156,7 +157,6 @@ export const esResources = {
       setValues: "SET / VALUES (JSON Payload)",
       generatedSql: "Generated SQL Preview",
       queryPreview: "Operation Preview",
-      sqlNote: "ES 7.1+ SQL supports queries. Use Index Manager or REST API for write operations.",
       queryResult: "Query Results {{count}} rows",
       noResults: "No results. Please execute a query.",
     },
@@ -297,6 +297,7 @@ export const esResources = {
       enableFilter: "启用过滤",
       totalFields: "共 {{count}} 个字段",
       noFields: "暂无字段",
+      tip: "当前已禁用过滤（显示所有字段）。勾选「启用过滤」后可选择要显示的字段。",
     },
     indexManager: {
       title: "索引列表",
@@ -362,7 +363,6 @@ export const esResources = {
       setValues: "SET / VALUES (JSON Payload)",
       generatedSql: "生成的 SQL 预览",
       queryPreview: "操作预览",
-      sqlNote: "ES 7.1+ SQL 支持查询，写操作推荐使用索引管理或 REST API。",
       queryResult: "查询结果 {{count}} 行",
       noResults: "暂无结果，请执行查询。",
     },

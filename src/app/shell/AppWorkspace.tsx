@@ -63,12 +63,3 @@ export default function AppWorkspace({
     </>
   );
 }
-
-export function canShowWorkspace(
-  activeConnectionIdByEngine: Partial<Record<"elasticsearch" | "mysql" | "redis", string>>,
-  isWorkspaceSuspended: boolean,
-  _pathname: string
-) {
-  const hasAnyConnected = Object.values(activeConnectionIdByEngine).some(Boolean);
-  return hasAnyConnected && !isWorkspaceSuspended;
-}

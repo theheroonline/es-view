@@ -205,8 +205,8 @@ export function useConnectionWorkspace() {
     const alreadyActive = activeConnectionIdsByEngine[engine]?.includes(connectionId);
     const alreadyFocused = focusedConnectionIdByEngine[engine] === connectionId;
 
-    // Scenario A: already focused
-    if (alreadyFocused) {
+    // Scenario A: already focused AND current engine is active → just wake up if suspended
+    if (alreadyFocused && activeEngine === engine) {
       if (isWorkspaceSuspendedByEngine[engine]) {
         setConnectionActionError("");
         setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: false }));
@@ -338,6 +338,17 @@ export function useConnectionWorkspace() {
         [connectionId]: "failed",
       }));
       setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: true }));
+
+      // 新连接失败时，如果还有其他引擎的活跃连接，切回旧连接
+      const engines: EngineType[] = ["mysql", "redis", "elasticsearch"];
+      for (const eng of engines) {
+        const ids = activeConnectionIdsByEngine[eng];
+        if (ids && ids.length > 0) {
+          focusConnection(ids[0], eng);
+          break;
+        }
+      }
+
       await navigate("/", { replace: true });
       setConnectionActionError(t("connections.connectionFailedSimple"));
       return false;

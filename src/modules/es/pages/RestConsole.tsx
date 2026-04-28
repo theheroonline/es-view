@@ -9,6 +9,8 @@ const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"] as const;
 
 type HttpMethod = typeof METHODS[number];
 
+const formatFinishedAt = (timestamp: number) => new Date(timestamp).toLocaleString("zh-CN");
+
 type ResponseState = {
   status: number | null;
   ok: boolean | null;
@@ -84,11 +86,8 @@ export default function RestConsole() {
     return JSON.stringify(parsed, null, 2);
   };
 
-  const formatFinishedAt = (timestamp: number) => new Date(timestamp).toLocaleString("zh-CN");
-
   const parseBatchCommands = (text: string) => {
     const lines = text.split(/\r?\n/);
-    const methodSet = new Set(METHODS);
     const commands: Array<{ method: HttpMethod; path: string; bodyText: string }> = [];
     let current: { method: HttpMethod; path: string; bodyLines: string[] } | null = null;
 
@@ -106,9 +105,6 @@ export default function RestConsole() {
       const match = trimmed.match(/^(GET|POST|PUT|DELETE|PATCH|HEAD)\s+(\S+)/i);
       if (match) {
         const methodCandidate = match[1].toUpperCase() as HttpMethod;
-        if (!methodSet.has(methodCandidate)) {
-          continue;
-        }
         if (current) {
           commands.push({
             method: current.method,

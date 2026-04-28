@@ -105,6 +105,9 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
         if (current && !nextIndices.includes(current)) {
           return { ...prev, [target.id]: undefined };
         }
+        if (!current && nextIndices.length > 0) {
+          return { ...prev, [target.id]: nextIndices[0] };
+        }
         return prev;
       });
     } catch (error) {
@@ -133,6 +136,13 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
 
     setIndices(cached.indices);
     setIndicesMeta(cached.indicesMeta);
+
+    // Auto-select the first index when switching to a connection that has no selection yet
+    setSelectedIndexByConnection((prev) => {
+      if (prev[activeEsConnectionId]) return prev;
+      if (cached.indices.length === 0) return prev;
+      return { ...prev, [activeEsConnectionId]: cached.indices[0] };
+    });
   }, [activeEsConnectionId, indicesCacheByConnection]);
 
   useEffect(() => {

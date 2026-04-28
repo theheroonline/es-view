@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
@@ -7,25 +7,22 @@ import { createEsIndex, deleteEsIndex, getEsIndexInfo, refreshEsIndex } from "..
 export default function IndexManager() {
   const { t } = useTranslation();
   const { activeConnection, selectedIndex, setSelectedIndex, refreshIndices, indicesMeta } = useElasticsearchContext();
-  
-  // Creation States
+
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createBody, setCreateBody] = useState("{}");
   const [error, setError] = useState("");
 
-  // Detail View States
   const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<any>(null);
   const [detailTarget, setDetailTarget] = useState<string>("");
 
-  // Delete Modal State
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState("");
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
 
-  const loadIndices = async () => {
+  const loadIndices = useCallback(async () => {
     if (!activeConnection) return;
     try {
       await refreshIndices(activeConnection);
@@ -34,28 +31,33 @@ export default function IndexManager() {
         source: "indexManager.loadIndices",
         message: "Failed to refresh Elasticsearch indices from Index Manager"
       });
+      setError(t('indexManager.refreshFailed'));
     }
-  };
+  }, [activeConnection, refreshIndices, t]);
 
-  // Load details when target changes
+  // 竞态保护：快速切换索引时，旧请求不会覆盖新结果
   useEffect(() => {
     if (!activeConnection || !detailTarget) return;
 
+    let ignore = false;
     setDetailLoading(true);
     getEsIndexInfo(activeConnection, detailTarget)
       .then((info) => {
-        setDetailData(info);
+        if (!ignore) {
+          setDetailData(info);
+        }
       })
-      .catch((error) => {
-        logError(error, {
+      .catch((err) => {
+        logError(err, {
           source: "indexManager.loadDetail",
           message: `Failed to load detail for index ${detailTarget}`
         });
-        setDetailData(null);
+        if (!ignore) setDetailData(null);
       })
       .finally(() => {
-        setDetailLoading(false);
+        if (!ignore) setDetailLoading(false);
       });
+    return () => { ignore = true; };
   }, [activeConnection?.id, detailTarget]);
 
   const handleCreate = async () => {
@@ -72,8 +74,8 @@ export default function IndexManager() {
       setCreateName("");
       setCreateBody("{}");
       setShowCreate(false);
-    } catch (error) {
-      logError(error, {
+    } catch (err) {
+      logError(err, {
         source: "indexManager.createIndex",
         message: `Failed to create index ${createName}`
       });
@@ -103,8 +105,8 @@ export default function IndexManager() {
         setDetailTarget("");
       }
       setShowDeleteModal(false);
-    } catch (error) {
-      logError(error, {
+    } catch (err) {
+      logError(err, {
         source: "indexManager.deleteIndex",
         message: `Failed to delete index ${deleteTarget}`
       });
@@ -116,9 +118,9 @@ export default function IndexManager() {
     if (!activeConnection) return;
     try {
       await refreshEsIndex(activeConnection, index);
-      await loadIndices(); // reload to get new counts
-    } catch (error) {
-      logError(error, {
+      await loadIndices();
+    } catch (err) {
+      logError(err, {
         source: "indexManager.refreshIndex",
         message: `Failed to refresh index ${index}`
       });
@@ -128,7 +130,6 @@ export default function IndexManager() {
 
   const openDetail = (index: string) => {
     if (detailTarget === index && showDetailPanel) {
-      // Toggle off if clicking same
       setShowDetailPanel(false);
       setDetailTarget("");
     } else {
@@ -139,7 +140,6 @@ export default function IndexManager() {
 
   return (
     <div className="page">
-      {/* Create Section */}
       {showCreate && (
         <div className="card anim-fade-in">
           <div className="card-header">
@@ -173,7 +173,6 @@ export default function IndexManager() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       {showDeleteModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -215,7 +214,6 @@ export default function IndexManager() {
         </div>
       )}
 
-      {/* Main Layout */}
       <div className="master-detail-layout">
         <div className="master-pane">
            <div className="card">
@@ -232,7 +230,7 @@ export default function IndexManager() {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>{t('indexManager.title')}</th>
+                      <th>{t('indexManager.indexName')}</th>
                       <th style={{ width: '100px' }}>{t('indexManager.health')}</th>
                       <th style={{ width: '100px' }}>{t('indexManager.docsCount')}</th>
                       <th style={{ width: '220px', textAlign: 'right' }}>{t('indexManager.operations')}</th>
@@ -243,7 +241,7 @@ export default function IndexManager() {
                       <tr key={item.index} style={{ background: detailTarget === item.index && showDetailPanel ? '#f1f5f9' : undefined }}>
                         <td style={{ fontWeight: 500 }}>
                           {item.index}
-                          {selectedIndex === item.index && <span style={{ marginLeft: '8px', fontSize: '11px', background: 'rgba(0, 122, 255, 0.1)', color: '#007aff', padding: '2px 6px', borderRadius: '4px' }}>{t('indexManager.title')}</span>}
+                          {selectedIndex === item.index && <span style={{ marginLeft: '8px', fontSize: '11px', background: 'rgba(0, 122, 255, 0.1)', color: '#007aff', padding: '2px 6px', borderRadius: '4px' }}>{t('indexManager.selected')}</span>}
                         </td>
                         <td>
                            <span style={{
@@ -278,11 +276,10 @@ export default function IndexManager() {
            </div>
         </div>
 
-        {/* Right Detail Panel */}
         <div className={`detail-pane ${showDetailPanel ? 'open' : ''}`}>
            <div className="detail-header">
               <h3 className="card-title">{t('indexManager.indexDetails')}: {detailTarget}</h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowDetailPanel(false)}>✕</button>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowDetailPanel(false)}>&#x2715;</button>
            </div>
 
            <div className="detail-content" style={{ padding: '0' }}>
@@ -304,7 +301,7 @@ export default function IndexManager() {
            </div>
 
            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(0,0,0,0.05)', background: '#fff' }}>
-              <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => handleRefresh(detailTarget)}>{t('indexManager.refreshStatus')}</button>
+              <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => { if (detailTarget) handleRefresh(detailTarget); }}>{t('indexManager.refreshStatus')}</button>
            </div>
         </div>
       </div>
