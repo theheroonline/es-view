@@ -19,6 +19,7 @@ interface AppSidebarContentProps {
   onToggleMysql: () => void;
   onToggleRedis: () => void;
   openConnectionDialog: (engine: EngineType, mode: "add" | "edit" | "copy", profileId?: string) => void;
+  onNavigateToEngineDefaultRoute: (engine: string) => void;
 }
 
 export function AppSidebarContent({
@@ -31,6 +32,7 @@ export function AppSidebarContent({
   onToggleMysql,
   onToggleRedis,
   openConnectionDialog,
+  onNavigateToEngineDefaultRoute,
 }: AppSidebarContentProps) {
   const { t } = useTranslation();
 
@@ -43,10 +45,19 @@ export function AppSidebarContent({
   const renderConnectionItem = (profile: ConnectionProfile) => {
     const status = connection.connectionStatusById[profile.id] ?? "idle";
 
-    const handleActivateConnection = () => {
+    const handleActivateConnection = async () => {
+      const engine = profile.engine ?? "elasticsearch";
+      const wasAlreadyFocused = connection.focusedConnectionIdByEngine[engine] === profile.id;
+
       connection.setFocusedConnectionId(profile.id);
       if (isConnectionActive(profile)) {
-        // Already connected -- switch focus and restore workspace data
+        if (wasAlreadyFocused) {
+          // Scenario A early-returns without navigating -- switch to the engine's default route here
+          onNavigateToEngineDefaultRoute(engine);
+          return;
+        }
+
+        // Scenario B: handleConnectionChange will handle the navigation
         void connection.handleConnectionChange(profile.id, { forceValidate: false });
         return;
       }

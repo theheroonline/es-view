@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
-import { type EngineType } from "../../hooks/useConnectionWorkspace";
+import { getEngineFromPath } from "../../lib/routeEngine";
 import EsWorkspaceTabs from "../../modules/es/components/EsWorkspaceTabs";
 import MysqlWorkspaceTabs from "../../modules/mysql/components/MysqlWorkspaceTabs";
 import type { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
@@ -10,20 +11,20 @@ import AppRoutes from "../routes/AppRoutes";
 type MysqlSidebarWorkspaceState = ReturnType<typeof useMysqlSidebarWorkspace>;
 
 interface AppWorkspaceProps {
-  activeEngine: EngineType | null;
   mysql: MysqlSidebarWorkspaceState;
 }
 
 export default function AppWorkspace({
-  activeEngine,
   mysql,
 }: AppWorkspaceProps) {
   const { t } = useTranslation();
   const location = useLocation();
 
-  const isEsWorkspace = activeEngine === "elasticsearch";
-  const isMysqlWorkspace = activeEngine === "mysql";
-  const isRedisWorkspace = activeEngine === "redis";
+  const currentEngine = useMemo(() => getEngineFromPath(location.pathname), [location.pathname]);
+
+  const isEsWorkspace = currentEngine === "elasticsearch";
+  const isMysqlWorkspace = currentEngine === "mysql";
+  const isRedisWorkspace = currentEngine === "redis";
 
   return (
     <>
