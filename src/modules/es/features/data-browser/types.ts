@@ -5,9 +5,11 @@ export type ViewMode = "table" | "json";
 
 export type BoolType = "must" | "should" | "must_not" | "sort";
 
+export type EsOperator = "term" | "match" | "range" | "time_range";
+
 export interface ConditionItem {
   field: string;
-  operator: string;
+  operator: EsOperator;
   value: string;
   boolType: BoolType;
   enabled: boolean;
@@ -17,11 +19,17 @@ export interface ConditionItem {
 
 export type SortDirection = "asc" | "desc";
 
+export interface SearchRow {
+  _id: string;
+  _index: string;
+  _source?: Record<string, unknown>;
+}
+
 export interface ContextMenuState {
   visible: boolean;
   x: number;
   y: number;
-  row: any;
+  row: SearchRow | null;
   field?: string;
   value?: unknown;
 }
@@ -34,4 +42,5 @@ export interface DataBrowserCacheState {
   conditions: ConditionItem[];
   viewMode: ViewMode;
   fieldFilter: FieldFilterState;
+  fields?: string[];
 }

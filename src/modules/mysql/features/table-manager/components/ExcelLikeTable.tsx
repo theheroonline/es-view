@@ -1,6 +1,6 @@
 import { memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { DEFAULT_COLUMN_WIDTH, isCellSelected, useExcelTable } from "../hooks/useExcelTable";
+import { DEFAULT_COLUMN_WIDTH, MIN_COLUMN_WIDTH, isCellSelected, useExcelTable } from "../hooks/useExcelTable";
 import { useInlineEditor } from "../hooks/useInlineEditor";
 
 /**
@@ -49,7 +49,19 @@ function ExcelLikeTableInner({
 
   // 拖拽状态
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-  const [resizeStartX, setResizeStartX] = useState<number>(0);
+  const activeResizeHandlersRef = useRef<{ mouseMove: ((e: globalThis.MouseEvent) => void) | null; mouseUp: (() => void) | null }>({
+    mouseMove: null,
+    mouseUp: null,
+  });
+
+  // 清理拖拽监听器（组件卸载时）
+  useEffect(() => {
+    return () => {
+      const { mouseMove, mouseUp } = activeResizeHandlersRef.current;
+      if (mouseMove) document.removeEventListener("mousemove", mouseMove);
+      if (mouseUp) document.removeEventListener("mouseup", mouseUp);
+    };
+  }, []);
 
   // 行内编辑状态
   const { editingCell, startEditing, cancelEdit } = useInlineEditor();
@@ -155,6 +167,7 @@ function ExcelLikeTableInner({
     virtualRows,
     rows,
     tableContainerRef,
+    theadRef,
     columnOrder,
     columnWidths,
     setColumnOrder,
@@ -176,6 +189,15 @@ function ExcelLikeTableInner({
     () => columnOrder.filter((column) => columns.includes(column)),
     [columnOrder, columns]
   );
+
+  // 预计算列名到索引的映射，避免渲染循环中重复 indexOf
+  const columnIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < columns.length; i++) {
+      map.set(columns[i], i);
+    }
+    return map;
+  }, [columns]);
 
   // ==================== 列拖拽处理 ====================
 
@@ -225,21 +247,27 @@ function ExcelLikeTableInner({
   const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>, columnName: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setResizeStartX(e.clientX);
+
+    const currentWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
+    const startX = e.clientX;
+    let lastWidth = currentWidth;
 
     const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
-      const delta = moveEvent.clientX - resizeStartX;
-      const currentWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
-      const newWidth = Math.max(50, currentWidth + delta);
-      setColumnWidth(columnName, newWidth);
-      setResizeStartX(moveEvent.clientX);
+      const delta = moveEvent.clientX - startX;
+      lastWidth = Math.max(MIN_COLUMN_WIDTH, currentWidth + delta);
+      setColumnWidth(columnName, lastWidth);
     };
 
     const handleMouseUp = () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      activeResizeHandlersRef.current.mouseMove = null;
+      activeResizeHandlersRef.current.mouseUp = null;
+      setColumnWidth(columnName, lastWidth, true);
     };
 
+    activeResizeHandlersRef.current.mouseMove = handleMouseMove;
+    activeResizeHandlersRef.current.mouseUp = handleMouseUp;
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
@@ -259,7 +287,7 @@ function ExcelLikeTableInner({
       <div ref={tableContainerRef} className="excel-table-scroller">
         <table className="excel-table">
           {/* 表头 - 始终固定显示 */}
-          <thead className="excel-table-head" style={{ position: "sticky", top: 0, zIndex: 10 }}>
+          <thead ref={theadRef} className="excel-table-head" style={{ position: "sticky", top: 0, zIndex: 10 }}>
             {headerGroups.map((headerGroup) => (
               <tr key={headerGroup.id} className="excel-table-header-row">
                 {/* 数据列 */}
@@ -271,6 +299,7 @@ function ExcelLikeTableInner({
                   return (
                     <th
                       key={header.id}
+                      data-column={columnName}
                       className={`excel-table-header-cell ${isDragging ? "excel-table-header-cell-dragging" : ""}`}
                       draggable
                       onDragStart={(e) => handleHeaderDragStart(e, columnName)}
@@ -337,7 +366,7 @@ function ExcelLikeTableInner({
                   >
                     {/* 数据单元格 */}
                     {visibleOrderedColumns.map((columnName) => {
-                      const columnIndex = columns.indexOf(columnName);
+                      const columnIndex = columnIndexMap.get(columnName) ?? 0;
                       const cellValue = data[rowIndex]?.[columnIndex];
                       const isSelected = isCellSelected(rowIndex, columnIndex, selectedCellKeySet);
                       const columnWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
@@ -348,6 +377,7 @@ function ExcelLikeTableInner({
                       return (
                         <td
                           key={`cell-${rowIndex}-${columnName}`}
+                          data-column={columnName}
                           className={`excel-table-cell ${isSelected ? "excel-table-cell-selected" : ""} ${
                             isEditing ? "excel-table-cell-editing" : ""
                           }`}

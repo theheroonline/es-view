@@ -2431,6 +2431,23 @@ body {
   background-color: rgba(59, 130, 246, 0.5);
 }
 
+/* 拖拽调整列宽时的全局状态：禁止文本选择 */
+.excel-table-wrapper.resize-active {
+  user-select: none;
+  cursor: col-resize;
+}
+
+/* 拖拽调整列宽时的蓝色引导线 */
+.excel-table-resize-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #3b82f6;
+  pointer-events: none;
+  z-index: 100;
+}
+
 /* ========== 行内编辑样式 ========== */
 
 .excel-table-cell-editing {

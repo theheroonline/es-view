@@ -46,7 +46,7 @@ export function EsDataBrowserResults({
   onToggleRowExpand,
   onRowContextMenu,
 }: EsDataBrowserResultsProps) {
-  const isAllRowsSelected = rows.length > 0 && selectedDocs.size === rows.length;
+  const isAllRowsSelected = rows.length > 0 && rows.every((row) => selectedDocs.has(row._id));
 
   return (
     <div className="card" style={{ flex: 1, minHeight: "200px", display: "flex", flexDirection: "column", overflow: "hidden" }}>

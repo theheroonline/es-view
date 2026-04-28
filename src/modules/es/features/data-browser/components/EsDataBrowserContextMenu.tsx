@@ -100,44 +100,15 @@ export function EsDataBrowserContextMenu({
         onMouseEnter={(event) => (event.currentTarget.style.background = "#f1f5f9")}
         onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
       >
-        <span>{expandedRows.has(contextMenu.row?._id) ? "🔼" : "🔽"}</span>
-        {expandedRows.has(contextMenu.row?._id) ? t("dataBrowser.collapseRow") : t("dataBrowser.expandRow")}
+        <span>{expandedRows.has(contextMenu.row?._id ?? "") ? "🔼" : "🔽"}</span>
+        {expandedRows.has(contextMenu.row?._id ?? "") ? t("dataBrowser.collapseRow") : t("dataBrowser.expandRow")}
       </div>
 
       {contextMenu.field && contextMenu.field !== "_id" && (
         <>
           <div style={{ height: "1px", background: "#e2e8f0", margin: "4px 0" }} />
 
-          <div
-            className="context-menu-item context-menu-submenu"
-            style={{ padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
-            onMouseEnter={(event) => (event.currentTarget.style.background = "#f1f5f9")}
-            onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
-          >
-            <span style={{ display: "flex", alignItems: "center", gap: "8px" }}><span>✅</span> {t("dataBrowser.must")}</span>
-            <span>▶</span>
-            <div className="context-submenu" style={{
-              position: "absolute",
-              left: "100%",
-              top: 0,
-              background: "white",
-              border: "1px solid #e2e8f0",
-              borderRadius: "8px",
-              minWidth: "120px",
-              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-              display: "none",
-              padding: "4px 0",
-            }}>
-              <div
-                onClick={() => onAddCondition("must")}
-                style={{ padding: "8px 12px", cursor: "pointer" }}
-                onMouseEnter={(event) => (event.currentTarget.style.background = "#f1f5f9")}
-                onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
-              >
-                {t("dataBrowser.addCondition")}
-              </div>
-            </div>
-          </div>
+          <div style={{ height: "1px", background: "#e2e8f0", margin: "4px 0" }} />
           <div
             className="context-menu-item"
             onClick={() => onAddCondition("must")}

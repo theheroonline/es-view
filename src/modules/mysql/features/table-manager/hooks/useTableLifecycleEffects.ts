@@ -75,8 +75,16 @@ export function useTableLifecycleEffects({
     void handleOpenTableRef.current(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
   }, [activeOpenedTable, isTableWorkspace]);
 
+  // 仅在切换到不同表时同步过滤草稿，避免因 visibleColumns 等无关字段变化覆盖用户正在编辑的过滤条件
+  const lastSyncedTableRef = useRef<{ database: string; table: string } | null>(null);
+
   useEffect(() => {
     if (!activeOpenedTable) return;
+    const prev = lastSyncedTableRef.current;
+    if (prev?.database === activeOpenedTable.database && prev?.table === activeOpenedTable.table) {
+      return;
+    }
+    lastSyncedTableRef.current = { database: activeOpenedTable.database, table: activeOpenedTable.table };
     syncFilterDraftFromOpenedTable(activeOpenedTable, dataColumns);
   }, [activeOpenedTable, dataColumns, syncFilterDraftFromOpenedTable]);
 

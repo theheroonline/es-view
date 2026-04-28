@@ -121,8 +121,12 @@ export function useEsDocumentActions({
 
     try {
       setLoading(true);
-      for (const row of selectedRows) {
-        await deleteEsDocument(activeConnection, row._index, row._id);
+      const results = await Promise.allSettled(
+        selectedRows.map((row) => deleteEsDocument(activeConnection, row._index, row._id))
+      );
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length > 0 && failures.length === results.length) {
+        throw new Error(t("dataBrowser.deleteFailed") + " All deletions failed.");
       }
       if (selectedIndex) {
         await refreshEsDocumentIndex(activeConnection, selectedIndex);

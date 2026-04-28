@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * - 虚拟滚动：支持 100,000+ 行无卡顿
  * - 行展开：JSON 显示（展开行单独显示在表格下方）
  * - 单元格多选：保持现有的选中逻辑
- * - 固定行高：32px，简化虚拟滚动计算
+ * - 固定行高：40px，简化虚拟滚动计算
  * - 列拖拽排序：支持通过拖拽表头重新排列列顺序
  * - 列宽管理：支持拖拽调整列宽，自动保存到 localStorage
  */
@@ -35,10 +35,11 @@ interface UseExcelTableReturn {
   virtualRows: VirtualItem[];
   rows: Row<any>[];
   tableContainerRef: React.RefObject<HTMLDivElement | null>;
+  theadRef: React.RefObject<HTMLTableSectionElement | null>;
   columnOrder: string[];
   columnWidths: Record<string, number>;
   setColumnOrder: (order: string[]) => void;
-  setColumnWidth: (columnName: string, width: number) => void;
+  setColumnWidth: (columnName: string, width: number, isFinal?: boolean) => void;
 }
 
 const ROW_HEIGHT = 40; // 与当前单元格 padding 的实际视觉行高对齐，减少中段滚动偏移抖动
@@ -93,6 +94,10 @@ export function useExcelTable({
   tableKey,
 }: UseExcelTableProps): UseExcelTableReturn {
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const theadRef = useRef<HTMLTableSectionElement>(null);
+
+  // 用于区分首次挂载和后续更新，避免首次渲染时多余写入 localStorage
+  const hasMountedRef = useRef(false);
 
   // 列顺序状态：初始化为列名数组
   const [columnOrder, setColumnOrder] = useState<string[]>(() => {
@@ -117,8 +122,12 @@ export function useExcelTable({
     });
   }, [columns]);
 
-  // 保存列配置到 localStorage
+  // 仅在 columnOrder 变化时保存到 localStorage（列宽调整不触发此 effect）
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
     if (tableKey) {
       saveColumnConfig(tableKey, columnOrder, columnWidths);
     }
@@ -182,13 +191,30 @@ export function useExcelTable({
 
   const virtualRows = rowVirtualizer.getVirtualItems();
 
-  // 处理列宽更新
-  const setColumnWidth = (columnName: string, width: number) => {
+  // 处理列宽更新 — 拖拽中仅操作 DOM（零重渲染），松开时提交状态并持久化
+  const setColumnWidth = (columnName: string, width: number, isFinal = false) => {
     const clampedWidth = Math.max(MIN_COLUMN_WIDTH, Math.min(width, MAX_COLUMN_WIDTH));
-    setColumnWidths((prev) => ({
-      ...prev,
-      [columnName]: clampedWidth,
-    }));
+
+    if (!isFinal) {
+      // 拖拽中：直接修改 DOM，不触发 React 重渲染
+      const thead = theadRef.current;
+      if (!thead) return;
+
+      const selector = `th[data-column="${CSS.escape(columnName)}"], td[data-column="${CSS.escape(columnName)}"]`;
+      const cells = thead.parentElement?.querySelectorAll(selector) || [];
+      for (const cell of cells as NodeListOf<HTMLElement>) {
+        cell.style.width = `${clampedWidth}px`;
+      }
+      return;
+    }
+
+    // 拖拽结束：提交到 React 状态，useEffect 自动持久化
+    setColumnWidths((prev) => {
+      if ((prev[columnName] ?? DEFAULT_COLUMN_WIDTH) === clampedWidth) {
+        return prev;
+      }
+      return { ...prev, [columnName]: clampedWidth };
+    });
   };
 
   return {
@@ -197,6 +223,7 @@ export function useExcelTable({
     virtualRows,
     rows,
     tableContainerRef,
+    theadRef,
     columnOrder,
     columnWidths,
     setColumnOrder,

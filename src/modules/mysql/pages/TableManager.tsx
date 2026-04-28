@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMysqlContext } from "../../../state/MysqlContext";
@@ -356,7 +356,7 @@ export default function MysqlTableManager() {
     latestDataRequestRef,
     activeDataRequestKeyRef,
     setSelectedTableInfo,
-    setDataState: (next) => setDataState(next),
+    setDataState,
     setDataColumnMeta,
     clearOverviewTableSelection,
     expandedDatabase,
@@ -572,11 +572,11 @@ export default function MysqlTableManager() {
     );
   }
 
-  const handleSelectWorkspaceTab = (nextTab: RightPanelTab) => {
+  const handleSelectWorkspaceTab = useCallback((nextTab: RightPanelTab) => {
     if (!activeOpenedTable) return;
     setRightPanelTab(nextTab);
     setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, nextTab);
-  };
+  }, [activeOpenedTable, setOpenedTableView, setRightPanelTab]);
 
   return (
     <div className="page">

@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback, useMemo } from "react";
 import { logError } from "../../../../../lib/errorLog";
-import type { MysqlFilterNode, MysqlOpenedTable } from "../../../types";
+import { getMysqlOpenedTableKey, type MysqlFilterNode, type MysqlOpenedTable } from "../../../types";
 import { fetchTablePage } from "../services/tableDataService";
 import {
     buildConditionSql as buildFilterConditionSql,
@@ -83,9 +83,9 @@ export function useTableDataActions({
       table: string,
       next: Partial<Pick<MysqlOpenedTable, "filterTree" | "sortColumn" | "sortDirection">>
     ) => {
-      const nextKey = `${db}.${table}`;
+      const nextKey = getMysqlOpenedTableKey(db, table);
       setOpenedTables((prev) => prev.map((item) => (
-        `${item.database}.${item.table}` === nextKey
+        getMysqlOpenedTableKey(item.database, item.table) === nextKey
           ? { ...item, ...next }
           : item
       )));
@@ -111,17 +111,14 @@ export function useTableDataActions({
     latestDataRequestRef.current = requestId;
     activeDataRequestKeyRef.current = requestKey;
 
-    const currentFilterTree = overrides?.filterTree ?? activeOpenedTable?.filterTree ?? undefined;
-    const currentSortColumn = db && table && activeOpenedTable?.database === db && activeOpenedTable?.table === table
+    const isTargetActiveTable = !!(db && table && activeOpenedTable?.database === db && activeOpenedTable?.table === table);
+    const currentFilterTree = overrides?.filterTree ?? (isTargetActiveTable ? activeOpenedTable?.filterTree : undefined);
+    const currentSortColumn = isTargetActiveTable
       ? overrides?.sortColumn ?? activeOpenedTable.sortColumn
-      : selectedTableInfo?.database === targetDb && selectedTableInfo?.table === targetTable
-        ? overrides?.sortColumn ?? activeOpenedTable?.sortColumn
-        : undefined;
-    const currentSortDirection = db && table && activeOpenedTable?.database === db && activeOpenedTable?.table === table
+      : overrides?.sortColumn;
+    const currentSortDirection = isTargetActiveTable
       ? overrides?.sortDirection ?? activeOpenedTable.sortDirection
-      : selectedTableInfo?.database === targetDb && selectedTableInfo?.table === targetTable
-        ? overrides?.sortDirection ?? activeOpenedTable?.sortDirection
-        : undefined;
+      : overrides?.sortDirection;
 
     const whereClause = getWhereClause(currentFilterTree);
     const orderClause = currentSortColumn
@@ -192,9 +189,9 @@ export function useTableDataActions({
   }, [activeOpenedTable?.visibleColumns, dataState.columns]);
 
   const updateOpenedTableVisibleColumns = useCallback((db: string, table: string, visibleColumns: string[]) => {
-    const nextKey = `${db}.${table}`;
+    const nextKey = getMysqlOpenedTableKey(db, table);
     setOpenedTables((prev) => prev.map((item) => (
-      `${item.database}.${item.table}` === nextKey
+      getMysqlOpenedTableKey(item.database, item.table) === nextKey
         ? { ...item, visibleColumns: visibleColumns.length > 0 ? visibleColumns : dataState.columns }
         : item
     )));

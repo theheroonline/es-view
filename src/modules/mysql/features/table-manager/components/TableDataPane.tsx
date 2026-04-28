@@ -141,12 +141,8 @@ export function TableDataPane({
         onCellClick={onCellClick}
         onRowContextMenu={onRowContextMenu}
         onSaveCell={onSaveCell}
-        onClearFilter={() => {
-          void onClearFilter();
-        }}
-        onApplyFilter={(tree) => {
-          void onApplyFilter(tree);
-        }}
+        onClearFilter={onClearFilter}
+        onApplyFilter={onApplyFilter}
       />
     </>
   );

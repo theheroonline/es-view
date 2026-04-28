@@ -54,8 +54,9 @@ export function EsDataBrowserDialogs({
             alignItems: "center",
             justifyContent: "center",
           }}
+          onClick={onCloseEditModal}
         >
-          <div className="card anim-fade-in" style={{ width: "600px", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }}>
+          <div className="card anim-fade-in" style={{ width: "600px", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }} onClick={(event) => event.stopPropagation()}>
             <div className="card-header">
               <h3 className="card-title">{t("dataBrowser.editDocument", { id: editingDoc._id })}</h3>
             </div>
