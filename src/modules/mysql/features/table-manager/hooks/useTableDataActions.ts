@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback, useMemo } from "react";
 import { logError } from "../../../../../lib/errorLog";
-import { getMysqlOpenedTableKey, type MysqlFilterNode, type MysqlOpenedTable } from "../../../types";
+import { getMysqlOpenedTableKey, type MysqlFilterNode, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
 import { fetchTablePage } from "../services/tableDataService";
 import {
     buildConditionSql as buildFilterConditionSql,
@@ -31,6 +31,8 @@ interface UseTableDataActionsProps {
   setSortDraft: Dispatch<SetStateAction<{ column: string; direction: "asc" | "desc" }>>;
   filterDraftTree: FilterGroupDraft | null;
   setError: (message: string) => void;
+  saveTableDataCache: (tableKey: string, entry: MysqlTableDataCacheEntry | null) => void;
+  dataColumnMeta: Array<{ field: string; type: string; null: string; key: string; default: string | null; extra: string }>;
 }
 
 function buildNodeSql(node: MysqlFilterNode): string | null {
@@ -62,6 +64,8 @@ export function useTableDataActions({
   setSortDraft,
   filterDraftTree,
   setError,
+  saveTableDataCache,
+  dataColumnMeta,
 }: UseTableDataActionsProps) {
   const getWhereClause = useCallback((tree?: FilterGroupDraft | null) => {
     if (!tree) return "";
@@ -151,6 +155,21 @@ export function useTableDataActions({
         loading: false,
         error: ""
       });
+
+      const cachedTableKey = getMysqlOpenedTableKey(targetDb, targetTable);
+      saveTableDataCache(cachedTableKey, {
+        columns: dataResult.columns,
+        rows: dataResult.rows,
+        total,
+        page: currentPage,
+        pageSize: currentSize,
+        columnMeta: dataColumnMeta,
+        tableInfo: selectedTableInfo
+          ? { columns: selectedTableInfo.columns ?? [], rowCount: selectedTableInfo.rowCount ?? 0, info: selectedTableInfo.info ?? {} }
+          : null,
+        dataColumns: dataResult.columns,
+        cachedAt: Date.now(),
+      });
     } catch (err) {
       logError(err, {
         source: "useTableDataActions.fetchData",
@@ -166,7 +185,7 @@ export function useTableDataActions({
         error: err instanceof Error ? err.message : String(err)
       }));
     }
-  }, [activeDataRequestKeyRef, activeOpenedTable, connectionId, getWhereClause, latestDataRequestRef, selectedTableInfo?.database, selectedTableInfo?.table, setDataState]);
+  }, [activeDataRequestKeyRef, activeOpenedTable, connectionId, getWhereClause, latestDataRequestRef, selectedTableInfo?.database, selectedTableInfo?.table, setDataState, saveTableDataCache, dataColumnMeta]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(dataState.total / dataState.pageSize)), [dataState.pageSize, dataState.total]);
 
@@ -214,16 +233,22 @@ export function useTableDataActions({
     if (!activeOpenedTable) return;
     const sanitizedTree = tree ? sanitizeFilterNode(tree) : null;
 
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
+
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       filterTree: sanitizedTree?.kind === "group" ? sanitizedTree : undefined
     });
     await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize, {
       filterTree: sanitizedTree?.kind === "group" ? sanitizedTree : undefined
     });
-  }, [activeOpenedTable, dataState.pageSize, fetchData, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.pageSize, fetchData, updateOpenedTableQueryState, saveTableDataCache]);
 
   const clearFilter = useCallback(async () => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
+
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       filterTree: undefined
     });
@@ -231,10 +256,13 @@ export function useTableDataActions({
     await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize, {
       filterTree: undefined
     });
-  }, [activeOpenedTable, dataState.columns, dataState.pageSize, fetchData, syncFilterDraftFromOpenedTable, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.columns, dataState.pageSize, fetchData, syncFilterDraftFromOpenedTable, updateOpenedTableQueryState, saveTableDataCache]);
 
   const applySort = useCallback(async (column: string, direction: "asc" | "desc") => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
+
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       sortColumn: column,
       sortDirection: direction
@@ -244,10 +272,13 @@ export function useTableDataActions({
       sortColumn: column,
       sortDirection: direction
     });
-  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState, saveTableDataCache]);
 
   const clearSort = useCallback(async () => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
+
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       sortColumn: undefined,
       sortDirection: undefined
@@ -257,7 +288,7 @@ export function useTableDataActions({
       sortColumn: undefined,
       sortDirection: undefined
     });
-  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState, saveTableDataCache]);
 
   const handleToggleFilterPanel = useCallback(() => {
     const firstColumn = dataState.columns[0] ?? "";

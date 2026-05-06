@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { logError } from "../../../../../lib/errorLog";
-import { getMysqlOpenedTableKey, type MysqlOpenedTable } from "../../../types";
+import { getMysqlOpenedTableKey, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
 import { mysqlListDatabases, mysqlListTables } from "../../../services/queryClient";
 import type { ColumnMeta } from "../../../types";
 import { fetchTableDetailSnapshot } from "../services/tableSchemaService";
@@ -45,6 +45,7 @@ interface UseTableLifecycleActionsProps {
   fetchData: (db?: string, table?: string, page?: number, pageSize?: number, overrides?: Partial<Pick<MysqlOpenedTable, "filterTree" | "sortColumn" | "sortDirection">>) => Promise<void>;
   latestDataRequestRef: React.MutableRefObject<number>;
   activeDataRequestKeyRef: React.MutableRefObject<string | null>;
+  saveTableDataCache: (tableKey: string, entry: MysqlTableDataCacheEntry | null) => void;
 }
 
 export function useTableLifecycleActions({
@@ -75,6 +76,7 @@ export function useTableLifecycleActions({
   fetchData,
   latestDataRequestRef,
   activeDataRequestKeyRef,
+  saveTableDataCache,
 }: UseTableLifecycleActionsProps) {
   const refreshDatabases = useCallback(async () => {
     if (!connectionId) return;
@@ -224,6 +226,17 @@ export function useTableLifecycleActions({
         await fetchData(db, table, 1, defaultDataState.pageSize);
       } else {
         setDataState(defaultDataState);
+        saveTableDataCache(tableKey, {
+          columns: [],
+          rows: [],
+          total: 0,
+          page: 1,
+          pageSize: defaultDataState.pageSize,
+          columnMeta: columns,
+          tableInfo: { columns, rowCount, info },
+          dataColumns: [],
+          cachedAt: Date.now(),
+        });
       }
     } catch (err) {
       logError(err, {
@@ -235,7 +248,7 @@ export function useTableLifecycleActions({
       setDataState(defaultDataState);
       activeDataRequestKeyRef.current = null;
     }
-  }, [activeDataRequestKeyRef, connectionId, fetchData, latestDataRequestRef, loadTableInfo, setDataColumnMeta, setDataState, setError, setRightPanelTab, setSelectedDatabase, setSelectedTable, setSelectedTableInfo]);
+  }, [activeDataRequestKeyRef, connectionId, fetchData, latestDataRequestRef, loadTableInfo, setDataColumnMeta, setDataState, setError, setRightPanelTab, setSelectedDatabase, setSelectedTable, setSelectedTableInfo, saveTableDataCache]);
 
   const setOpenedTableView = useCallback((db: string, table: string, view: RightPanelTab) => {
     const nextKey = getMysqlOpenedTableKey(db, table);

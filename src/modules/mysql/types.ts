@@ -79,10 +79,24 @@ export interface MysqlOpenedTable {
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
   visibleColumns?: string[];
+  page?: number;
+  pageSize?: number;
 }
 
 export function getMysqlOpenedTableKey(database: string, table: string) {
   return `${database}::${table}`;
+}
+
+export interface MysqlTableDataCacheEntry {
+  columns: string[];
+  rows: Array<Array<unknown>>;
+  total: number;
+  page: number;
+  pageSize: number;
+  columnMeta: ColumnMeta[];
+  tableInfo: { columns: ColumnMeta[]; rowCount: number; info: unknown } | null;
+  dataColumns: string[];
+  cachedAt: number;
 }
 
 export interface MysqlQueryResult {

@@ -65,7 +65,9 @@ export default function MysqlTableManager() {
     openedTables,
     setOpenedTables,
     activeOpenedTableKey,
-    setActiveOpenedTableKey
+    setActiveOpenedTableKey,
+    saveTableDataCache,
+    getTableDataCache,
   } = useMysqlContext();
   const {
     selectedTableInfo,
@@ -290,6 +292,8 @@ export default function MysqlTableManager() {
     setSortDraft,
     filterDraftTree,
     setError,
+    saveTableDataCache,
+    dataColumnMeta,
   });
 
   const {
@@ -342,6 +346,7 @@ export default function MysqlTableManager() {
     fetchData,
     latestDataRequestRef,
     activeDataRequestKeyRef,
+    saveTableDataCache,
   });
 
   useTableLifecycleEffects({
@@ -367,6 +372,10 @@ export default function MysqlTableManager() {
     setSelectedTable,
     setRightPanelTab,
     defaultDataState,
+    dataState,
+    dataColumnMeta,
+    saveTableDataCache,
+    getTableDataCache,
   });
 
 
@@ -561,6 +570,12 @@ export default function MysqlTableManager() {
     t,
   });
 
+  const handleSelectWorkspaceTab = useCallback((nextTab: RightPanelTab) => {
+    if (!activeOpenedTable) return;
+    setRightPanelTab(nextTab);
+    setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, nextTab);
+  }, [activeOpenedTable, setOpenedTableView, setRightPanelTab]);
+
   // ─── Render ───
   if (!activeMysqlConnection) {
     return (
@@ -571,12 +586,6 @@ export default function MysqlTableManager() {
       </div>
     );
   }
-
-  const handleSelectWorkspaceTab = useCallback((nextTab: RightPanelTab) => {
-    if (!activeOpenedTable) return;
-    setRightPanelTab(nextTab);
-    setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, nextTab);
-  }, [activeOpenedTable, setOpenedTableView, setRightPanelTab]);
 
   return (
     <div className="page">

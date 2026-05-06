@@ -1,6 +1,6 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { MysqlConnection, MysqlOpenedTable, SqlQueryState } from "../modules/mysql/types";
+import type { MysqlConnection, MysqlOpenedTable, MysqlTableDataCacheEntry, SqlQueryState } from "../modules/mysql/types";
 import { useSharedConnectionState } from "./SharedConnectionState";
 
 export interface MysqlWorkspaceState {
@@ -11,6 +11,7 @@ export interface MysqlWorkspaceState {
   selectedTable: string | undefined;
   openedTables: MysqlOpenedTable[];
   activeOpenedTableKey: string | null;
+  tableDataCache: Record<string, MysqlTableDataCacheEntry>;
 }
 
 const defaultWorkspace: MysqlWorkspaceState = {
@@ -21,6 +22,7 @@ const defaultWorkspace: MysqlWorkspaceState = {
   selectedTable: undefined,
   openedTables: [],
   activeOpenedTableKey: null,
+  tableDataCache: {},
 };
 
 interface MysqlContextValue {
@@ -47,6 +49,9 @@ interface MysqlContextValue {
   getWorkspaceForConnection: (id: string) => MysqlWorkspaceState;
   resetWorkspaceForConnection: (id: string) => void;
   setDatabasesForConnection: (id: string, dbs: string[]) => void;
+  // Per-table data cache (session-only)
+  saveTableDataCache: (tableKey: string, entry: MysqlTableDataCacheEntry | null) => void;
+  getTableDataCache: () => Record<string, MysqlTableDataCacheEntry>;
 }
 
 const MysqlContext = createContext<MysqlContextValue | null>(null);
@@ -201,6 +206,30 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const saveTableDataCache = useCallback((tableKey: string, entry: MysqlTableDataCacheEntry | null) => {
+    const id = getFocusedId();
+    if (!id) return;
+    setWorkspaceByConnection((prev) => {
+      const current = prev[id] ?? defaultWorkspace;
+      const nextCache = { ...current.tableDataCache };
+      if (entry === null) {
+        delete nextCache[tableKey];
+      } else {
+        nextCache[tableKey] = entry;
+      }
+      return {
+        ...prev,
+        [id]: { ...current, tableDataCache: nextCache },
+      };
+    });
+  }, [getFocusedId]);
+
+  const getTableDataCache = useCallback(() => {
+    const id = getFocusedId();
+    if (!id) return {};
+    return workspaceByConnection[id]?.tableDataCache ?? {};
+  }, [getFocusedId, workspaceByConnection]);
+
   const updateSqlQueryState = useCallback(
     (connectionId: string, updates: Partial<SqlQueryState>) => {
       setSqlQueryStates((prev) => {
@@ -245,6 +274,8 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
       getWorkspaceForConnection,
       resetWorkspaceForConnection,
       setDatabasesForConnection,
+      saveTableDataCache,
+      getTableDataCache,
     }),
     [
       activeMysqlConnection,
@@ -263,6 +294,8 @@ export function MysqlProvider({ children }: { children: ReactNode }) {
       getWorkspaceForConnection,
       resetWorkspaceForConnection,
       setDatabasesForConnection,
+      saveTableDataCache,
+      getTableDataCache,
     ]
   );
 

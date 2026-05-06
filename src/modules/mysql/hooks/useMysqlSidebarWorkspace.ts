@@ -104,6 +104,7 @@ export function useMysqlSidebarWorkspace({
     setOpenedTables,
     activeOpenedTableKey,
     setActiveOpenedTableKey,
+    saveTableDataCache,
   } = useMysqlContext();
 
   const [expandedSidebarDatabases, setExpandedSidebarDatabases] = useState<string[]>([]);
@@ -318,6 +319,7 @@ export function useMysqlSidebarWorkspace({
     const targetKey = getMysqlOpenedTableKey(database, table);
     const remainingTables = openedTables.filter((item) => getMysqlOpenedTableKey(item.database, item.table) !== targetKey);
     setOpenedTables(remainingTables);
+    saveTableDataCache(targetKey, null);
 
     if (selectedDatabase === database && selectedTable === table) {
       setSelectedTable(undefined);
