@@ -46,6 +46,7 @@ interface UseTableLifecycleActionsProps {
   latestDataRequestRef: React.MutableRefObject<number>;
   activeDataRequestKeyRef: React.MutableRefObject<string | null>;
   saveTableDataCache: (tableKey: string, entry: MysqlTableDataCacheEntry | null) => void;
+  currentLoadingTableKeyRef: React.MutableRefObject<string | null>;
 }
 
 export function useTableLifecycleActions({
@@ -77,6 +78,7 @@ export function useTableLifecycleActions({
   latestDataRequestRef,
   activeDataRequestKeyRef,
   saveTableDataCache,
+  currentLoadingTableKeyRef,
 }: UseTableLifecycleActionsProps) {
   const refreshDatabases = useCallback(async () => {
     if (!connectionId) return;
@@ -208,17 +210,22 @@ export function useTableLifecycleActions({
     if (!connectionId) return;
 
     const tableKey = getMysqlOpenedTableKey(db, table);
-    latestDataRequestRef.current += 1;
+    const requestId = ++latestDataRequestRef.current;
     activeDataRequestKeyRef.current = targetTab === "data" ? tableKey : null;
+    currentLoadingTableKeyRef.current = tableKey;
 
     setSelectedDatabase(db);
     setSelectedTable(table);
-    setSelectedTableInfo({ database: db, table, loading: true });
+    setSelectedTableInfo({ database: db, table, columns: undefined, rowCount: 0, info: undefined, loading: true });
     setRightPanelTab(targetTab);
+    setDataColumnMeta([]);
     setDataState(targetTab === "data" ? { ...defaultDataState, loading: true } : defaultDataState);
 
     try {
       const { columns, rowCount, info } = await loadTableInfo(db, table);
+
+      if (latestDataRequestRef.current !== requestId || currentLoadingTableKeyRef.current !== tableKey) return;
+
       setSelectedTableInfo({ database: db, table, columns, rowCount, info, loading: false });
       setDataColumnMeta(columns);
 
@@ -239,6 +246,7 @@ export function useTableLifecycleActions({
         });
       }
     } catch (err) {
+      if (latestDataRequestRef.current !== requestId || currentLoadingTableKeyRef.current !== tableKey) return;
       logError(err, {
         source: targetTab === "data" ? "useTableLifecycleActions.openTableData" : "useTableLifecycleActions.openTableStructure",
         message: `Failed to open table ${db}.${table}`
@@ -248,7 +256,7 @@ export function useTableLifecycleActions({
       setDataState(defaultDataState);
       activeDataRequestKeyRef.current = null;
     }
-  }, [activeDataRequestKeyRef, connectionId, fetchData, latestDataRequestRef, loadTableInfo, setDataColumnMeta, setDataState, setError, setRightPanelTab, setSelectedDatabase, setSelectedTable, setSelectedTableInfo, saveTableDataCache]);
+  }, [activeDataRequestKeyRef, connectionId, currentLoadingTableKeyRef, fetchData, latestDataRequestRef, loadTableInfo, setDataColumnMeta, setDataState, setError, setRightPanelTab, setSelectedDatabase, setSelectedTable, setSelectedTableInfo, saveTableDataCache]);
 
   const setOpenedTableView = useCallback((db: string, table: string, view: RightPanelTab) => {
     const nextKey = getMysqlOpenedTableKey(db, table);

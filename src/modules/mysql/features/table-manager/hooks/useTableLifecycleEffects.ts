@@ -1,7 +1,6 @@
 import type { MutableRefObject } from "react";
 import { useEffect, useRef } from "react";
 import { getMysqlOpenedTableKey, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
-import type { ColumnMeta } from "../../../types";
 import type { DataState, RightPanelTab, TableInfo } from "../utils";
 
 interface UseTableLifecycleEffectsProps {
@@ -27,9 +26,6 @@ interface UseTableLifecycleEffectsProps {
   setSelectedTable: (table: string | undefined) => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   defaultDataState: DataState;
-  dataState: DataState;
-  dataColumnMeta: ColumnMeta[];
-  saveTableDataCache: (tableKey: string, entry: MysqlTableDataCacheEntry | null) => void;
   getTableDataCache: () => Record<string, MysqlTableDataCacheEntry>;
 }
 
@@ -56,9 +52,6 @@ export function useTableLifecycleEffects({
   setSelectedTable,
   setRightPanelTab,
   defaultDataState,
-  dataState,
-  dataColumnMeta,
-  saveTableDataCache,
   getTableDataCache,
 }: UseTableLifecycleEffectsProps) {
   // Use a ref for handleOpenTable to avoid re-triggering the effect when the function identity changes
@@ -81,23 +74,7 @@ export function useTableLifecycleEffects({
       return;
     }
 
-    // Save current ephemeral state for the PREVIOUS table before switching
-    if (prevOpenedTableRef.current && dataState.columns.length > 0) {
-      const prevKey = getMysqlOpenedTableKey(prevOpenedTableRef.current.database, prevOpenedTableRef.current.table);
-      saveTableDataCache(prevKey, {
-        columns: dataState.columns,
-        rows: dataState.rows,
-        total: dataState.total,
-        page: dataState.page,
-        pageSize: dataState.pageSize,
-        columnMeta: dataColumnMeta,
-        tableInfo: selectedTableInfo
-          ? { columns: selectedTableInfo.columns ?? [], rowCount: selectedTableInfo.rowCount ?? 0, info: selectedTableInfo.info ?? {} }
-          : null,
-        dataColumns: dataState.columns,
-        cachedAt: Date.now(),
-      });
-    }
+    // ── activeOpenedTable actually changed ──
 
     // Try restore from cache for the NEW table
     const newKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
@@ -132,9 +109,10 @@ export function useTableLifecycleEffects({
     }
 
     // Not cached — proceed with normal fetch
+    // Cache is saved inside handleOpenTable → fetchData after the fetch completes
     prevOpenedTableRef.current = { database: activeOpenedTable.database, table: activeOpenedTable.table };
     void handleOpenTableRef.current(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
-  }, [activeOpenedTable, isTableWorkspace, dataState, dataColumnMeta, selectedTableInfo, saveTableDataCache, getTableDataCache]);
+  }, [activeOpenedTable, isTableWorkspace]);
 
   // 仅在切换到不同表时同步过滤草稿，避免因 visibleColumns 等无关字段变化覆盖用户正在编辑的过滤条件
   const lastSyncedTableRef = useRef<{ database: string; table: string } | null>(null);

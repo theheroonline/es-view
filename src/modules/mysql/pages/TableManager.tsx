@@ -91,6 +91,7 @@ export default function MysqlTableManager() {
     selectedOverviewTablesRef,
     latestDataRequestRef,
     activeDataRequestKeyRef,
+    currentLoadingTableKeyRef,
     dataState,
     setDataState,
     dataColumnMeta,
@@ -347,6 +348,7 @@ export default function MysqlTableManager() {
     latestDataRequestRef,
     activeDataRequestKeyRef,
     saveTableDataCache,
+    currentLoadingTableKeyRef,
   });
 
   useTableLifecycleEffects({
@@ -372,9 +374,6 @@ export default function MysqlTableManager() {
     setSelectedTable,
     setRightPanelTab,
     defaultDataState,
-    dataState,
-    dataColumnMeta,
-    saveTableDataCache,
     getTableDataCache,
   });
 
@@ -410,6 +409,7 @@ export default function MysqlTableManager() {
     setAddRowModalOpen,
     setAddRowFormData,
     setAddRowError,
+    saveTableDataCache,
   });
 
   const {

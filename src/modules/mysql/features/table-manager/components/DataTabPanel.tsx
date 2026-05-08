@@ -283,6 +283,7 @@ export function DataTabPanel({
 
       {/* Data table - 使用新的 ExcelLikeTable 组件 */}
       <ExcelLikeTable
+        key={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
         columns={visibleDataColumns}
         data={dataState.rows}
         selectedCellKeySet={selectedCellKeySet}

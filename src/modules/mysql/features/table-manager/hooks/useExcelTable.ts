@@ -6,7 +6,7 @@ import {
     type Row,
 } from "@tanstack/react-table";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * useExcelTable Hook
@@ -88,6 +88,10 @@ function saveColumnConfig(
   }
 }
 
+// Module-level cache: survives HMR and component remounts
+const columnOrderCache = new Map<string, string[]>();
+const columnWidthsCache = new Map<string, Record<string, number>>();
+
 export function useExcelTable({
   columns,
   data,
@@ -96,46 +100,73 @@ export function useExcelTable({
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const theadRef = useRef<HTMLTableSectionElement>(null);
 
-  // 用于区分首次挂载和后续更新，避免首次渲染时多余写入 localStorage
-  const hasMountedRef = useRef(false);
-
-  // 列顺序状态：初始化为列名数组
-  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+  // Use a ref to hold column order so we can read the latest value
+  // in event handlers without stale closure captures.
+  const initColumnOrder = (() => {
     const stored = loadColumnConfig(tableKey || "");
-    return stored.columnOrder.length > 0 ? stored.columnOrder : columns;
-  });
+    const fromCache = columnOrderCache.get(tableKey || "");
+    if (fromCache && fromCache.length > 0) return fromCache;
+    if (stored.columnOrder.length > 0) return stored.columnOrder;
+    return columns;
+  })();
+  const columnOrderRef = useRef<string[]>(initColumnOrder);
 
-  // 列宽状态：初始化为空对象，表示使用默认宽度
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+  const initColumnWidths = (() => {
     const stored = loadColumnConfig(tableKey || "");
+    const fromCache = columnWidthsCache.get(tableKey || "");
+    if (fromCache && Object.keys(fromCache).length > 0) return fromCache;
     return stored.columnWidths || {};
-  });
+  })();
+  const columnWidthsRef = useRef<Record<string, number>>(initColumnWidths);
 
-  // 当 columns 改变时，更新 columnOrder（但不覆盖已保存的顺序）
-  useEffect(() => {
-    setColumnOrder((prev) => {
-      // 迁移后列可见性会频繁变化，这里保留已有顺序并仅增量合并，避免抖动和重排
-      const retained = prev.filter((column) => columns.includes(column));
-      const appended = columns.filter((column) => !retained.includes(column));
-      const nextOrder = [...retained, ...appended];
-      return areColumnsEqual(prev, nextOrder) ? prev : nextOrder;
-    });
-  }, [columns]);
+  // Track previous columns per instance to detect actual prop changes.
+  // On mount, we initialize with the current columns so the sync block
+  // does NOT trigger on the first render — it should only react to
+  // actual column prop changes (e.g., visibleColumns toggled by user).
+  const prevColumnsRef = useRef<string[]>(columns);
 
-  // 仅在 columnOrder 变化时保存到 localStorage（列宽调整不触发此 effect）
-  useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
+  // Sync columnOrderRef with columns prop when the columns actually change.
+  // Preserves user reorder for columns that still exist, appends new ones.
+  if (!areColumnsEqual(columns, prevColumnsRef.current)) {
+    prevColumnsRef.current = columns;
+    const prev = columnOrderRef.current;
+    const retained = prev.filter((column) => columns.includes(column));
+    const appended = columns.filter((column) => !retained.includes(column));
+    const nextOrder = [...retained, ...appended];
+    if (!areColumnsEqual(columnOrderRef.current, nextOrder)) {
+      columnOrderRef.current = nextOrder;
     }
+  }
+
+  // Stable state for triggering re-renders on drag reorders and persistence.
+  const [columnOrder, setColumnOrderState] = useState<string[]>(columnOrderRef.current);
+  const [columnWidths, setColumnWidthsState] = useState<Record<string, number>>(columnWidthsRef.current);
+
+  // Sync state with refs on every render to keep them in lockstep.
+  if (!areColumnsEqual(columnOrder, columnOrderRef.current)) {
+    setColumnOrderState(columnOrderRef.current);
+  }
+  if (JSON.stringify(columnWidths) !== JSON.stringify(columnWidthsRef.current)) {
+    setColumnWidthsState(columnWidthsRef.current);
+  }
+
+  // Persist to localStorage when column order or widths change.
+  useEffect(() => {
     if (tableKey) {
+      columnOrderCache.set(tableKey, columnOrder);
+      columnWidthsCache.set(tableKey, columnWidths);
       saveColumnConfig(tableKey, columnOrder, columnWidths);
     }
   }, [tableKey, columnOrder, columnWidths]);
 
+  const setColumnOrder = useCallback((order: string[]) => {
+    columnOrderRef.current = order;
+    setColumnOrderState(order);
+  }, []);
+
   // 根据 columnOrder 对列进行重新排序
   const orderedColumns = useMemo(() => {
-    return columnOrder.filter((col) => columns.includes(col));
+    return columnOrderRef.current.filter((col) => columns.includes(col));
   }, [columnOrder, columns]);
 
   // 构建列定义：每列对应数据数组中的一个索引
@@ -208,13 +239,13 @@ export function useExcelTable({
       return;
     }
 
-    // 拖拽结束：提交到 React 状态，useEffect 自动持久化
-    setColumnWidths((prev) => {
-      if ((prev[columnName] ?? DEFAULT_COLUMN_WIDTH) === clampedWidth) {
-        return prev;
-      }
-      return { ...prev, [columnName]: clampedWidth };
-    });
+    // 拖拽结束：提交到 ref + state，触发持久化
+    const prev = columnWidthsRef.current;
+    if ((prev[columnName] ?? DEFAULT_COLUMN_WIDTH) === clampedWidth) {
+      return;
+    }
+    columnWidthsRef.current = { ...prev, [columnName]: clampedWidth };
+    setColumnWidthsState(columnWidthsRef.current);
   };
 
   return {

@@ -137,6 +137,8 @@ export default function FieldFilterButton({
             borderRadius: "12px",
             boxShadow: "0 10px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)",
             minWidth: "300px",
+            maxWidth: "400px",
+            width: "350px",
             maxHeight: "420px",
             overflow: "auto",
             zIndex: 2000,
