@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { logError } from "../lib/errorLog";
@@ -11,7 +11,7 @@ import { useMysqlContext } from "../state/MysqlContext";
 import { useRedisContext } from "../state/RedisContext";
 import { useSharedConnectionState } from "../state/SharedConnectionState";
 
-export type ConnectionStatus = "success" | "idle" | "failed";
+export type ConnectionStatus = "success" | "idle" | "failed" | "connecting";
 export type EngineType = "elasticsearch" | "mysql" | "redis";
 
 interface ConnectionContextMenuState {
@@ -105,6 +105,7 @@ export function useConnectionWorkspace() {
   const [isConnectionActionPending, setIsConnectionActionPending] = useState(false);
   const [connectionActionError, setConnectionActionError] = useState("");
   const [connectionStatusById, setConnectionStatusById] = useState<Record<string, ConnectionStatus>>({});
+  const pendingConnectionRef = useRef<Map<string, Promise<boolean>>>(new Map());
   const [isWorkspaceSuspendedByEngine, setIsWorkspaceSuspendedByEngine] = useState<Record<EngineType, boolean>>({
     elasticsearch: false,
     mysql: false,
@@ -245,116 +246,140 @@ export function useConnectionWorkspace() {
     }
 
     // Scenario C: new connection → activate + backend connect
-    setIsConnectionActionPending(true);
-    setConnectionActionError("");
-    setContextMenu(null);
 
-    const currentStatus = connectionStatusById[connectionId] ?? "idle";
-    const shouldValidate = options?.forceValidate ?? currentStatus !== "success";
+    // Dedup: if this connectionId is already connecting, reuse the in-flight promise
+    const existing = pendingConnectionRef.current.get(connectionId);
+    if (existing) {
+      return existing;
+    }
 
-    try {
-      if (engine === "mysql") {
-        const mysqlConnection = getMysqlConnectionById(connectionId);
-        if (!mysqlConnection) {
+    const connectPromise = (async () => {
+      setIsConnectionActionPending(true);
+      setConnectionActionError("");
+      setContextMenu(null);
+      setConnectionStatusById((prev) => ({ ...prev, [connectionId]: "connecting" }));
+
+      const currentStatus = connectionStatusById[connectionId] ?? "idle";
+      const shouldValidate = options?.forceValidate ?? currentStatus !== "success";
+
+      try {
+        if (engine === "mysql") {
+          const mysqlConnection = getMysqlConnectionById(connectionId);
+          if (!mysqlConnection) {
+            throw new Error("CONNECTION_FAILED");
+          }
+
+          await switchViewSync(connectionId, "mysql");
+          resetMysqlWorkspace(connectionId);
+
+          if (shouldValidate) {
+            try {
+              await mysqlConnect(mysqlConnection);
+            } catch (error) {
+              logError(error, {
+                source: "app.connection.mysql.connect",
+                message: `Failed to connect to MySQL database ${mysqlConnection.name}`,
+              });
+              throw error;
+            }
+          }
+
+          try {
+            const databases = await mysqlListDatabases(connectionId);
+            setDatabasesForConnection(connectionId, databases);
+          } catch (error) {
+            logError(error, {
+              source: "app.connection.mysql.listDatabases",
+              message: "Failed to load MySQL databases after switching connection",
+            });
+            setDatabasesForConnection(connectionId, []);
+          }
+
+          markConnectionSuccess(connectionId);
+          await navigate(config.defaultRoute);
+          return true;
+        }
+
+        if (engine === "redis") {
+          const redisConnection = getRedisConnectionById(connectionId);
+          if (!redisConnection) {
+            throw new Error("CONNECTION_FAILED");
+          }
+
+          await switchViewSync(connectionId, "redis");
+          setSelectedRedisDatabase(redisConnection.database ?? 0);
+
+          if (shouldValidate) {
+            await redisConnect(redisConnection);
+          }
+
+          markConnectionSuccess(connectionId);
+          await navigate(config.defaultRoute);
+          return true;
+        }
+
+        // elasticsearch
+        const connection = getEsConnectionById(connectionId);
+        if (!connection) {
           throw new Error("CONNECTION_FAILED");
         }
 
-        await switchViewSync(connectionId, "mysql");
-        resetMysqlWorkspace(connectionId);
+        await switchViewSync(connectionId, "elasticsearch");
 
         if (shouldValidate) {
-          try {
-            await mysqlConnect(mysqlConnection);
-          } catch (error) {
-            logError(error, {
-              source: "app.connection.mysql.connect",
-              message: `Failed to connect to MySQL database ${mysqlConnection.name}`,
-            });
-            throw error;
+          await pingEsCluster(connection);
+        }
+
+        if (shouldValidate) {
+          await refreshIndices(connection);
+        }
+
+        markConnectionSuccess(connectionId);
+        await navigate(config.defaultRoute);
+        return true;
+      } catch (error) {
+        logError(error, {
+          source: "app.connection.change",
+          message: `Failed to activate connection ${connectionId}`,
+        });
+        await disconnectActiveConnection(connectionId, engine);
+        setConnectionStatusById((prev) => ({
+          ...prev,
+          [connectionId]: "failed",
+        }));
+        setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: true }));
+
+        // 新连接失败时，如果还有其他引擎的活跃连接，切回旧连接
+        const engines: EngineType[] = ["mysql", "redis", "elasticsearch"];
+        for (const eng of engines) {
+          const ids = activeConnectionIdsByEngine[eng];
+          if (ids && ids.length > 0) {
+            focusConnection(ids[0], eng);
+            break;
           }
         }
 
-        try {
-          const databases = await mysqlListDatabases(connectionId);
-          setDatabasesForConnection(connectionId, databases);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.mysql.listDatabases",
-            message: "Failed to load MySQL databases after switching connection",
-          });
-          setDatabasesForConnection(connectionId, []);
-        }
-
-        markConnectionSuccess(connectionId);
-        await navigate(config.defaultRoute);
-        return true;
+        await navigate("/", { replace: true });
+        setConnectionActionError(t("connections.connectionFailedSimple"));
+        return false;
+      } finally {
+        setIsConnectionActionPending(false);
+        pendingConnectionRef.current.delete(connectionId);
+        setConnectionStatusById((prev) => {
+          if (prev[connectionId] === "connecting") {
+            const next = { ...prev };
+            delete next[connectionId];
+            return next;
+          }
+          return prev;
+        });
       }
 
-      if (engine === "redis") {
-        const redisConnection = getRedisConnectionById(connectionId);
-        if (!redisConnection) {
-          throw new Error("CONNECTION_FAILED");
-        }
-
-        await switchViewSync(connectionId, "redis");
-        setSelectedRedisDatabase(redisConnection.database ?? 0);
-
-        if (shouldValidate) {
-          await redisConnect(redisConnection);
-        }
-
-        markConnectionSuccess(connectionId);
-        await navigate(config.defaultRoute);
-        return true;
-      }
-
-      // elasticsearch
-      const connection = getEsConnectionById(connectionId);
-      if (!connection) {
-        throw new Error("CONNECTION_FAILED");
-      }
-
-      await switchViewSync(connectionId, "elasticsearch");
-
-      if (shouldValidate) {
-        await pingEsCluster(connection);
-      }
-
-      if (shouldValidate) {
-        await refreshIndices(connection);
-      }
-
-      markConnectionSuccess(connectionId);
-      await navigate(config.defaultRoute);
-      return true;
-    } catch (error) {
-      logError(error, {
-        source: "app.connection.change",
-        message: `Failed to activate connection ${connectionId}`,
-      });
-      await disconnectActiveConnection(connectionId, engine);
-      setConnectionStatusById((prev) => ({
-        ...prev,
-        [connectionId]: "failed",
-      }));
-      setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: true }));
-
-      // 新连接失败时，如果还有其他引擎的活跃连接，切回旧连接
-      const engines: EngineType[] = ["mysql", "redis", "elasticsearch"];
-      for (const eng of engines) {
-        const ids = activeConnectionIdsByEngine[eng];
-        if (ids && ids.length > 0) {
-          focusConnection(ids[0], eng);
-          break;
-        }
-      }
-
-      await navigate("/", { replace: true });
-      setConnectionActionError(t("connections.connectionFailedSimple"));
       return false;
-    } finally {
-      setIsConnectionActionPending(false);
-    }
+    })();
+
+    pendingConnectionRef.current.set(connectionId, connectPromise);
+    return connectPromise;
   };
 
   const handleDisconnect = async (connectionId?: string) => {
@@ -502,6 +527,7 @@ export function useConnectionWorkspace() {
     connectionActionError,
     setConnectionActionError,
     connectionStatusById,
+    pendingConnectionRef,
     activeConnectionIdByEngine,
     activeConnectionIdsByEngine,
     focusedConnectionIdByEngine,

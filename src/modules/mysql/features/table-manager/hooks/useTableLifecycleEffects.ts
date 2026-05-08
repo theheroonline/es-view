@@ -27,6 +27,7 @@ interface UseTableLifecycleEffectsProps {
   setRightPanelTab: (tab: RightPanelTab) => void;
   defaultDataState: DataState;
   getTableDataCache: () => Record<string, MysqlTableDataCacheEntry>;
+  setOpenedTables: (updater: (prev: MysqlOpenedTable[]) => MysqlOpenedTable[]) => void;
 }
 
 export function useTableLifecycleEffects({
@@ -53,6 +54,7 @@ export function useTableLifecycleEffects({
   setRightPanelTab,
   defaultDataState,
   getTableDataCache,
+  setOpenedTables,
 }: UseTableLifecycleEffectsProps) {
   // Use a ref for handleOpenTable to avoid re-triggering the effect when the function identity changes
   const handleOpenTableRef = useRef(handleOpenTable);
@@ -84,6 +86,12 @@ export function useTableLifecycleEffects({
       const safePage = cached.total > 0
         ? Math.min(cached.page, Math.max(1, Math.ceil(cached.total / cached.pageSize)))
         : 1;
+      const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+      setOpenedTables((prev) => prev.map((item) => (
+        getMysqlOpenedTableKey(item.database, item.table) === tableKey
+          ? { ...item, page: safePage, pageSize: cached.pageSize }
+          : item
+      )));
       setSelectedTableInfo({
         database: activeOpenedTable.database,
         table: activeOpenedTable.table,

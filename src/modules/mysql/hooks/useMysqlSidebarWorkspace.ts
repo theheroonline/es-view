@@ -1,5 +1,5 @@
 import { Modal } from "antd";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
@@ -119,6 +119,7 @@ export function useMysqlSidebarWorkspace({
   const [tableTransferDialog, setTableTransferDialog] = useState<TableTransferDialogState | null>(null);
   const [tableTransferTask, setTableTransferTask] = useState<TableTransferTaskState | null>(null);
   const [dropDatabaseConfirmDialog, setDropDatabaseConfirmDialog] = useState<DropDatabaseConfirmDialogState | null>(null);
+  const openingTableRef = useRef<string | null>(null);
 
   const closeMysqlMenus = () => {
     setMysqlDatabaseContextMenu(null);
@@ -203,6 +204,8 @@ export function useMysqlSidebarWorkspace({
   };
 
   const handleMysqlOpenDatabase = async (database: string) => {
+    // 防止快速重复点击同一数据库
+    if (expandedDatabase === database && tablesByDb[database]) return;
     setExpandedDatabase(database);
     setExpandedSidebarDatabases((prev) => (prev.includes(database) ? prev : [...prev, database]));
     setSidebarExpandedTablesDatabases((prev) => (prev.includes(database) ? prev : [...prev, database]));
@@ -289,22 +292,30 @@ export function useMysqlSidebarWorkspace({
 
   const handleMysqlOpenSidebarTable = async (database: string, table: string) => {
     const nextKey = getMysqlOpenedTableKey(database, table);
+    // 防止快速重复点击同一表触发多次请求
+    if (openingTableRef.current === nextKey) return;
+    openingTableRef.current = nextKey;
+    // 表已在打开列表中且处于当前视图时，仅激活 tab 即可
+    const alreadyOpen = openedTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey && item.view === "data");
     setSelectedDatabase(database);
     setSelectedTable(table);
-    setOpenedTables((prev) => {
-      const existing = prev.find((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey);
-      if (existing) {
-        return prev.map((item) => (
-          getMysqlOpenedTableKey(item.database, item.table) === nextKey
-            ? { ...item, view: "data" }
-            : item
-        ));
-      }
-
-      return [...prev, { database, table, view: "data" }];
-    });
+    if (!alreadyOpen) {
+      setOpenedTables((prev) => {
+        const existing = prev.find((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey);
+        if (existing) {
+          return prev.map((item) => (
+            getMysqlOpenedTableKey(item.database, item.table) === nextKey
+              ? { ...item, view: "data" }
+              : item
+          ));
+        }
+        return [...prev, { database, table, view: "data" }];
+      });
+    }
     setActiveOpenedTableKey(nextKey);
     await navigate("/mysql/table");
+    // 请求完成后释放防抖标记（延迟一小段时间确保 effect 已触发）
+    setTimeout(() => { openingTableRef.current = null; }, 500);
   };
 
   const handleActivateMysqlOpenedTable = async (database: string, table: string) => {

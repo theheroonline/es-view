@@ -49,6 +49,11 @@ export function AppSidebarContent({
       const engine = profile.engine ?? "elasticsearch";
       const wasAlreadyFocused = connection.focusedConnectionIdByEngine[engine] === profile.id;
 
+      // 使用 pendingConnectionRef 做实时检查，避免 React 状态更新异步导致的去重失效
+      if (connection.pendingConnectionRef.current.has(profile.id)) {
+        return;
+      }
+
       connection.setFocusedConnectionId(profile.id);
       if (isConnectionActive(profile)) {
         if (wasAlreadyFocused) {

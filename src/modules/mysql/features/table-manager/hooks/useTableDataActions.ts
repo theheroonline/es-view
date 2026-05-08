@@ -216,18 +216,24 @@ export function useTableDataActions({
     )));
   }, [dataState.columns, setOpenedTables]);
 
-  const handleVisibleColumnToggle = useCallback((column: string, checked: boolean) => {
+  const handleVisibleColumnToggle = useCallback(async (column: string, checked: boolean) => {
     if (!activeOpenedTable) return;
     const nextColumns = checked
       ? [...visibleDataColumns, column]
       : visibleDataColumns.filter((item) => item !== column);
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
     updateOpenedTableVisibleColumns(activeOpenedTable.database, activeOpenedTable.table, nextColumns);
-  }, [activeOpenedTable, updateOpenedTableVisibleColumns, visibleDataColumns]);
+    await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize);
+  }, [activeOpenedTable, updateOpenedTableVisibleColumns, visibleDataColumns, saveTableDataCache, fetchData, dataState.pageSize]);
 
-  const handleSelectAllVisibleColumns = useCallback(() => {
+  const handleSelectAllVisibleColumns = useCallback(async () => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
     updateOpenedTableVisibleColumns(activeOpenedTable.database, activeOpenedTable.table, dataState.columns);
-  }, [activeOpenedTable, dataState.columns, updateOpenedTableVisibleColumns]);
+    await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize);
+  }, [activeOpenedTable, dataState.columns, updateOpenedTableVisibleColumns, saveTableDataCache, fetchData, dataState.pageSize]);
 
   const applyFilter = useCallback(async (tree: FilterGroupDraft | null) => {
     if (!activeOpenedTable) return;

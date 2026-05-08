@@ -375,6 +375,7 @@ export default function MysqlTableManager() {
     setRightPanelTab,
     defaultDataState,
     getTableDataCache,
+    setOpenedTables,
   });
 
 
