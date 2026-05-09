@@ -5,7 +5,7 @@ import dayjs, { Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import FieldFilterButton, { type FieldFilterState } from "../../../components/FieldFilterButton";
+import FieldFilterButton, { type FieldFilterState } from "../features/data-browser/components/FieldFilterButton";
 import { logError } from "../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { loadEsIndexFields } from "../services/searchService";

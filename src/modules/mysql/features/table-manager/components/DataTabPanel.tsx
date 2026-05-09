@@ -281,86 +281,74 @@ export function DataTabPanel({
         </div>
       )}
 
-      {/* Data table - 使用新的 ExcelLikeTable 组件 */}
-      <ExcelLikeTable
-        key={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
-        columns={visibleDataColumns}
-        data={dataState.rows}
-        selectedCellKeySet={selectedCellKeySet}
-        selectedRowIndex={selectedRowIndex}
-        loading={dataState.loading}
-        tableKey={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
-        onCellClick={onCellClick}
-        onRowContextMenu={onRowContextMenu}
-        onSaveCell={onSaveCell}
-      />
+      {/* Data table */}
+      <div className="mysql-table-unified">
+        <ExcelLikeTable
+          columns={visibleDataColumns}
+          data={dataState.rows}
+          selectedCellKeySet={selectedCellKeySet}
+          selectedRowIndex={selectedRowIndex}
+          loading={dataState.loading}
+          tableKey={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
+          onCellClick={onCellClick}
+          onRowContextMenu={onRowContextMenu}
+          onSaveCell={onSaveCell}
+        />
 
-      <div className="tm-pagination">
-        <div className="tm-pagination-group">
-          <span>{t("dataBrowser.pageSize")}:</span>
-          <input
-            type="number"
-            className="tm-page-size-input"
-            value={pageSizeInput}
-            onChange={(e) => setPageSizeInput(e.target.value)}
-            onBlur={(e) => {
-              const val = Number(e.target.value);
-              if (val > 0 && val <= 1000) {
-                onPageSizeChange(val);
-              } else {
-                // 无效输入，恢复原值
-                setPageSizeInput(String(dataState.pageSize));
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const val = Number(pageSizeInput);
+        <div className="tm-pagination">
+          <div className="tm-pagination-group">
+            <span>{t("dataBrowser.pageSize")}:</span>
+            <input
+              type="number"
+              className="tm-page-size-input"
+              value={pageSizeInput}
+              onChange={(e) => setPageSizeInput(e.target.value)}
+              onBlur={(e) => {
+                const val = Number(e.target.value);
                 if (val > 0 && val <= 1000) {
                   onPageSizeChange(val);
                 } else {
+                  // 无效输入，恢复原值
                   setPageSizeInput(String(dataState.pageSize));
                 }
-              }
-            }}
-            min="1"
-            max="1000"
-          />
-        </div>
-        <div className="tm-pagination-group">
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page <= 1}
-            onClick={() => onPageChange(1)}
-          >
-            {t("mysql.tableManager.firstPage")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page <= 1}
-            onClick={() => onPageChange(dataState.page - 1)}
-          >
-            {t("dataBrowser.previousPage")}
-          </button>
-          <span className="tm-pagination-info">
-            <input
-              type="number"
-              className="tm-page-input"
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onBlur={(e) => {
-                const val = Number(e.target.value);
-                if (!Number.isFinite(val)) {
-                  setPageInput(String(dataState.page));
-                  return;
-                }
-
-                const clamped = clampPage(val);
-                onPageChange(clamped);
-                setPageInput(String(clamped));
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  const val = Number(pageInput);
+                  const val = Number(pageSizeInput);
+                  if (val > 0 && val <= 1000) {
+                    onPageSizeChange(val);
+                  } else {
+                    setPageSizeInput(String(dataState.pageSize));
+                  }
+                }
+              }}
+              min="1"
+              max="1000"
+            />
+          </div>
+          <div className="tm-pagination-group">
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page <= 1}
+              onClick={() => onPageChange(1)}
+            >
+              {t("mysql.tableManager.firstPage")}
+            </button>
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page <= 1}
+              onClick={() => onPageChange(dataState.page - 1)}
+            >
+              {t("dataBrowser.previousPage")}
+            </button>
+            <span className="tm-pagination-info">
+              <input
+                type="number"
+                className="tm-page-input"
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value)}
+                onBlur={(e) => {
+                  const val = Number(e.target.value);
                   if (!Number.isFinite(val)) {
                     setPageInput(String(dataState.page));
                     return;
@@ -369,36 +357,49 @@ export function DataTabPanel({
                   const clamped = clampPage(val);
                   onPageChange(clamped);
                   setPageInput(String(clamped));
-                }
-              }}
-              min="1"
-              max={totalPages}
-            />
-            <span>/</span>
-            <span>{totalPages}</span>
-          </span>
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page >= totalPages}
-            onClick={() => onPageChange(dataState.page + 1)}
-          >
-            {t("dataBrowser.nextPage")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page >= totalPages}
-            onClick={() => onPageChange(totalPages)}
-          >
-            {t("mysql.tableManager.lastPage")}
-          </button>
-        </div>
-        <div className="tm-pagination-group tm-pagination-group-right">
-          {selectedRowDisplay !== null ? (
-            <span className="tm-pagination-info">
-              {selectedRowDisplay}/{Math.max(currentPageCount, 1)}
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const val = Number(pageInput);
+                    if (!Number.isFinite(val)) {
+                      setPageInput(String(dataState.page));
+                      return;
+                    }
+
+                    const clamped = clampPage(val);
+                    onPageChange(clamped);
+                    setPageInput(String(clamped));
+                  }
+                }}
+                min="1"
+                max={totalPages}
+              />
+              <span>/</span>
+              <span>{totalPages}</span>
             </span>
-          ) : null}
-          <span className="tm-pagination-info">{t("mysql.tableManager.currentPageRows", { count: currentPageCount })}</span>
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page >= totalPages}
+              onClick={() => onPageChange(dataState.page + 1)}
+            >
+              {t("dataBrowser.nextPage")}
+            </button>
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page >= totalPages}
+              onClick={() => onPageChange(totalPages)}
+            >
+              {t("mysql.tableManager.lastPage")}
+            </button>
+          </div>
+          <div className="tm-pagination-group tm-pagination-group-right">
+            {selectedRowDisplay !== null ? (
+              <span className="tm-pagination-info">
+                {selectedRowDisplay}/{Math.max(currentPageCount, 1)}
+              </span>
+            ) : null}
+            <span className="tm-pagination-info">{t("mysql.tableManager.currentPageRows", { count: currentPageCount })}</span>
+          </div>
         </div>
       </div>
     </div>

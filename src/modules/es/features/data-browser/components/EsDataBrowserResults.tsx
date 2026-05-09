@@ -49,7 +49,7 @@ export function EsDataBrowserResults({
   const isAllRowsSelected = rows.length > 0 && rows.every((row) => selectedDocs.has(row._id));
 
   return (
-    <div className="card" style={{ flex: 1, minHeight: "200px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div className="card" style={{ flex: 1, minHeight: "200px", display: "flex", flexDirection: "column", overflow: "visible" }}>
       <div className="card-header">
         <h3 className="card-title">{t("dataBrowser.queryResult")}</h3>
         <div className="flex-gap" style={{ alignItems: "center" }}>
@@ -69,10 +69,10 @@ export function EsDataBrowserResults({
           <p className="muted" style={{ textAlign: "center", margin: "20px 0" }}>{t("common.noData")}</p>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          {viewMode === "table" && (
+        <div className="es-view-content">
+          <div className="es-view-pane" data-active={viewMode === "table"}>
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-              <div className="table-wrapper">
+              <div>
                 <table className="table">
                   <thead>
                     <tr>
@@ -142,9 +142,9 @@ export function EsDataBrowserResults({
                 </table>
               </div>
             </div>
-          )}
+          </div>
 
-          {viewMode === "json" && (
+          <div className="es-view-pane" data-active={viewMode === "json"}>
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <div style={{
                 padding: "12px 16px",
@@ -157,7 +157,7 @@ export function EsDataBrowserResults({
               }}>
                 💡 {t("dataBrowser.jsonViewTip")}
               </div>
-              <div className="table-wrapper">
+              <div>
                 <table className="table">
                   <thead>
                     <tr>
@@ -178,7 +178,7 @@ export function EsDataBrowserResults({
                 </table>
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>

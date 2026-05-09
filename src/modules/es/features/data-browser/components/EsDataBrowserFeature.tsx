@@ -5,7 +5,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
 import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import FieldFilterButton from "../../../../../components/FieldFilterButton";
+import FieldFilterButton from "./FieldFilterButton";
 import { logError } from "../../../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../../../state/ElasticsearchContext";
 import { useEsContextMenu } from "../hooks/useEsContextMenu";

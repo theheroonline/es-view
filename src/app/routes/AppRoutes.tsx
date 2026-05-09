@@ -1,14 +1,13 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-
-const EsDataBrowserPage = lazy(() => import("../../modules/es/pages/DataBrowser"));
-const EsIndexManagerPage = lazy(() => import("../../modules/es/pages/IndexManager"));
-const EsRestConsolePage = lazy(() => import("../../modules/es/pages/RestConsole"));
-const EsSqlQueryPage = lazy(() => import("../../modules/es/pages/SqlQuery"));
-const MysqlSqlQueryPage = lazy(() => import("../../modules/mysql/pages/SqlQuery"));
-const MysqlTableManagerPage = lazy(() => import("../../modules/mysql/pages/TableManager"));
-const RedisBrowserPage = lazy(() => import("../../modules/redis/pages/Browser"));
-const RedisConsolePage = lazy(() => import("../../modules/redis/pages/Console"));
+import { Suspense, useEffect } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import EsDataBrowserPage from "../../modules/es/pages/DataBrowser";
+import EsIndexManagerPage from "../../modules/es/pages/IndexManager";
+import EsRestConsolePage from "../../modules/es/pages/RestConsole";
+import EsSqlQueryPage from "../../modules/es/pages/SqlQuery";
+import MysqlSqlQueryPage from "../../modules/mysql/pages/SqlQuery";
+import MysqlTableManagerPage from "../../modules/mysql/pages/TableManager";
+import RedisBrowserPage from "../../modules/redis/pages/Browser";
+import RedisConsolePage from "../../modules/redis/pages/Console";
 
 function WorkspaceLoadingFallback() {
   return (
@@ -18,24 +17,49 @@ function WorkspaceLoadingFallback() {
   );
 }
 
+const pageByPath: Record<string, React.ReactNode> = {
+  "/data": <EsDataBrowserPage />,
+  "/sql": <EsSqlQueryPage />,
+  "/rest": <EsRestConsolePage />,
+  "/indices": <EsIndexManagerPage />,
+  "/mysql/tables": <MysqlTableManagerPage />,
+  "/mysql/table": <MysqlTableManagerPage />,
+  "/mysql/sql": <MysqlSqlQueryPage />,
+  "/redis/browser": <RedisBrowserPage />,
+  "/redis/console": <RedisConsolePage />,
+};
+
 export default function AppRoutes() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Redirect bare engine paths to their default pages
+  useEffect(() => {
+    if (location.pathname === "/mysql") {
+      navigate("/mysql/tables", { replace: true });
+    } else if (location.pathname === "/redis") {
+      navigate("/redis/browser", { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   return (
     <Suspense fallback={<WorkspaceLoadingFallback />}>
+      {/*
+       * All pages are rendered simultaneously — only visibility is toggled.
+       * This keeps component state (scroll position, filter, data, etc.) alive
+       * across tab switches, like browser tabs.
+       */}
       <Routes>
-        <Route path="/" element={null} />
-        <Route path="/data" element={<EsDataBrowserPage />} />
-        <Route path="/sql" element={<EsSqlQueryPage />} />
-        <Route path="/rest" element={<EsRestConsolePage />} />
-        <Route path="/indices" element={<EsIndexManagerPage />} />
         <Route path="/mysql" element={<Navigate to="/mysql/tables" replace />} />
-        <Route path="/mysql/sql" element={<MysqlSqlQueryPage />} />
-        <Route path="/mysql/tables" element={<MysqlTableManagerPage />} />
-        <Route path="/mysql/table" element={<MysqlTableManagerPage />} />
         <Route path="/redis" element={<Navigate to="/redis/browser" replace />} />
-        <Route path="/redis/browser" element={<RedisBrowserPage />} />
-        <Route path="/redis/console" element={<RedisConsolePage />} />
         <Route path="*" element={null} />
       </Routes>
+
+      {Object.entries(pageByPath).map(([path, element]) => (
+        <div key={path} style={{ display: location.pathname === path ? "block" : "none" }}>
+          {element}
+        </div>
+      ))}
     </Suspense>
   );
 }

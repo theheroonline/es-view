@@ -91,6 +91,7 @@ function saveColumnConfig(
 // Module-level cache: survives HMR and component remounts
 const columnOrderCache = new Map<string, string[]>();
 const columnWidthsCache = new Map<string, Record<string, number>>();
+const scrollTopCache = new Map<string, number>();
 
 export function useExcelTable({
   columns,
@@ -99,6 +100,9 @@ export function useExcelTable({
 }: UseExcelTableProps): UseExcelTableReturn {
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const theadRef = useRef<HTMLTableSectionElement>(null);
+
+  // Track the previous tableKey to detect table switches
+  const prevTableKeyRef = useRef<string | undefined>(undefined);
 
   // Use a ref to hold column order so we can read the latest value
   // in event handlers without stale closure captures.
@@ -221,6 +225,65 @@ export function useExcelTable({
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  // ─── Scroll position persistence per table ───
+  // Must restore scrollTop AFTER the virtualizer has finished reconfiguring to the
+  // new data (count, rows, getItemKey). useLayoutEffect is too early — the virtualizer's
+  // internal effects reset scroll state when count changes, overwriting our restoration.
+  // We use requestAnimationFrame so the restoration runs after all effects and after the
+  // virtualizer has recalculated its virtual window for the new data.
+
+  const currentTableKeyRef = useRef(tableKey);
+  currentTableKeyRef.current = tableKey;
+  const rowVirtualizerRef = useRef(rowVirtualizer);
+  rowVirtualizerRef.current = rowVirtualizer;
+
+  // Stable scroll listener — stays alive across tableKey changes.
+  // Use capture phase to ensure we catch the scroll event before anything else.
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+
+    // Verify this element is actually scrollable
+    const isScrollable = el.scrollHeight > el.clientHeight;
+    console.log('[useExcelTable] scroll listener attached:', el.className,
+      'offsetHeight:', el.offsetHeight,
+      'scrollHeight:', el.scrollHeight,
+      'isScrollable:', isScrollable);
+
+    const handleScroll = () => {
+      if (currentTableKeyRef.current) {
+        console.log('[useExcelTable] scroll:', currentTableKeyRef.current, '→', el.scrollTop.toFixed(0));
+        scrollTopCache.set(currentTableKeyRef.current, el.scrollTop);
+      }
+    };
+
+    // Try capture phase first to verify the event reaches this element
+    el.addEventListener("scroll", handleScroll, { passive: true, capture: true });
+    return () => {
+      el.removeEventListener("scroll", handleScroll, { capture: true });
+    };
+  }, []);
+
+  // Restore scrollTop when tableKey changes — relies on scroll listener (above)
+  // to keep scrollTopCache up-to-date in real time.
+  // Do NOT attempt to save the old table's scrollTop here — by the time this
+  // effect runs, the virtualizer has already reset el.scrollTop to 0, which would
+  // overwrite the correct cached value from the scroll listener.
+  useEffect(() => {
+    if (!tableKey) return;
+
+    const cached = scrollTopCache.get(tableKey);
+    console.log('[useExcelTable] restore:', tableKey, 'cached =', cached?.toFixed(0));
+    if (cached !== undefined && cached > 0) {
+      requestAnimationFrame(() => {
+        console.log('[useExcelTable] scrollToOffset:', tableKey, cached);
+        rowVirtualizerRef.current.scrollToOffset(cached, { align: "start" });
+      });
+    }
+
+    prevTableKeyRef.current = tableKey;
+  }, [tableKey]);
 
   // 处理列宽更新 — 拖拽中仅操作 DOM（零重渲染），松开时提交状态并持久化
   const setColumnWidth = (columnName: string, width: number, isFinal = false) => {

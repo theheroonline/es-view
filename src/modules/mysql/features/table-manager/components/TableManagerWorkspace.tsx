@@ -66,13 +66,17 @@ export function TableManagerWorkspace({
       </div>
 
       <div className="tm-tab-panel">
-        {rightPanelTab === "data" ? (
-          <TableDataPane {...dataPaneProps} />
-        ) : rightPanelTab === "info" ? (
-          <TableInfoPane {...infoPaneProps} />
-        ) : (
-          <TableStructurePane {...structurePaneProps} />
-        )}
+        <div className="mysql-tab-content-wrap">
+          <div className="mysql-tab-pane" data-active={rightPanelTab === "data"}>
+            <TableDataPane {...dataPaneProps} />
+          </div>
+          <div className="mysql-tab-pane" data-active={rightPanelTab === "structure"}>
+            <TableStructurePane {...structurePaneProps} />
+          </div>
+          <div className="mysql-tab-pane" data-active={rightPanelTab === "info"}>
+            <TableInfoPane {...infoPaneProps} />
+          </div>
+        </div>
       </div>
     </>
   );

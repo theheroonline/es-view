@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
 import { useEffect } from "react";
-import type { FieldFilterState } from "../../../../../components/FieldFilterButton";
+import type { FieldFilterState } from "../components/FieldFilterButton";
 import type { ConditionItem, DataBrowserCacheState, ViewMode } from "../types";
 
 const dataBrowserCacheByConnection = new Map<string, DataBrowserCacheState>();

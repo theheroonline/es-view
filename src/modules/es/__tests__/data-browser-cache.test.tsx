@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
-import type { FieldFilterState } from "../../../components/FieldFilterButton";
+import type { FieldFilterState } from "../features/data-browser/components/FieldFilterButton";
 import { useEsDataBrowserCache } from "../features/data-browser/hooks/useEsDataBrowserCache";
 import { createDefaultEsCondition } from "../features/data-browser/hooks/useEsQueryConditions";
 import type { ConditionItem, ViewMode } from "../features/data-browser/types";

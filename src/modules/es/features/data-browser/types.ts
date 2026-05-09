@@ -1,5 +1,5 @@
 import type { Dayjs } from "dayjs";
-import type { FieldFilterState } from "../../../../components/FieldFilterButton";
+import type { FieldFilterState } from "./components/FieldFilterButton";
 
 export type ViewMode = "table" | "json";
 

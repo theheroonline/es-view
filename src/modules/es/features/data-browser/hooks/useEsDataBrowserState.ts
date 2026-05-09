@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { FieldFilterState } from "../../../../../components/FieldFilterButton";
+import type { FieldFilterState } from "../components/FieldFilterButton";
 import type { ConditionItem, ContextMenuState, ViewMode } from "../types";
 import { createDefaultEsCondition } from "./useEsQueryConditions";
 
