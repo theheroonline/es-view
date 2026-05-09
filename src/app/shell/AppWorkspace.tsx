@@ -2,6 +2,9 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
 import { getEngineFromPath } from "../../lib/routeEngine";
+import { EsContentArea } from "../../modules/es/routes/EsContentArea";
+import { MysqlContentArea } from "../../modules/mysql/routes/MysqlContentArea";
+import { RedisContentArea } from "../../modules/redis/routes/RedisContentArea";
 import EsWorkspaceTabs from "../../modules/es/components/EsWorkspaceTabs";
 import MysqlWorkspaceTabs from "../../modules/mysql/components/MysqlWorkspaceTabs";
 import type { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
@@ -60,6 +63,9 @@ export default function AppWorkspace({
 
       <section className="mdb-content">
         <AppRoutes />
+        <EsContentArea />
+        <MysqlContentArea />
+        <RedisContentArea />
       </section>
     </>
   );

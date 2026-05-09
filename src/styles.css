@@ -547,13 +547,25 @@ body {
 }
 
 .mdb-content {
-  overflow: auto;
   padding: var(--content-gap);
   background:
     linear-gradient(180deg, rgba(240, 244, 249, 0.9) 0%, rgba(233, 238, 245, 0.94) 100%),
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.6) 0%, transparent 28%);
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* Each page wrapper has its own scroll container, like Chrome tabs.
+   display: none preserves each wrapper's native scrollTop across switches. */
+.engine-page-wrapper {
+  display: none;
+  overflow-y: auto;
+  height: 100%;
+}
+.engine-page-wrapper[data-active="true"] {
+  display: flex;
+  flex-direction: column;
 }
 
 .mdb-content-empty {
