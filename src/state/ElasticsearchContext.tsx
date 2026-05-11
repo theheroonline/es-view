@@ -16,6 +16,7 @@ interface ElasticsearchContextValue {
   refreshIndices: (connection?: EsConnection | null) => Promise<void>;
   selectedIndex: string | undefined;
   setSelectedIndex: (index: string | undefined) => void;
+  resetWorkspaceForConnection: (id: string) => void;
 }
 
 const ElasticsearchContext = createContext<ElasticsearchContextValue | null>(null);
@@ -162,6 +163,21 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     });
   }, [profiles]);
 
+  const resetWorkspaceForConnection = useCallback((id: string) => {
+    setSelectedIndexByConnection((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setIndicesCacheByConnection((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
   const activeConnection = useMemo(() => getActiveConnection(), [getActiveConnection]);
 
   const selectedIndex = activeEsConnectionId
@@ -176,8 +192,9 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     indicesMeta,
     refreshIndices,
     selectedIndex,
-    setSelectedIndex
-  }), [activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex]);
+    setSelectedIndex,
+    resetWorkspaceForConnection,
+  }), [activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex, resetWorkspaceForConnection]);
 
   return <ElasticsearchContext.Provider value={value}>{children}</ElasticsearchContext.Provider>;
 }

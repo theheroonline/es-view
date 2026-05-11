@@ -664,8 +664,9 @@ body {
 .redis-browser-grid {
   display: grid;
   grid-template-columns: minmax(280px, 38%) minmax(320px, 1fr);
-  gap: 12px;
+  gap: 0;
   height: 100%;
+  width: 100%;
   min-height: 0;
 }
 
@@ -674,6 +675,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.redis-browser-panel + .redis-browser-panel {
+  border-left: 1px solid rgba(188, 201, 216, 0.94);
 }
 
 .redis-browser-panel > .card-header:first-child {

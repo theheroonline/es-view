@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	goMySQL "github.com/go-sql-driver/mysql"
@@ -53,10 +54,24 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open connection: %w", err)
 	}
-	db.SetConnMaxLifetime(90 * time.Second)
-	db.SetConnMaxIdleTime(60 * time.Second)
-	db.SetMaxIdleConns(1)
-	db.SetMaxOpenConns(5)
+
+	maxOpenConns := req.MaxOpenConns
+	if maxOpenConns <= 0 {
+		maxOpenConns = 50
+	}
+	maxIdleConns := req.MaxIdleConns
+	if maxIdleConns <= 0 {
+		maxIdleConns = 10
+	}
+	connMaxLifetime := time.Duration(req.ConnMaxLifetime) * time.Second
+	if connMaxLifetime <= 0 {
+		connMaxLifetime = 5 * time.Minute
+	}
+
+	db.SetConnMaxLifetime(connMaxLifetime)
+	db.SetConnMaxIdleTime(connMaxLifetime)
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetMaxOpenConns(maxOpenConns)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -66,29 +81,45 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 		return "", fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	// Graceful reconnect: swap atomically, close old pool in background
 	m.connManager.mu.Lock()
-	defer m.connManager.mu.Unlock()
-	if existing, exists := m.connManager.connections[req.ConnectionID]; exists {
-		_ = existing.Close()
-	}
+	oldDB := m.connManager.connections[req.ConnectionID]
 	m.connManager.connections[req.ConnectionID] = db
+	m.connManager.mu.Unlock()
+
+	// Close old pool in background to avoid blocking the swap
+	if oldDB != nil {
+		go func() {
+			// SetIdleTimeout to 0 so idle connections close immediately
+			oldDB.SetConnMaxIdleTime(1 * time.Second)
+			// Give in-flight queries a moment to finish
+			time.Sleep(2 * time.Second)
+			if err := oldDB.Close(); err != nil {
+				log.Printf("[mysql] error closing old connection pool %s: %v", req.ConnectionID, err)
+			}
+		}()
+	}
 
 	return "Connected successfully", nil
 }
 
 func (m *Module) MysqlDisconnect(connectionID string) (string, error) {
 	m.connManager.mu.Lock()
-	defer m.connManager.mu.Unlock()
-	if db, exists := m.connManager.connections[connectionID]; exists {
-		err := db.Close()
+	db, exists := m.connManager.connections[connectionID]
+	if exists {
 		delete(m.connManager.connections, connectionID)
-		if err != nil {
-			return "", fmt.Errorf("failed to close connection: %w", err)
-		}
-		_ = m.connManager.sshTunnels.Close(connectionID)
-		return "Disconnected successfully", nil
 	}
-	return "", fmt.Errorf("connection not found: %s", connectionID)
+	m.connManager.mu.Unlock()
+
+	if !exists {
+		return "", fmt.Errorf("connection not found: %s", connectionID)
+	}
+
+	if err := db.Close(); err != nil {
+		log.Printf("[mysql] error closing connection pool %s: %v", connectionID, err)
+	}
+	_ = m.connManager.sshTunnels.Close(connectionID)
+	return "Disconnected successfully", nil
 }
 
 func (m *Module) MysqlPing(connectionID string) (string, error) {

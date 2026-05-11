@@ -15,6 +15,7 @@ import {
 import { ExcelLikeTable } from "./ExcelLikeTable";
 
 interface DataTabPanelProps {
+  connectionId: string | null | undefined;
   selectedTableInfo: TableInfo | null;
   dataState: DataState;
   visibleDataColumns: string[];
@@ -39,6 +40,7 @@ interface DataTabPanelProps {
 }
 
 export function DataTabPanel({
+  connectionId,
   selectedTableInfo,
   dataState,
   visibleDataColumns,
@@ -289,7 +291,7 @@ export function DataTabPanel({
           selectedCellKeySet={selectedCellKeySet}
           selectedRowIndex={selectedRowIndex}
           loading={dataState.loading}
-          tableKey={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
+          tableKey={selectedTableInfo ? `${connectionId ?? ""}:${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
           onCellClick={onCellClick}
           onRowContextMenu={onRowContextMenu}
           onSaveCell={onSaveCell}

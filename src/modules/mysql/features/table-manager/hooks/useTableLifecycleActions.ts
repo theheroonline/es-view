@@ -224,7 +224,13 @@ export function useTableLifecycleActions({
     try {
       const { columns, rowCount, info } = await loadTableInfo(db, table);
 
-      if (latestDataRequestRef.current !== requestId || currentLoadingTableKeyRef.current !== tableKey) return;
+      // Request was superseded by a newer one (e.g., user clicked another table).
+      // Reset loading state so the UI doesn't get stuck on a spinner.
+      if (latestDataRequestRef.current !== requestId || currentLoadingTableKeyRef.current !== tableKey) {
+        setSelectedTableInfo({ database: db, table, loading: false });
+        setDataState((prev) => ({ ...prev, loading: false }));
+        return;
+      }
 
       setSelectedTableInfo({ database: db, table, columns, rowCount, info, loading: false });
       setDataColumnMeta(columns);
@@ -246,7 +252,11 @@ export function useTableLifecycleActions({
         });
       }
     } catch (err) {
-      if (latestDataRequestRef.current !== requestId || currentLoadingTableKeyRef.current !== tableKey) return;
+      if (latestDataRequestRef.current !== requestId || currentLoadingTableKeyRef.current !== tableKey) {
+        setSelectedTableInfo({ database: db, table, loading: false });
+        setDataState((prev) => ({ ...prev, loading: false }));
+        return;
+      }
       logError(err, {
         source: targetTab === "data" ? "useTableLifecycleActions.openTableData" : "useTableLifecycleActions.openTableStructure",
         message: `Failed to open table ${db}.${table}`

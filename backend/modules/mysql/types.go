@@ -9,17 +9,20 @@ import (
 
 // MysqlConnectRequest represents MySQL connection parameters.
 type MysqlConnectRequest struct {
-	ConnectionID string `json:"connectionId"`
-	Host         string `json:"host"`
-	Port         uint16 `json:"port"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	Database     string `json:"database"`
-	SshEnabled   bool   `json:"sshEnabled"`
-	SshHost      string `json:"sshHost"`
-	SshPort      int    `json:"sshPort"`
-	SshUsername  string `json:"sshUsername"`
-	SshPassword  string `json:"sshPassword"`
+	ConnectionID   string `json:"connectionId"`
+	Host           string `json:"host"`
+	Port           uint16 `json:"port"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	Database       string `json:"database"`
+	SshEnabled     bool   `json:"sshEnabled"`
+	SshHost        string `json:"sshHost"`
+	SshPort        int    `json:"sshPort"`
+	SshUsername    string `json:"sshUsername"`
+	SshPassword    string `json:"sshPassword"`
+	MaxOpenConns   int    `json:"maxOpenConns"`   // 0 = default 50
+	MaxIdleConns   int    `json:"maxIdleConns"`   // 0 = default 10
+	ConnMaxLifetime int   `json:"connMaxLifetime"` // seconds, 0 = default 300
 }
 
 // MysqlQueryResult represents the result of a query.

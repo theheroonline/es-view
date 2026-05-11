@@ -5,6 +5,7 @@ import type { DataState, FilterGroupDraft, TableInfo } from "../utils";
 import { DataTabPanel } from "./DataTabPanel";
 
 export interface TableDataPaneProps {
+  connectionId: string | null | undefined;
   selectedTableInfo: TableInfo | null;
   dataState: DataState;
   visibleDataColumns: string[];
@@ -41,6 +42,7 @@ export interface TableDataPaneProps {
 }
 
 export function TableDataPane({
+  connectionId,
   selectedTableInfo,
   dataState,
   visibleDataColumns,
@@ -125,6 +127,7 @@ export function TableDataPane({
       </div>
 
       <DataTabPanel
+        connectionId={connectionId}
         selectedTableInfo={selectedTableInfo}
         dataState={dataState}
         visibleDataColumns={visibleDataColumns}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMysqlContext } from "../../../state/MysqlContext";
@@ -204,9 +204,11 @@ export default function MysqlTableManager() {
     onError: (err) => setError(err instanceof Error ? err.message : String(err))
   });
 
-  const activeOpenedTable = activeOpenedTableKey
-    ? openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey) ?? null
-    : null;
+  const activeOpenedTable = useMemo(() => {
+    return activeOpenedTableKey
+      ? openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey) ?? null
+      : null;
+  }, [activeOpenedTableKey, openedTables]);
 
   const filterOperators = buildFilterOperators(t);
 
@@ -612,6 +614,7 @@ export default function MysqlTableManager() {
               onOpenCreateTable: () => openCreateTable(expandedDatabase ?? ""),
             }}
             dataPaneProps={{
+              connectionId,
               selectedTableInfo,
               dataState,
               visibleDataColumns,

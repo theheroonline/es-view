@@ -143,6 +143,7 @@ export function useTableDataActions({
       );
 
       if (requestId !== latestDataRequestRef.current || activeDataRequestKeyRef.current !== requestKey) {
+        setDataState((prev) => ({ ...prev, loading: false }));
         return;
       }
 
@@ -176,6 +177,7 @@ export function useTableDataActions({
         message: `Failed to fetch table data for ${targetDb}.${targetTable}`
       });
       if (requestId !== latestDataRequestRef.current || activeDataRequestKeyRef.current !== requestKey) {
+        setDataState((prev) => ({ ...prev, loading: false }));
         return;
       }
 

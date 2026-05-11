@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"sync"
 	"time"
 
@@ -116,6 +117,8 @@ type RedisConnectionManager struct {
 	connections map[string]map[int]*goRedis.Client
 	options     map[string]*goRedis.Options
 	sshTunnels  *sshtunnel.Manager
+	// inFlight guards concurrent creation of the same db client.
+	inFlight    sync.Map // key: string("connID:db"), value: chan struct{}
 }
 
 func NewRedisConnectionManager() *RedisConnectionManager {
@@ -129,10 +132,12 @@ func NewRedisConnectionManager() *RedisConnectionManager {
 func (r *RedisConnectionManager) CloseAll() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, dbClients := range r.connections {
-		for _, client := range dbClients {
+	for connID, dbClients := range r.connections {
+		for db, client := range dbClients {
 			if client != nil {
-				_ = client.Close()
+				if err := client.Close(); err != nil {
+					log.Printf("[redis] error closing connection %s db %d: %v", connID, db, err)
+				}
 			}
 		}
 	}
@@ -142,9 +147,34 @@ func (r *RedisConnectionManager) CloseAll() {
 }
 
 func cloneRedisOptions(opts *goRedis.Options, database int) *goRedis.Options {
-	cloned := *opts
-	cloned.DB = database
-	return &cloned
+	cloned := &goRedis.Options{
+		Addr:            opts.Addr,
+		ClientName:      opts.ClientName,
+		Protocol:        opts.Protocol,
+		Username:        opts.Username,
+		Password:        opts.Password,
+		CredentialsProvider: opts.CredentialsProvider,
+		DB:              database,
+		MaxRetries:      opts.MaxRetries,
+		MinRetryBackoff: opts.MinRetryBackoff,
+		MaxRetryBackoff: opts.MaxRetryBackoff,
+		DialTimeout:     opts.DialTimeout,
+		ReadTimeout:     opts.ReadTimeout,
+		WriteTimeout:    opts.WriteTimeout,
+		ContextTimeoutEnabled: opts.ContextTimeoutEnabled,
+		PoolFIFO:        opts.PoolFIFO,
+		PoolSize:        opts.PoolSize,
+		PoolTimeout:     opts.PoolTimeout,
+		MinIdleConns:    opts.MinIdleConns,
+		MaxIdleConns:    opts.MaxIdleConns,
+		ConnMaxIdleTime: opts.ConnMaxIdleTime,
+		ConnMaxLifetime: opts.ConnMaxLifetime,
+		TLSConfig:       opts.TLSConfig, // Reference is fine for TLSConfig (read-only after creation)
+		Limiter:         opts.Limiter,
+		DisableIndentity: opts.DisableIndentity,
+		IdentitySuffix:   opts.IdentitySuffix,
+	}
+	return cloned
 }
 
 func getRedisTTLMilliseconds(req RedisSetKeyRequest) *int64 {

@@ -129,6 +129,22 @@ export function useExcelTable({
   // actual column prop changes (e.g., visibleColumns toggled by user).
   const prevColumnsRef = useRef<string[]>(columns);
 
+  // Track previous tableKey to detect table switches. When switching tables,
+  // the column order must reset to the new table's natural order (not inherit
+  // the old table's user-customized order).
+  if (prevTableKeyRef.current !== tableKey) {
+    prevTableKeyRef.current = tableKey;
+    // Load the stored order for this specific table
+    const stored = loadColumnConfig(tableKey || "");
+    const fromCache = columnOrderCache.get(tableKey || "");
+    const nextOrder = (fromCache && fromCache.length > 0)
+      ? fromCache
+      : (stored.columnOrder.length > 0 ? stored.columnOrder : columns);
+    if (!areColumnsEqual(columnOrderRef.current, nextOrder)) {
+      columnOrderRef.current = nextOrder;
+    }
+  }
+
   // Sync columnOrderRef with columns prop when the columns actually change.
   // Preserves user reorder for columns that still exist, appends new ones.
   if (!areColumnsEqual(columns, prevColumnsRef.current)) {

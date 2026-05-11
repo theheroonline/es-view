@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -44,30 +45,67 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 		return nil, fmt.Errorf("connection options not found: %s", connectionID)
 	}
 
-	newClient := goRedis.NewClient(cloneRedisOptions(baseOpts, database))
+	// singleflight: ensure only one goroutine creates a client for this (connID, db) pair.
+	// Uses sync.Map.Swap (not CompareAndSwap) because CAS on a non-existent key always
+	// returns false in Go, which would deadlock the first caller.
+	key := fmt.Sprintf("%s:%d", connectionID, database)
+	var creatorDone chan struct{}
+	for {
+		done := make(chan struct{})
+		actual, loaded := m.connManager.inFlight.Swap(key, done)
+		if !loaded {
+			// We are the first to set this key — we own the creation.
+			creatorDone = done
+			break
+		}
+		// Another goroutine is creating — wait for it to finish, then retry.
+		if ch, ok := actual.(chan struct{}); ok {
+			<-ch
+		} else {
+			time.Sleep(10 * time.Millisecond)
+		}
+		// Check if the client was created while we were waiting.
+		m.connManager.mu.RLock()
+		dbClients, exists = m.connManager.connections[connectionID]
+		if exists {
+			if client, ok := dbClients[database]; ok {
+				m.connManager.mu.RUnlock()
+				return client, nil
+			}
+		}
+		m.connManager.mu.RUnlock()
+	}
 
+	// creatorDone belongs only to this goroutine. Close it when done creating
+	// so that waiting goroutines can wake up and find the new client.
+	defer close(creatorDone)
+	// Clean up the in-flight marker after signaling waiters.
+	// Must be registered AFTER the close defer so it runs first (LIFO).
+	defer m.connManager.inFlight.Delete(key)
+
+	newClient := goRedis.NewClient(cloneRedisOptions(baseOpts, database))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := newClient.Ping(ctx).Err(); err != nil {
+	err := newClient.Ping(ctx).Err()
+	cancel()
+	if err != nil {
 		newClient.Close()
 		return nil, fmt.Errorf("failed to connect to database %d: %w", database, err)
 	}
 
 	m.connManager.mu.Lock()
-	defer m.connManager.mu.Unlock()
-
 	dbClients, exists = m.connManager.connections[connectionID]
 	if !exists {
 		newClient.Close()
+		m.connManager.mu.Unlock()
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
-
 	if existingClient, ok := dbClients[database]; ok {
 		newClient.Close()
+		m.connManager.mu.Unlock()
 		return existingClient, nil
 	}
-
 	dbClients[database] = newClient
+	m.connManager.mu.Unlock()
 	return newClient, nil
 }
 
@@ -97,10 +135,10 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 		DB:           req.Database,
 		Username:     req.Username,
 		DialTimeout:  3 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		PoolSize:     5,
-		MinIdleConns: 1,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		PoolSize:     25,
+		MinIdleConns: 5,
 	}
 	client := goRedis.NewClient(baseOpts)
 
@@ -116,9 +154,11 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 	defer m.connManager.mu.Unlock()
 
 	if existingClients, exists := m.connManager.connections[req.ConnectionID]; exists {
-		for _, existingClient := range existingClients {
+		for db, existingClient := range existingClients {
 			if existingClient != nil {
-				_ = existingClient.Close()
+				if err := existingClient.Close(); err != nil {
+					log.Printf("[redis] error closing existing client for connection %s db %d: %v", req.ConnectionID, db, err)
+				}
 			}
 		}
 	}
@@ -138,9 +178,11 @@ func (m *Module) RedisDisconnect(connectionID string) (string, error) {
 		return "", fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	for _, client := range dbClients {
+	for db, client := range dbClients {
 		if client != nil {
-			_ = client.Close()
+			if err := client.Close(); err != nil {
+				log.Printf("[redis] error closing client for connection %s db %d: %v", connectionID, db, err)
+			}
 		}
 	}
 

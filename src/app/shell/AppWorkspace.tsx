@@ -17,6 +17,10 @@ interface AppWorkspaceProps {
   mysql: MysqlSidebarWorkspaceState;
 }
 
+/** Flex-aware wrapper for ContentArea sections that need to fill remaining space */
+const flexVisible: React.CSSProperties = { display: "flex", flex: 1, minHeight: 0 };
+const flexHidden: React.CSSProperties = { display: "none" };
+
 export default function AppWorkspace({
   mysql,
 }: AppWorkspaceProps) {
@@ -62,9 +66,15 @@ export default function AppWorkspace({
 
       <section className="mdb-content">
         <AppRoutes />
-        {currentEngine === "elasticsearch" && <EsContentArea />}
-        {currentEngine === "mysql" && <MysqlContentArea />}
-        {currentEngine === "redis" && <RedisContentArea />}
+        <div style={currentEngine === "elasticsearch" ? flexVisible : flexHidden}>
+          <EsContentArea />
+        </div>
+        <div style={currentEngine === "mysql" ? flexVisible : flexHidden}>
+          <MysqlContentArea />
+        </div>
+        <div style={currentEngine === "redis" ? flexVisible : flexHidden}>
+          <RedisContentArea />
+        </div>
       </section>
     </>
   );

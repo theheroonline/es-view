@@ -55,7 +55,7 @@ const ENGINE_CONFIG: Record<EngineType, EngineConfig> = {
 export function useConnectionWorkspace() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { refreshIndices, getConnectionById: getEsConnectionById } = useElasticsearchContext();
+  const { refreshIndices, getConnectionById: getEsConnectionById, resetWorkspaceForConnection: resetEsWorkspaceForConnection } = useElasticsearchContext();
   const {
     profiles,
     activeConnectionId,
@@ -141,6 +141,10 @@ export function useConnectionWorkspace() {
     resetMysqlWorkspaceForConnection(connectionId);
   };
 
+  const resetEsWorkspace = (connectionId: string) => {
+    resetEsWorkspaceForConnection(connectionId);
+  };
+
   const getProfileById = useCallback(
     (connectionId?: string | null): ConnectionProfile | null => {
       if (!connectionId) {
@@ -179,8 +183,10 @@ export function useConnectionWorkspace() {
     await disconnectActiveConnection(connectionId, engine);
     setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: false }));
     if (focusedConnectionIdByEngine[engine] === connectionId) {
+      // Reset workspace state for the engine of the disconnected connection
       resetMysqlWorkspace(connectionId);
       setSelectedRedisDatabase(null);
+      resetEsWorkspace(connectionId);
     }
     setConnectionStatusById((prev) => ({
       ...prev,
@@ -306,12 +312,15 @@ export function useConnectionWorkspace() {
             throw new Error("CONNECTION_FAILED");
           }
 
-          await switchViewSync(connectionId, "redis");
-          setSelectedRedisDatabase(redisConnection.database ?? 0);
-
+          // Connect backend first so that when switchViewSync activates the connection
+          // and triggers useEffect-based data fetching, the backend already has the
+          // connection registered. Otherwise refreshDatabases hits "connection not found".
           if (shouldValidate) {
             await redisConnect(redisConnection);
           }
+
+          await switchViewSync(connectionId, "redis");
+          setSelectedRedisDatabase(redisConnection.database ?? 0);
 
           markConnectionSuccess(connectionId);
           await navigate(config.defaultRoute);
@@ -343,6 +352,14 @@ export function useConnectionWorkspace() {
           message: `Failed to activate connection ${connectionId}`,
         });
         await disconnectActiveConnection(connectionId, engine);
+        // Clean up workspace for the failed connection
+        if (engine === "mysql") {
+          resetMysqlWorkspace(connectionId);
+        } else if (engine === "redis") {
+          setSelectedRedisDatabase(null);
+        } else {
+          resetEsWorkspace(connectionId);
+        }
         setConnectionStatusById((prev) => ({
           ...prev,
           [connectionId]: "failed",
