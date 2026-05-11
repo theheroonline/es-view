@@ -25,47 +25,46 @@ export default function AppWorkspace({
 
   const currentEngine = useMemo(() => getEngineFromPath(location.pathname), [location.pathname]);
 
-  const isEsWorkspace = currentEngine === "elasticsearch";
-  const isMysqlWorkspace = currentEngine === "mysql";
-  const isRedisWorkspace = currentEngine === "redis";
-
   return (
     <>
-      <EsWorkspaceTabs
-        visible={isEsWorkspace}
-        dataBrowserLabel={t("sidebar.dataBrowser")}
-        sqlQueryLabel={t("sidebar.sqlQuery")}
-        restConsoleLabel={t("sidebar.restConsole")}
-        indexManagerLabel={t("sidebar.indexManager")}
-      />
+      {currentEngine === "elasticsearch" && (
+        <EsWorkspaceTabs
+          dataBrowserLabel={t("sidebar.dataBrowser")}
+          sqlQueryLabel={t("sidebar.sqlQuery")}
+          restConsoleLabel={t("sidebar.restConsole")}
+          indexManagerLabel={t("sidebar.indexManager")}
+        />
+      )}
 
-      <MysqlWorkspaceTabs
-        visible={isMysqlWorkspace}
-        openedTables={mysql.openedTables}
-        activeOpenedTableKey={mysql.activeOpenedTableKey}
-        locationPathname={location.pathname}
-        tableManagerLabel={t("mysql.sidebar.tableManager")}
-        sqlQueryLabel={t("mysql.sidebar.sqlQuery")}
-        onActivateTable={(database, table) => {
-          void mysql.handleActivateMysqlOpenedTable(database, table);
-        }}
-        onCloseTable={(database, table) => {
-          void mysql.handleCloseMysqlOpenedTable(database, table);
-        }}
-        onTableContextMenu={mysql.handleMysqlTabContextMenu}
-      />
+      {currentEngine === "mysql" && (
+        <MysqlWorkspaceTabs
+          openedTables={mysql.openedTables}
+          activeOpenedTableKey={mysql.activeOpenedTableKey}
+          locationPathname={location.pathname}
+          tableManagerLabel={t("mysql.sidebar.tableManager")}
+          sqlQueryLabel={t("mysql.sidebar.sqlQuery")}
+          onActivateTable={(database, table) => {
+            void mysql.handleActivateMysqlOpenedTable(database, table);
+          }}
+          onCloseTable={(database, table) => {
+            void mysql.handleCloseMysqlOpenedTable(database, table);
+          }}
+          onTableContextMenu={mysql.handleMysqlTabContextMenu}
+        />
+      )}
 
-      <RedisWorkspaceTabs
-        visible={isRedisWorkspace}
-        browserLabel={t("redis.sidebar.browser")}
-        consoleLabel={t("redis.sidebar.console")}
-      />
+      {currentEngine === "redis" && (
+        <RedisWorkspaceTabs
+          browserLabel={t("redis.sidebar.browser")}
+          consoleLabel={t("redis.sidebar.console")}
+        />
+      )}
 
       <section className="mdb-content">
         <AppRoutes />
-        <EsContentArea />
-        <MysqlContentArea />
-        <RedisContentArea />
+        {currentEngine === "elasticsearch" && <EsContentArea />}
+        {currentEngine === "mysql" && <MysqlContentArea />}
+        {currentEngine === "redis" && <RedisContentArea />}
       </section>
     </>
   );

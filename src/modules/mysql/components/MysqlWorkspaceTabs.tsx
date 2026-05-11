@@ -9,7 +9,6 @@ interface MysqlWorkspaceTabsProps {
   locationPathname: string;
   tableManagerLabel: string;
   sqlQueryLabel: string;
-  visible: boolean;
   onActivateTable: (database: string, table: string) => void;
   onCloseTable: (database: string, table: string) => void;
   onTableContextMenu: (event: MouseEvent<HTMLButtonElement>, key: string) => void;
@@ -21,13 +20,12 @@ export default function MysqlWorkspaceTabs({
   locationPathname,
   tableManagerLabel,
   sqlQueryLabel,
-  visible,
   onActivateTable,
   onCloseTable,
   onTableContextMenu,
 }: MysqlWorkspaceTabsProps) {
   return (
-    <div className="mdb-tabs" style={{ display: visible ? "flex" : "none" }}>
+    <div className="mdb-tabs">
       <NavLink to="/mysql/tables" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
         {tableManagerLabel}
       </NavLink>

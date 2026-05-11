@@ -13,14 +13,13 @@ const pages: [string, React.ReactNode][] = [
 
 export function EsContentArea() {
   const { pathname } = useLocation();
+  const currentPage = pages.find(([path]) => pathname === path);
+
+  if (!currentPage) return null;
 
   return (
-    <>
-      {pages.map(([path, element]) => (
-        <div key={path} className="engine-page-wrapper" data-active={pathname === path ? "true" : "false"}>
-          {element}
-        </div>
-      ))}
-    </>
+    <div className="engine-page-wrapper">
+      {currentPage[1]}
+    </div>
   );
 }

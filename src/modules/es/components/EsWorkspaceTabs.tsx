@@ -5,7 +5,6 @@ interface EsWorkspaceTabsProps {
   sqlQueryLabel: string;
   restConsoleLabel: string;
   indexManagerLabel: string;
-  visible: boolean;
 }
 
 export default function EsWorkspaceTabs({
@@ -13,10 +12,9 @@ export default function EsWorkspaceTabs({
   sqlQueryLabel,
   restConsoleLabel,
   indexManagerLabel,
-  visible,
 }: EsWorkspaceTabsProps) {
   return (
-    <div className="mdb-tabs" style={{ display: visible ? "flex" : "none" }}>
+    <div className="mdb-tabs">
       <NavLink to="/data" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
         {dataBrowserLabel}
       </NavLink>
