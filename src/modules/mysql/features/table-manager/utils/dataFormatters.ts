@@ -38,8 +38,8 @@ export const toSafeNumber = (value: unknown): number => {
  * Example: 1024 → "1.00 KB (1024)"
  * Example: 5242880 → "5.00 MB (5242880)"
  */
-export const formatBytes = (value: number): string => {
-  if (value <= 0) return "0 B (0)";
+export const formatBytes = (value: number | undefined): string => {
+  if (!value || value <= 0) return "0 B (0)";
 
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = value;

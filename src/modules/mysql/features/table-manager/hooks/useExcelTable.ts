@@ -246,14 +246,10 @@ export function useExcelTable({
 
     // Verify this element is actually scrollable
     const isScrollable = el.scrollHeight > el.clientHeight;
-    console.log('[useExcelTable] scroll listener attached:', el.className,
-      'offsetHeight:', el.offsetHeight,
-      'scrollHeight:', el.scrollHeight,
-      'isScrollable:', isScrollable);
+    void isScrollable;
 
     const handleScroll = () => {
       if (currentTableKeyRef.current) {
-        console.log('[useExcelTable] scroll:', currentTableKeyRef.current, '→', el.scrollTop.toFixed(0));
         scrollTopCache.set(currentTableKeyRef.current, el.scrollTop);
       }
     };
@@ -274,10 +270,8 @@ export function useExcelTable({
     if (!tableKey) return;
 
     const cached = scrollTopCache.get(tableKey);
-    console.log('[useExcelTable] restore:', tableKey, 'cached =', cached?.toFixed(0));
     if (cached !== undefined && cached > 0) {
       requestAnimationFrame(() => {
-        console.log('[useExcelTable] scrollToOffset:', tableKey, cached);
         rowVirtualizerRef.current.scrollToOffset(cached, { align: "start" });
       });
     }

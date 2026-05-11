@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
@@ -11,7 +11,7 @@ export default function IndexManager() {
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createBody, setCreateBody] = useState("{}");
-  const [error, setError] = useState("");
+  const [createError, setCreateError] = useState("");
 
   const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -21,6 +21,15 @@ export default function IndexManager() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState("");
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
+
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (showCreate) {
+      nameInputRef.current?.focus();
+    }
+  }, [showCreate]);
 
   const loadIndices = useCallback(async () => {
     if (!activeConnection) return;
@@ -61,10 +70,10 @@ export default function IndexManager() {
   }, [activeConnection?.id, detailTarget]);
 
   const handleCreate = async () => {
-    setError("");
+    setCreateError("");
     if (!activeConnection) return;
     if (!createName) {
-      setError(t('indexManager.indexNameRequired'));
+      setCreateError(t('indexManager.indexNameRequired'));
       return;
     }
     try {
@@ -79,7 +88,7 @@ export default function IndexManager() {
         source: "indexManager.createIndex",
         message: `Failed to create index ${createName}`
       });
-      setError(t('indexManager.createFailed'));
+      setCreateError(t('indexManager.createFailed'));
     }
   };
 
@@ -141,34 +150,38 @@ export default function IndexManager() {
   return (
     <div className="page">
       {showCreate && (
-        <div className="card anim-fade-in">
-          <div className="card-header">
-            <h3 className="card-title">{t('indexManager.newIndex')}</h3>
-          </div>
-          <div className="card-body">
-            <div className="form-grid" style={{ maxWidth: '800px' }}>
-              <div>
+        <div className="modal-overlay" onClick={() => setShowCreate(false)}>
+          <div className="card anim-fade-in es-create-index-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="card-header">
+              <h3 className="card-title">{t('indexManager.newIndex')}</h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowCreate(false)}>&#x2715;</button>
+            </div>
+            <div className="card-body">
+              <div style={{ marginBottom: '16px' }}>
                 <label>{t('indexManager.indexName')}</label>
                 <input
+                  ref={nameInputRef}
                   className="form-control"
                   value={createName}
                   onChange={(event) => setCreateName(event.target.value)}
                   placeholder={t('indexManager.namePlaceholder')}
                 />
               </div>
-              <div className="span-2">
+              <div style={{ marginBottom: '16px' }}>
                 <label>{t('indexManager.configuration')}</label>
                 <textarea
                   className="json-editor"
                   value={createBody}
                   onChange={(event) => setCreateBody(event.target.value)}
+                  rows={10}
                 />
               </div>
-              <div className="span-2">
-                 <button className="btn btn-primary" onClick={handleCreate}>{t('indexManager.confirmCreate')}</button>
+              {createError && <p className="text-danger" style={{ marginBottom: '12px' }}>{createError}</p>}
+              <div className="flex-gap justify-end">
+                <button className="btn btn-secondary" onClick={() => setShowCreate(false)}>{t('common.cancel')}</button>
+                <button className="btn btn-primary" onClick={handleCreate}>{t('indexManager.confirmCreate')}</button>
               </div>
             </div>
-            {error && <p className="text-danger" style={{ marginTop: '12px' }}>{error}</p>}
           </div>
         </div>
       )}
@@ -217,6 +230,12 @@ export default function IndexManager() {
       <div className="master-detail-layout">
         <div className="master-pane">
            <div className="card">
+              {error && (
+                <div className="tm-error-banner">
+                  <span className="text-danger">{error}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setError("")}>关闭</button>
+                </div>
+              )}
               <div className="card-header">
                   <h3 className="card-title">{t('indexManager.title')}</h3>
                   {activeConnection && (

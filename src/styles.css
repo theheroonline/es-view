@@ -3658,6 +3658,19 @@ input:checked + .slider:before {
 }
 .json-editor:focus { outline: none; border-color: #007aff; box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1); }
 
+/* ES create index modal */
+.es-create-index-modal {
+  width: 520px;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+.es-create-index-modal .json-editor {
+  height: 200px;
+  resize: vertical;
+}
+
 .anim-fade-in { animation: fadeIn 0.3s cubic-bezier(0.19, 1, 0.22, 1) forwards; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
