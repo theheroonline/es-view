@@ -2,14 +2,14 @@ import { NavLink } from "react-router-dom";
 
 interface EsWorkspaceTabsProps {
   dataBrowserLabel: string;
-  sqlQueryLabel: string;
+  simpleQueryLabel: string;
   restConsoleLabel: string;
   indexManagerLabel: string;
 }
 
 export default function EsWorkspaceTabs({
   dataBrowserLabel,
-  sqlQueryLabel,
+  simpleQueryLabel,
   restConsoleLabel,
   indexManagerLabel,
 }: EsWorkspaceTabsProps) {
@@ -19,7 +19,7 @@ export default function EsWorkspaceTabs({
         {dataBrowserLabel}
       </NavLink>
       <NavLink to="/sql" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
-        {sqlQueryLabel}
+        {simpleQueryLabel}
       </NavLink>
       <NavLink to="/rest" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
         {restConsoleLabel}

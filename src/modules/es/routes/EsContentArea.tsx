@@ -2,7 +2,7 @@ import { useLocation } from "react-router-dom";
 import EsDataBrowserPage from "../pages/DataBrowser";
 import EsIndexManagerPage from "../pages/IndexManager";
 import EsRestConsolePage from "../pages/RestConsole";
-import EsSqlQueryPage from "../pages/SqlQuery";
+import EsSimpleQueryPage from "../pages/SimpleQuery";
 
 const flexVisible: React.CSSProperties = { display: "flex", flex: 1, minHeight: 0, overflow: "hidden" };
 const flexHidden: React.CSSProperties = { display: "none" };
@@ -21,7 +21,7 @@ export function EsContentArea() {
         <EsDataBrowserPage />
       </div>
       <div style={pathname === "/sql" ? flexVisible : flexHidden}>
-        <EsSqlQueryPage />
+        <EsSimpleQueryPage />
       </div>
       <div style={pathname === "/rest" ? flexVisible : flexHidden}>
         <EsRestConsolePage />

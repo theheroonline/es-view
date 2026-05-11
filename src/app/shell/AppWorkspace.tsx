@@ -34,7 +34,7 @@ export default function AppWorkspace({
       {currentEngine === "elasticsearch" && (
         <EsWorkspaceTabs
           dataBrowserLabel={t("sidebar.dataBrowser")}
-          sqlQueryLabel={t("sidebar.sqlQuery")}
+          simpleQueryLabel={t("sidebar.simpleQuery")}
           restConsoleLabel={t("sidebar.restConsole")}
           indexManagerLabel={t("sidebar.indexManager")}
         />

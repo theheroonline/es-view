@@ -30,6 +30,7 @@ export function useEsDataBrowserState() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const skipNextAutoQueryRef = useRef(false);
@@ -77,6 +78,8 @@ export function useEsDataBrowserState() {
     setFieldFilter,
     selectedDocs,
     setSelectedDocs,
+    selectedRowId,
+    setSelectedRowId,
     contextMenuRef,
     skipNextAutoQueryRef,
   };

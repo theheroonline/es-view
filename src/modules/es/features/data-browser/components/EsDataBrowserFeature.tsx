@@ -69,6 +69,8 @@ export function EsDataBrowserFeature() {
     setFieldFilter,
     selectedDocs,
     setSelectedDocs,
+    selectedRowId,
+    setSelectedRowId,
     contextMenuRef,
     skipNextAutoQueryRef,
   } = useEsDataBrowserState();
@@ -432,6 +434,7 @@ export function EsDataBrowserFeature() {
           renderCellValue={renderCellValue}
           rows={rows}
           selectedDocs={selectedDocs}
+          selectedRowId={selectedRowId}
           selectedRows={selectedRows}
           t={t}
           viewMode={viewMode}
@@ -441,6 +444,7 @@ export function EsDataBrowserFeature() {
           onEditDoc={openEdit}
           onSelectAllRows={toggleSelectAllRows}
           onSelectRow={toggleSelectRow}
+          onSelectRowHighlight={setSelectedRowId}
           onSetViewMode={setViewMode}
           onToggleRowExpand={toggleRowExpand}
           onRowContextMenu={handleContextMenu}

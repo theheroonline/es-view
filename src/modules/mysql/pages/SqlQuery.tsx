@@ -16,12 +16,19 @@ interface AutocompleteItem {
   type: "keyword" | "table" | "column" | "database";
   detail?: string;
   weight?: number;
+  /** Fuzzy match score (higher = better). 0 = no match. */
+  score?: number;
 }
 
 type AutocompleteContext = "mixed" | "keyword" | "table" | "column" | "database";
 
+interface TableAliasEntry {
+  table: string;
+  alias: string;
+}
+
 const MYSQL_KEYWORDS = [
-  // 常用关键词（权重 10）
+  // 最高频：DML 语句起点和核心子句（权重 10）
   { keyword: "SELECT", weight: 10 },
   { keyword: "FROM", weight: 10 },
   { keyword: "WHERE", weight: 10 },
@@ -33,62 +40,64 @@ const MYSQL_KEYWORDS = [
   { keyword: "AND", weight: 9 },
   { keyword: "OR", weight: 9 },
   { keyword: "ON", weight: 9 },
-  { keyword: "AS", weight: 8 },
 
-  // 次常用关键词（权重 6-8）
+  // 高频：DML 语句 + INNER JOIN（权重 7-8）
+  { keyword: "INNER JOIN", weight: 8 },
   { keyword: "INSERT INTO", weight: 7 },
   { keyword: "UPDATE", weight: 7 },
   { keyword: "DELETE FROM", weight: 7 },
-  { keyword: "CREATE TABLE", weight: 6 },
-  { keyword: "ALTER TABLE", weight: 6 },
-  { keyword: "DESCRIBE", weight: 6 },
-  { keyword: "INNER JOIN", weight: 6 },
-  { keyword: "RIGHT JOIN", weight: 6 },
-  { keyword: "CASE", weight: 6 },
-  { keyword: "WHEN", weight: 6 },
-  { keyword: "THEN", weight: 6 },
-  { keyword: "END", weight: 6 },
   { keyword: "NULL", weight: 7 },
   { keyword: "IN", weight: 7 },
   { keyword: "IS", weight: 7 },
-  { keyword: "COUNT", weight: 7 },
-  { keyword: "SUM", weight: 7 },
-  { keyword: "AVG", weight: 7 },
-  { keyword: "MIN", weight: 7 },
-  { keyword: "MAX", weight: 7 },
-  { keyword: "IFNULL", weight: 7 },
-  { keyword: "LENGTH", weight: 7 },
+  { keyword: "SET", weight: 7 },
 
-  // 不常用关键词（权重 3-5）
+  // 中高频：子句连接词 + 聚合函数（权重 5-6）
+  { keyword: "CREATE TABLE", weight: 6 },
+  { keyword: "ALTER TABLE", weight: 6 },
+  { keyword: "DESCRIBE", weight: 6 },
+  { keyword: "LIKE", weight: 6 },
+  { keyword: "VALUES", weight: 6 },
+  { keyword: "COUNT", weight: 6 },
+  { keyword: "SUM", weight: 6 },
+  { keyword: "AVG", weight: 6 },
+  { keyword: "MIN", weight: 6 },
+  { keyword: "MAX", weight: 6 },
+  { keyword: "RIGHT JOIN", weight: 5 },
+  { keyword: "NOT", weight: 5 },
+  { keyword: "HAVING", weight: 5 },
+  { keyword: "ASC", weight: 5 },
+  { keyword: "DESC", weight: 5 },
+  { keyword: "AS", weight: 5 },
   { keyword: "DROP TABLE", weight: 5 },
   { keyword: "SHOW TABLES", weight: 5 },
   { keyword: "USE", weight: 5 },
   { keyword: "EXPLAIN", weight: 5 },
-  { keyword: "TRUNCATE", weight: 4 },
+
+  // 中频：控制流 + 特定函数 + 右连接（权重 3-4）
+  { keyword: "CASE", weight: 4 },
+  { keyword: "WHEN", weight: 4 },
+  { keyword: "THEN", weight: 4 },
+  { keyword: "END", weight: 4 },
+  { keyword: "IFNULL", weight: 4 },
+  { keyword: "LENGTH", weight: 4 },
   { keyword: "IF", weight: 4 },
   { keyword: "ELSE", weight: 4 },
-  { keyword: "NOT", weight: 4 },
-  { keyword: "LIKE", weight: 4 },
+  { keyword: "TRUNCATE", weight: 4 },
   { keyword: "BETWEEN", weight: 3 },
   { keyword: "UNION", weight: 3 },
   { keyword: "ALL", weight: 3 },
   { keyword: "DISTINCT", weight: 3 },
-  { keyword: "HAVING", weight: 3 },
-  { keyword: "VALUES", weight: 3 },
-  { keyword: "SET", weight: 3 },
   { keyword: "PRIMARY KEY", weight: 3 },
   { keyword: "FOREIGN KEY", weight: 3 },
   { keyword: "AUTO_INCREMENT", weight: 3 },
   { keyword: "DEFAULT", weight: 3 },
 
-  // 函数和特殊关键词（权重 1-2）
+  // 低频：特殊函数（权重 1-2）
   { keyword: "CURRENT_TIMESTAMP", weight: 2 },
   { keyword: "NOW()", weight: 2 },
   { keyword: "EXISTS", weight: 2 },
   { keyword: "ANY", weight: 2 },
   { keyword: "SOME", weight: 2 },
-  { keyword: "ASC", weight: 2 },
-  { keyword: "DESC", weight: 2 },
   { keyword: "COALESCE", weight: 1 },
   { keyword: "CAST", weight: 1 },
   { keyword: "CONVERT", weight: 1 },
@@ -96,7 +105,7 @@ const MYSQL_KEYWORDS = [
   { keyword: "VERSION()", weight: 1 },
   { keyword: "CHAR_LENGTH", weight: 1 },
   { keyword: "SUBSTRING", weight: 1 },
-  { keyword: "CONCAT", weight: 1 },
+  { keyword: "CONCAT", weight: 3 },
   { keyword: "ROUND", weight: 1 },
   { keyword: "FLOOR", weight: 1 },
   { keyword: "CEIL", weight: 1 },
@@ -238,6 +247,61 @@ function getVisibleColumns(columns: string[], preferred?: string[]) {
   return nextColumns.length > 0 ? nextColumns : columns;
 }
 
+/** Fuzzy match: returns a score > 0 if query chars appear in order in target.
+ *  Score heavily favors full match → prefix match → contiguous → short words. */
+function fuzzyMatch(target: string, query: string): number {
+  if (!query) return 1;
+  const t = target.toLowerCase();
+  const q = query.toLowerCase();
+  let qi = 0;
+  let ti = 0;
+  let lastMatch = -1;
+  let score = 0;
+  const startsWith = t.startsWith(q[0]);
+  const isFullMatch = t === q;
+
+  while (qi < q.length && ti < t.length) {
+    if (t[ti] === q[qi]) {
+      const contiguous = lastMatch >= 0 && ti === lastMatch + 1;
+      score += contiguous ? 3 : (ti === 0 ? 2 : 1);
+      lastMatch = ti;
+      qi += 1;
+    }
+    ti += 1;
+  }
+
+  if (qi < q.length) return 0; // not all chars matched
+  if (isFullMatch) score += 100;
+  if (startsWith) score += 10;
+  // Bonus: shorter targets rank higher for same query ("from" > "floor" for "f")
+  score += Math.max(0, 20 - t.length);
+  return score;
+}
+
+/** Extract table aliases from a SQL statement. */
+function extractTableAliases(statement: string): TableAliasEntry[] {
+  const aliases: TableAliasEntry[] = [];
+  const regex = /\b(?:FROM|JOIN|UPDATE|INTO)\s+`?([\w$]+)`?(?:\s+(?:AS\s+)`?([\w$]+)`?)?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(statement)) !== null) {
+    const table = match[1];
+    const alias = match[2];
+    if (alias && alias.toUpperCase() !== "ON" && alias.toUpperCase() !== "WHERE" &&
+        alias.toUpperCase() !== "SET" && alias.toUpperCase() !== "LEFT" &&
+        alias.toUpperCase() !== "RIGHT" && alias.toUpperCase() !== "INNER" &&
+        alias.toUpperCase() !== "CROSS" && alias.toUpperCase() !== "OUTER") {
+      aliases.push({ table, alias });
+    }
+  }
+  return aliases;
+}
+
+/** Resolve a table alias to its actual table name. */
+function resolveAliasToTable(alias: string, aliases: TableAliasEntry[]): string | null {
+  const found = aliases.find((a) => a.alias.toLowerCase() === alias.toLowerCase());
+  return found?.table ?? null;
+}
+
 function extractMysqlErrorLine(message: string): number | null {
   const match = message.match(/\bline\s+(\d+)\b/i);
   if (!match) return null;
@@ -278,7 +342,9 @@ export default function MysqlSqlQuery() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lineNumberRef = useRef<HTMLDivElement | null>(null);
   const autocompleteListRef = useRef<HTMLDivElement | null>(null);
-  const autocompleteOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const autocompleteOptionRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const autocompleteDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorMeasurerRef = useRef<HTMLPreElement | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -290,11 +356,13 @@ export default function MysqlSqlQuery() {
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [autocompleteItems, setAutocompleteItems] = useState<AutocompleteItem[]>([]);
   const [autocompleteRange, setAutocompleteRange] = useState({ start: 0, end: 0 });
+  const [autocompleteLoading, setAutocompleteLoading] = useState(false);
   const [loadedConnectionId, setLoadedConnectionId] = useState<string | null>(null);
   const [connectedDatabaseId, setConnectedDatabaseId] = useState<string | null>(null);
   const [activeResultId, setActiveResultId] = useState<string | null>(null);
   const [resultVisibleColumns, setResultVisibleColumns] = useState<Record<string, string[]>>({});
   const [expandedRowsByResult, setExpandedRowsByResult] = useState<Record<string, Set<number>>>({});
+  const [selectedRowByResult, setSelectedRowByResult] = useState<Record<string, number | null>>({});
   const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
 
   const connectionId = getActiveConnectionIdByEngine("mysql");
@@ -345,14 +413,19 @@ export default function MysqlSqlQuery() {
       detail: t("mysql.query.databaseOption")
     }));
 
-    const columnItems = Object.entries(columnMap).flatMap(([table, columns]) =>
-      columns.map((column) => ({
-        label: column,
-        insertText: column,
-        type: "column" as const,
-        detail: table
-      }))
-    );
+    // Only columns from the current database
+    const dbPrefix = selectedDatabase ? `${selectedDatabase}::` : "";
+    const columnItems = Object.entries(columnMap)
+      .filter(([key]) => !selectedDatabase || key.startsWith(dbPrefix))
+      .flatMap(([key, columns]) => {
+        const table = key.replace(dbPrefix, "");
+        return columns.map((column) => ({
+          label: column,
+          insertText: column,
+          type: "column" as const,
+          detail: table
+        }));
+      });
 
     const keywordItems = MYSQL_KEYWORDS.map(({ keyword, weight }) => ({
       label: keyword,
@@ -395,34 +468,39 @@ export default function MysqlSqlQuery() {
 
     const textarea = textareaRef.current;
     const rect = textarea.getBoundingClientRect();
-    const scrollTop = textarea.scrollTop;
+    const scrollLeft = textarea.scrollLeft;
 
-    // 计算光标在文本中的行列
-    const textBeforeCursor = sql.slice(0, selectionRange.start);
-    const lines = textBeforeCursor.split('\n');
-    const currentLine = lines.length;
-    const currentCol = lines[lines.length - 1].length;
+    // Use a hidden pre element to measure exact cursor position
+    if (cursorMeasurerRef.current) {
+      const measurer = cursorMeasurerRef.current;
+      const textBeforeCursor = sql.slice(0, selectionRange.start);
+      const lines = textBeforeCursor.split('\n');
+      const currentLine = lines.length;
+      const currentLineText = lines[lines.length - 1];
 
-    // 计算实际像素位置
-    const lineHeight = 13 * 1.6;
-    const charWidth = 7.8;
+      // Measure line height from actual element
+      const lineHeight = measurer.offsetHeight > 0 ? measurer.offsetHeight : 20.8;
 
-    // 相对于 textarea 内部的位置
-    const relativeTop = (currentLine - 1) * lineHeight + lineHeight;
-    const relativeLeft = 46 + 12 + currentCol * charWidth; // 46px 行号 + 12px padding + 列偏移
+      // Measure character width using the measurer
+      measurer.textContent = 'M';
+      const charWidth = measurer.offsetWidth || 7.8;
 
-    // 相对于视口的位置（考虑 textarea 滚动）
-    const absoluteTop = rect.top + relativeTop - scrollTop + 4; // 光标下方 4px
-    const absoluteLeft = rect.left + relativeLeft;
+      // Calculate position
+      const relativeTop = (currentLine - 1) * lineHeight + lineHeight;
+      const relativeLeft = 46 + 12 + currentLineText.length * charWidth - scrollLeft;
 
-    // 防止超出视口
-    const maxLeft = window.innerWidth - 300; // 预留最小宽度空间
-    const finalLeft = Math.min(absoluteLeft, maxLeft);
+      const absoluteTop = rect.top + relativeTop + 4;
+      const absoluteLeft = rect.left + relativeLeft;
 
-    setAutocompletePosition({
-      top: absoluteTop,
-      left: finalLeft
-    });
+      // Prevent viewport overflow
+      const maxLeft = window.innerWidth - 300;
+      const finalLeft = Math.max(rect.left + 46 + 12, Math.min(absoluteLeft, maxLeft));
+
+      setAutocompletePosition({
+        top: absoluteTop,
+        left: finalLeft
+      });
+    }
 
     const activeOption = autocompleteOptionRefs.current[autocompleteIndex];
     activeOption?.scrollIntoView({ block: "nearest" });
@@ -511,8 +589,10 @@ export default function MysqlSqlQuery() {
           setTablesByDb((prev) => ({ ...prev, [selectedDatabase]: tables }));
         }
 
-        const missingTables = tables.filter((table) => !columnMap[table]);
+        const missingTables = tables.filter((table) => !columnMap[`${selectedDatabase}::${table}`]);
         if (missingTables.length === 0) return;
+
+        setAutocompleteLoading(true);
 
         // Single query pass - fetch metadata once per table
         const metaEntries = await Promise.all(
@@ -522,9 +602,9 @@ export default function MysqlSqlQuery() {
           })
         );
 
-        // Derive column names from metadata
+        // Derive column names from metadata, keyed by `database::table`
         const entries = metaEntries.map(([table, metas]) =>
-          [table, metas.map((meta) => meta.field)] as const
+          [`${selectedDatabase}::${table}`, metas.map((meta) => meta.field)] as const
         );
 
         setColumnMap((prev) => ({
@@ -541,6 +621,8 @@ export default function MysqlSqlQuery() {
           source: "mysqlSqlQuery.autocompleteMeta",
           message: `Failed to load autocomplete metadata for ${selectedDatabase}`
         });
+      } finally {
+        setAutocompleteLoading(false);
       }
     }
 
@@ -548,43 +630,100 @@ export default function MysqlSqlQuery() {
   }, [columnMap, connectionId, selectedDatabase, setTablesByDb, tablesByDb]);
 
   const updateAutocomplete = (nextSql: string, caretPosition: number) => {
+    if (autocompleteDebounceRef.current) {
+      clearTimeout(autocompleteDebounceRef.current);
+    }
+    autocompleteDebounceRef.current = setTimeout(() => {
+      doUpdateAutocomplete(nextSql, caretPosition);
+    }, 150);
+  };
+
+  const doUpdateAutocomplete = (nextSql: string, caretPosition: number) => {
     const { start, end, token } = getTokenRange(nextSql, caretPosition);
     const normalized = token.trim().toLowerCase();
-    const lookupToken = normalized.split(".").pop() ?? normalized;
     const context = detectAutocompleteContext(nextSql, caretPosition);
-    if (!normalized) {
+
+    // Check if we have a dot-triggered alias resolution (e.g. "u." or "users.")
+    const hasDotPrefix = token.includes(".");
+    const dotParts = normalized.split(".");
+    const aliasPrefix = dotParts.length >= 2 ? dotParts[dotParts.length - 2] : "";
+    const lookupToken = dotParts[dotParts.length - 1] ?? "";
+
+    // For dot-trigger: resolve alias to table name and extract aliases from full SQL
+    let aliasColumns: string[] | null = null;
+    let aliasDetail = "";
+    if (hasDotPrefix && aliasPrefix) {
+      const allStatements = splitSqlStatements(nextSql);
+      const aliases = allStatements.flatMap(extractTableAliases);
+      const resolvedTable = resolveAliasToTable(aliasPrefix, aliases);
+      const dbPrefix = selectedDatabase ? `${selectedDatabase}::` : "";
+      const targetKey = resolvedTable ? `${dbPrefix}${resolvedTable}` : `${dbPrefix}${aliasPrefix}`;
+      if (columnMap[targetKey]) {
+        aliasColumns = columnMap[targetKey];
+        aliasDetail = resolvedTable || aliasPrefix;
+      }
+    }
+
+    // If empty token but dot-triggered, show all alias columns
+    if (!normalized && hasDotPrefix && aliasColumns) {
+      const items = aliasColumns.map((col) => ({
+        label: col,
+        insertText: col,
+        type: "column" as const,
+        detail: aliasDetail
+      }));
+      setAutocompleteRange({ start: caretPosition, end: caretPosition });
+      setAutocompleteItems(items.slice(0, 12));
+      setAutocompleteIndex(0);
+      setAutocompleteOpen(items.length > 0);
+      return;
+    }
+
+    if (!normalized && !hasDotPrefix) {
       setAutocompleteOpen(false);
       setAutocompleteItems([]);
       return;
     }
 
-    // 根据上下文智能过滤
-    let contextFiltered = autocompleteSource.filter((item) => {
-      // database 上下文：只显示数据库
-      if (context === "database") {
-        return item.type === "database";
-      }
-      // table 上下文：只显示表和关键词
-      if (context === "table") {
-        return item.type === "table" || item.type === "keyword";
-      }
-      // column 上下文：只显示列、关键词和函数
-      if (context === "column") {
-        return item.type === "column" || item.type === "keyword";
-      }
-      // mixed 上下文：全部显示
-      return true;
-    });
+    // Build filtered items with fuzzy matching
+    const filteredItems: AutocompleteItem[] = [];
 
-    const filtered = contextFiltered
-      .filter((item) => item.label.toLowerCase().includes(lookupToken))
+    for (const item of autocompleteSource) {
+      // Context filtering
+      if (context === "database" && item.type !== "database") continue;
+      if (context === "table" && item.type !== "table" && item.type !== "keyword") continue;
+      if (context === "column" && item.type !== "column" && item.type !== "keyword") continue;
+
+      // For dot-triggered column context, prioritize alias columns
+      if (hasDotPrefix && item.type === "column") {
+        const score = fuzzyMatch(item.label, lookupToken);
+        if (score > 0) {
+          const isAliasColumn = aliasColumns?.includes(item.label);
+          filteredItems.push({
+            ...item,
+            detail: isAliasColumn ? aliasDetail : item.detail,
+            score: score + (isAliasColumn ? 100 : 0)
+          });
+        }
+        continue;
+      }
+
+      const score = fuzzyMatch(item.label, lookupToken);
+      if (score > 0) {
+        // Keywords: fold weight into score so common keywords outrank obscure ones
+        const finalScore = item.type === "keyword" ? score + (item.weight ?? 0) * 100 : score;
+        filteredItems.push({ ...item, score: finalScore });
+      }
+    }
+
+    const sorted = filteredItems
       .sort((left, right) => {
-        const leftStarts = left.label.toLowerCase().startsWith(lookupToken) ? 0 : 1;
-        const rightStarts = right.label.toLowerCase().startsWith(lookupToken) ? 0 : 1;
         const typeDiff = getTypePriority(context, left.type) - getTypePriority(context, right.type);
         if (typeDiff !== 0) return typeDiff;
-        if (leftStarts !== rightStarts) return leftStarts - rightStarts;
-        // 如果都是关键词，按权重排序（权重高的在前）
+        // Fuzzy score (higher = better)
+        const scoreDiff = (right.score ?? 0) - (left.score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        // Keywords: higher weight wins
         if (left.type === "keyword" && right.type === "keyword") {
           const weightDiff = (right.weight ?? 0) - (left.weight ?? 0);
           if (weightDiff !== 0) return weightDiff;
@@ -594,9 +733,9 @@ export default function MysqlSqlQuery() {
       .slice(0, 12);
 
     setAutocompleteRange({ start, end });
-    setAutocompleteItems(filtered);
+    setAutocompleteItems(sorted);
     setAutocompleteIndex(0);
-    setAutocompleteOpen(filtered.length > 0);
+    setAutocompleteOpen(sorted.length > 0);
   };
 
   const applyAutocomplete = (item: AutocompleteItem) => {
@@ -865,6 +1004,14 @@ export default function MysqlSqlQuery() {
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ctrl+Space / Cmd+Space: manual trigger for autocomplete
+    if ((e.ctrlKey || e.metaKey) && e.key === " ") {
+      e.preventDefault();
+      const target = e.currentTarget;
+      doUpdateAutocomplete(target.value, target.selectionStart);
+      return;
+    }
+
     if (autocompleteOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       e.preventDefault();
       setAutocompleteIndex((prev) => {
@@ -1060,6 +1207,21 @@ export default function MysqlSqlQuery() {
                 }
               }}
             />
+            {/* Hidden element for measuring cursor position */}
+            <pre
+              ref={cursorMeasurerRef}
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                visibility: "hidden",
+                height: "auto",
+                fontFamily: "monospace",
+                fontSize: "13px",
+                lineHeight: 1.6,
+                whiteSpace: "pre",
+                pointerEvents: "none"
+              }}
+            />
             </div>
             {autocompleteOpen && autocompleteItems.length > 0 && (
               <div
@@ -1079,13 +1241,20 @@ export default function MysqlSqlQuery() {
                   maxHeight: "200px"
                 }}
               >
+              {autocompleteLoading && (
+                <div style={{ padding: "4px 8px", fontSize: "10px", color: "#6b7280", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: "10px", height: "10px", border: "2px solid #e5e7eb", borderTopColor: "#3b82f6", borderRadius: "50%", display: "inline-block", animation: "spin 0.6s linear infinite" }} />
+                  Loading schema...
+                </div>
+              )}
               {autocompleteItems.map((item, index) => (
-                <button
+                <div
                   key={`${item.type}-${item.label}-${index}`}
-                  type="button"
                   ref={(element) => {
                     autocompleteOptionRefs.current[index] = element;
                   }}
+                  role="option"
+                  aria-selected={index === autocompleteIndex}
                   style={{
                     width: "100%",
                     display: "flex",
@@ -1106,6 +1275,7 @@ export default function MysqlSqlQuery() {
                     event.preventDefault();
                     applyAutocomplete(item);
                   }}
+                  onClick={() => applyAutocomplete(item)}
                   onMouseEnter={() => setAutocompleteIndex(index)}
                 >
                   <span style={{ display: "flex", gap: "8px", alignItems: "center", minWidth: 0, paddingRight: "8px" }}>
@@ -1128,7 +1298,7 @@ export default function MysqlSqlQuery() {
                   <span className="muted" style={{ fontSize: "10px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "140px", flexShrink: 0, color: index === autocompleteIndex ? "#1d4ed8" : "#6b7280" }}>
                     {item.detail}
                   </span>
-                </button>
+                </div>
               ))}
               </div>
             )}
@@ -1235,14 +1405,16 @@ export default function MysqlSqlQuery() {
                           {resultSet.rows.length > 0 ? resultSet.rows.map((row, rowIndex) => {
                             const expandedRows = expandedRowsByResult[activeResult.id] ?? new Set<number>();
                             const isExpanded = expandedRows.has(rowIndex);
+                            const isSelected = selectedRowByResult[activeResult.id ?? ""] === rowIndex;
+                            const rowHighlight = isExpanded || isSelected;
                             const detailObject = Object.fromEntries(
                               visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]])
                             );
 
                             return (
                               <Fragment key={`${activeResult.id}-${rowIndex}`}>
-                                <tr>
-                                  <td style={{ textAlign: "center" }}>
+                                <tr style={rowHighlight ? { background: "#eff6ff" } : undefined}>
+                                  <td style={{ textAlign: "center", background: rowHighlight ? "#eff6ff" : "inherit", position: rowHighlight ? "sticky" : undefined, left: rowHighlight ? 0 : undefined, zIndex: rowHighlight ? 5 : undefined, borderRight: rowHighlight ? "2px solid #93c5fd" : undefined }}>
                                     <button
                                       className="btn btn-ghost btn-icon"
                                       onClick={() => toggleResultRowExpand(activeResult.id, rowIndex)}
@@ -1253,25 +1425,36 @@ export default function MysqlSqlQuery() {
                                     </button>
                                   </td>
                                   {visibleColumns.map((column) => (
-                                    <td key={`${rowIndex}-${column}`}>
+                                    <td
+                                      key={`${rowIndex}-${column}`}
+                                      style={{ cursor: "pointer" }}
+                                      onClick={() => setSelectedRowByResult((prev) => ({
+                                        ...prev,
+                                        [activeResult.id ?? ""]: isSelected ? null : rowIndex
+                                      }))}
+                                    >
                                       {renderResultCellValue(row[resultSet.columns.indexOf(column)])}
                                     </td>
                                   ))}
                                 </tr>
                                 {isExpanded && (
                                   <tr className="expanded-row">
-                                    <td colSpan={visibleColumns.length + 1} style={{ background: "#f8fafc", padding: "12px 16px" }}>
-                                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
-                                        <button
-                                          className="btn btn-sm btn-ghost"
-                                          onClick={() => void copyToClipboard(JSON.stringify(detailObject, null, 2))}
-                                        >
-                                          {t("dataBrowser.copyRow")}
-                                        </button>
+                                    <td colSpan={visibleColumns.length + 1} style={{ padding: 0, background: "#eff6ff", position: "sticky", left: 0, zIndex: 5 }}>
+                                      <div style={{ borderLeft: "3px solid #3b82f6" }}>
+                                        <div style={{ padding: "12px 16px" }}>
+                                          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                                            <button
+                                              className="btn btn-sm btn-ghost"
+                                              onClick={() => void copyToClipboard(JSON.stringify(detailObject, null, 2))}
+                                            >
+                                              {t("dataBrowser.copyRow")}
+                                            </button>
+                                          </div>
+                                          <pre style={{ margin: 0, fontSize: "12px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                                            {JSON.stringify(detailObject, null, 2)}
+                                          </pre>
+                                        </div>
                                       </div>
-                                      <pre style={{ margin: 0, fontSize: "12px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                                        {JSON.stringify(detailObject, null, 2)}
-                                      </pre>
                                     </td>
                                   </tr>
                                 )}

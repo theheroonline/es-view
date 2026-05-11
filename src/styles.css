@@ -2378,6 +2378,22 @@ body {
   background-color: #eef6ff;
 }
 
+.excel-table-row-selected {
+  background: #eff6ff !important;
+}
+
+.excel-table-row-selected .excel-table-cell {
+  background: #eff6ff;
+}
+
+.excel-table-row-selected .excel-table-cell:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  border-left: 3px solid #3b82f6;
+  background: #eff6ff;
+}
+
 .excel-table-cell {
   padding: 0 12px;
   border-right: 1px solid #d0d7e0;

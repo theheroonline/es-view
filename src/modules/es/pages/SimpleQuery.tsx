@@ -58,6 +58,7 @@ export default function SqlQuery() {
   const [error, setError] = useState("");
   const [totalRows, setTotalRows] = useState(0);
   const [expandedSqlRows, setExpandedSqlRows] = useState<Set<number>>(new Set());
+  const [selectedSqlRow, setSelectedSqlRow] = useState<number | null>(null);
   const [showConditions, setShowConditions] = useState(false);
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
 
@@ -260,11 +261,11 @@ export default function SqlQuery() {
     setError("");
     setResult(null);
     if (!activeConnection) {
-      setError(t('sqlQuery.noConnectionSelected'));
+      setError(t('simpleQuery.noConnectionSelected'));
       return;
     }
     if (operation !== "select") {
-      setError(t('sqlQuery.sqlOnlySupportsQuery'));
+      setError(t('simpleQuery.onlySupportsQuery'));
       return;
     }
     if (!selectedIndex) {
@@ -289,7 +290,7 @@ export default function SqlQuery() {
         source: "esSqlQuery.execute",
         message: `Elasticsearch DSL query execution failed for index ${selectedIndex ?? "unknown"}`
       });
-      setError(`${t('sqlQuery.sqlError')} ${message}`);
+      setError(`${t('simpleQuery.error')} ${message}`);
     }
   };
 
@@ -360,17 +361,17 @@ export default function SqlQuery() {
       <div className="page" style={{ flex: 1, minHeight: 0, height: "100%" }}>
       <div className="flex-gap items-center" style={{ margin: '0 0 16px 0' }}>
         <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
-          <label>{t('sqlQuery.operationType')}</label>
+          <label>{t('simpleQuery.operationType')}</label>
           <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)} style={{ width: '160px' }}>
-            <option value="select">{t('sqlQuery.select')}</option>
-            <option value="insert">{t('sqlQuery.insert')}</option>
-            <option value="update">{t('sqlQuery.update')}</option>
-            <option value="delete">{t('sqlQuery.delete')}</option>
+            <option value="select">{t('simpleQuery.select')}</option>
+            <option value="insert">{t('simpleQuery.insert')}</option>
+            <option value="update">{t('simpleQuery.update')}</option>
+            <option value="delete">{t('simpleQuery.delete')}</option>
           </select>
         </div>
 
         <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
-          <label>{t('sqlQuery.selectIndex')}</label>
+          <label>{t('simpleQuery.selectIndex')}</label>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '260px' }}>
             <select
               className="form-control"
@@ -378,7 +379,7 @@ export default function SqlQuery() {
               onChange={(event) => setSelectedIndex(event.target.value || undefined)}
               style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
             >
-              <option value="">{t('sqlQuery.selectIndexPlaceholder')}</option>
+              <option value="">{t('simpleQuery.selectIndexPlaceholder')}</option>
               {indices
                 .filter((item) => !item.startsWith('.'))
                 .sort()
@@ -413,7 +414,7 @@ export default function SqlQuery() {
 
         {operation === "select" && (
           <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
-            <label>{t('sqlQuery.resultLimit')}</label>
+            <label>{t('simpleQuery.resultLimit')}</label>
             <input
               type="number"
               className="form-control"
@@ -428,12 +429,12 @@ export default function SqlQuery() {
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '20px' }}>
           <button className="btn btn-primary btn-sm" onClick={execute}>
-            <span>▶</span> {t('sqlQuery.query')}
+            <span>▶</span> {t('simpleQuery.query')}
           </button>
 
           {operation === "select" && (
             <button className="btn btn-secondary btn-sm" onClick={addCondition}>
-              <span>+</span> {t('sqlQuery.filter')}
+              <span>+</span> {t('simpleQuery.filter')}
             </button>
           )}
 
@@ -443,7 +444,7 @@ export default function SqlQuery() {
               state={fieldFilter}
               onChange={setFieldFilter}
               align="left"
-              label={t('sqlQuery.fieldFilter')}
+              label={t('simpleQuery.fieldFilter')}
             />
           )}
         </div>
@@ -452,7 +453,7 @@ export default function SqlQuery() {
       {operation === "select" && showConditions && (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '16px' }}>
-                <label style={{ fontWeight: 600, margin: 0 }}>{t('sqlQuery.whereCondition')}</label>
+                <label style={{ fontWeight: 600, margin: 0 }}>{t('simpleQuery.whereCondition')}</label>
                 <button className="btn btn-sm btn-ghost" onClick={() => setShowConditions(false)}>
                   {t('common.close')}
                 </button>
@@ -486,7 +487,7 @@ export default function SqlQuery() {
                       onChange={(event) => handleConditionChange(idx, { field: event.target.value })}
                       disabled={!cond.enabled}
                     >
-                      <option value="">{t('sqlQuery.selectField')}</option>
+                      <option value="">{t('simpleQuery.selectField')}</option>
                       {availableFields.map((f) => (
                         <option key={f} value={f}>{f}</option>
                       ))}
@@ -504,7 +505,7 @@ export default function SqlQuery() {
                       <option value="<">&lt;</option>
                       <option value="<=">&lt;=</option>
                       <option value="LIKE">LIKE</option>
-                      <option value="RANGE">{t('sqlQuery.timeRange')}</option>
+                      <option value="RANGE">{t('simpleQuery.timeRange')}</option>
                     </select>
                     {cond.operator === 'RANGE' ? (
                       <ConfigProvider locale={i18n.language === "zh" ? zhCN : enUS}>
@@ -515,7 +516,7 @@ export default function SqlQuery() {
                           onChange={(dates) => handleConditionChange(idx, { rangeValue: dates })}
                           presets={presets}
                           style={{ width: '100%', height: '32px' }}
-                          placeholder={[t('sqlQuery.startTime'), t('sqlQuery.endTime')]}
+                          placeholder={[t('simpleQuery.startTime'), t('simpleQuery.endTime')]}
                           disabled={!cond.enabled}
                         />
                       </ConfigProvider>
@@ -524,14 +525,14 @@ export default function SqlQuery() {
                         className="form-control"
                         value={cond.value}
                         onChange={(event) => handleConditionChange(idx, { value: event.target.value })}
-                        placeholder={t('sqlQuery.enterValue')}
+                        placeholder={t('simpleQuery.enterValue')}
                         disabled={!cond.enabled}
                       />
                     )}
                     <button
                       className="btn btn-sm btn-ghost text-danger"
                       onClick={() => removeCondition(idx)}
-                      title={t('sqlQuery.deleteCondition')}
+                      title={t('simpleQuery.deleteCondition')}
                     >
                       {t('common.delete')}
                     </button>
@@ -544,12 +545,12 @@ export default function SqlQuery() {
           <div className="form-grid" style={{ marginTop: '16px' }}>
             {operation !== "select" && (
               <div className="span-2">
-                <label>{t('sqlQuery.setValues')}</label>
+                <label>{t('simpleQuery.setValues')}</label>
                 <textarea className="form-control json-editor" style={{ height: '100px' }} value={payload} onChange={(event) => setPayload(event.target.value)} />
               </div>
             )}
             <div className="span-2">
-              <label>{t('sqlQuery.queryPreview')}</label>
+              <label>{t('simpleQuery.queryPreview')}</label>
               <textarea className="form-control json-editor" style={{ height: '100px', background: '#fbfbfd', color: '#1d1d1f' }} value={sql} onChange={(event) => setSql(event.target.value)} readOnly />
             </div>
           </div>
@@ -560,13 +561,13 @@ export default function SqlQuery() {
       <div className="card" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="card-header">
           <h3 className="card-title">
-            {t('sqlQuery.queryResult', { count: result ? totalRows : 0 })}
+            {t('simpleQuery.queryResult', { count: result ? totalRows : 0 })}
           </h3>
         </div>
 
         {!result && (
           <div className="card-body" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p className="muted" style={{ textAlign: 'center' }}>{t('sqlQuery.noResults')}</p>
+            <p className="muted" style={{ textAlign: 'center' }}>{t('simpleQuery.noResults')}</p>
           </div>
         )}
 
@@ -587,38 +588,51 @@ export default function SqlQuery() {
                 </tr>
               </thead>
               <tbody>
-                {result.rows.map((row, rowIndex) => (
+                {result.rows.map((row, rowIndex) => {
+                  const isExpanded = expandedSqlRows.has(rowIndex);
+                  const isHighlighted = selectedSqlRow === rowIndex;
+                  const rowHighlight = isExpanded || isHighlighted;
+                  return (
                   <Fragment key={`row-${rowIndex}`}>
-                    <tr>
-                      <td style={{ textAlign: 'center' }}>
+                    <tr style={rowHighlight ? { background: '#eff6ff' } : undefined}>
+                      <td style={{ textAlign: 'center', background: rowHighlight ? '#eff6ff' : 'inherit', position: rowHighlight ? 'sticky' : undefined, left: rowHighlight ? 0 : undefined, zIndex: rowHighlight ? 5 : undefined, borderRight: rowHighlight ? '2px solid #93c5fd' : undefined }}>
                         <button
                           className="btn btn-ghost btn-icon"
                           onClick={() => toggleSqlRowExpand(rowIndex)}
                           style={{ fontSize: '10px', padding: '2px 6px' }}
                         >
-                          {expandedSqlRows.has(rowIndex) ? '▼' : '▶'}
+                          {isExpanded ? '▼' : '▶'}
                         </button>
                       </td>
                       {result.columns.map((col, colIndex) => (
-                        <td key={`row${rowIndex}-${colIndex}-${col}`}>
+                        <td
+                          key={`row${rowIndex}-${colIndex}-${col}`}
+                          style={{ cursor: 'pointer', background: rowHighlight ? '#eff6ff' : undefined }}
+                          onClick={() => setSelectedSqlRow(isHighlighted ? null : rowIndex)}
+                        >
                           {renderSqlCellValue(row[colIndex])}
                         </td>
                       ))}
                     </tr>
-                    {expandedSqlRows.has(rowIndex) && (
+                    {isExpanded && (
                       <tr className="expanded-row">
-                        <td colSpan={result.columns.length + 1} style={{ background: '#f8fafc', padding: '12px 16px' }}>
-                          <pre style={{ margin: 0, fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                            {JSON.stringify(
-                              Object.fromEntries(result.columns.map((col, ci) => [col, row[ci]])),
-                              null, 2
-                            )}
-                          </pre>
+                        <td colSpan={result.columns.length + 1} style={{ padding: 0, background: '#eff6ff', position: 'sticky', left: 0, zIndex: 5 }}>
+                          <div style={{ borderLeft: '3px solid #3b82f6' }}>
+                            <div style={{ padding: '12px 16px' }}>
+                              <pre style={{ margin: 0, fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                {JSON.stringify(
+                                  Object.fromEntries(result.columns.map((col, ci) => [col, row[ci]])),
+                                  null, 2
+                                )}
+                              </pre>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     )}
                   </Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

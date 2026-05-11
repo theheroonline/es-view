@@ -13,6 +13,7 @@ interface EsDataBrowserResultsProps {
   renderCellValue: (value: unknown, truncate?: boolean) => React.ReactNode;
   rows: SearchRow[];
   selectedDocs: Set<string>;
+  selectedRowId: string | null;
   selectedRows: SearchRow[];
   t: TFunction;
   viewMode: "table" | "json";
@@ -22,6 +23,7 @@ interface EsDataBrowserResultsProps {
   onEditDoc: (row: SearchRow) => void;
   onSelectAllRows: (checked: boolean) => void;
   onSelectRow: (id: string) => void;
+  onSelectRowHighlight: (id: string | null) => void;
   onSetViewMode: (mode: "table" | "json") => void;
   onToggleRowExpand: (id: string) => void;
   onRowContextMenu: (event: React.MouseEvent, row: SearchRow, field?: string, value?: unknown) => void;
@@ -33,6 +35,7 @@ export function EsDataBrowserResults({
   renderCellValue,
   rows,
   selectedDocs,
+  selectedRowId,
   selectedRows,
   t,
   viewMode,
@@ -42,6 +45,7 @@ export function EsDataBrowserResults({
   onEditDoc,
   onSelectAllRows,
   onSelectRow,
+  onSelectRowHighlight,
   onSetViewMode,
   onToggleRowExpand,
   onRowContextMenu,
@@ -92,17 +96,24 @@ export function EsDataBrowserResults({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => (
+                    {rows.map((row) => {
+                      const isHighlighted = selectedRowId === row._id;
+                      return (
                       <Fragment key={row._id}>
-                        <tr onContextMenu={(event) => onRowContextMenu(event, row)} className={expandedRows.has(row._id) ? "row-expanded" : ""}>
-                          <td style={{ textAlign: "center" }}>
+                        <tr
+                          onContextMenu={(event) => onRowContextMenu(event, row)}
+                          className={expandedRows.has(row._id) ? "row-expanded" : ""}
+                          style={isHighlighted ? { background: "#eff6ff" } : undefined}
+                        >
+                          <td style={{ textAlign: "center", background: isHighlighted ? "#eff6ff" : "inherit" }}>
                             <input
                               type="checkbox"
                               checked={selectedDocs.has(row._id)}
                               onChange={() => onSelectRow(row._id)}
+                              onClick={(e) => e.stopPropagation()}
                             />
                           </td>
-                          <td style={{ textAlign: "center" }}>
+                          <td style={{ textAlign: "center", background: isHighlighted ? "#eff6ff" : "inherit" }}>
                             <button
                               className="btn btn-ghost btn-icon"
                               onClick={() => onToggleRowExpand(row._id)}
@@ -111,16 +122,24 @@ export function EsDataBrowserResults({
                               {expandedRows.has(row._id) ? "▼" : "▶"}
                             </button>
                           </td>
-                          <td onContextMenu={(event) => { event.stopPropagation(); onRowContextMenu(event, row, "_id", row._id); }}>{row._id}</td>
+                          <td
+                            style={{ cursor: "pointer", background: isHighlighted ? "#eff6ff" : undefined, position: isHighlighted ? "sticky" : undefined, left: isHighlighted ? 0 : undefined, zIndex: isHighlighted ? 5 : undefined, borderLeft: isHighlighted ? "3px solid #3b82f6" : undefined }}
+                            onContextMenu={(event) => { event.stopPropagation(); onRowContextMenu(event, row, "_id", row._id); }}
+                            onClick={() => onSelectRowHighlight(isHighlighted ? null : row._id)}
+                          >
+                            {row._id}
+                          </td>
                           {allColumns.map((column) => (
                             <td
                               key={column}
+                              style={{ cursor: "pointer", background: isHighlighted ? "#eff6ff" : undefined }}
                               onContextMenu={(event) => { event.stopPropagation(); onRowContextMenu(event, row, column, row._source?.[column]); }}
+                              onClick={() => onSelectRowHighlight(isHighlighted ? null : row._id)}
                             >
                               {renderCellValue(row._source?.[column])}
                             </td>
                           ))}
-                          <td className="table-actions" style={{ textAlign: "right" }}>
+                          <td className="table-actions" style={{ textAlign: "right", background: isHighlighted ? "#eff6ff" : undefined }}>
                             <div className="flex-gap justify-end" style={{ gap: "4px" }}>
                               <button className="btn btn-sm btn-ghost" onClick={() => onEditDoc(row)}>{t("common.edit")}</button>
                               <button className="btn btn-sm btn-ghost text-danger" onClick={() => onDeleteDoc(row._index, row._id)}>{t("common.delete")}</button>
@@ -137,7 +156,8 @@ export function EsDataBrowserResults({
                           </tr>
                         )}
                       </Fragment>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
