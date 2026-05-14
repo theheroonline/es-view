@@ -239,17 +239,8 @@ export function useTableLifecycleActions({
         await fetchData(db, table, 1, defaultDataState.pageSize);
       } else {
         setDataState(defaultDataState);
-        saveTableDataCache(tableKey, {
-          columns: [],
-          rows: [],
-          total: 0,
-          page: 1,
-          pageSize: defaultDataState.pageSize,
-          columnMeta: columns,
-          tableInfo: { columns, rowCount, info },
-          dataColumns: [],
-          cachedAt: Date.now(),
-        });
+        // Don't cache empty data for structure/info tabs — prevents stale empty cache
+        // from blocking data fetch when the user later opens the same table in data mode.
       }
     } catch (err) {
       if (latestDataRequestRef.current !== requestId || currentLoadingTableKeyRef.current !== tableKey) {

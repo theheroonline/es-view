@@ -100,7 +100,11 @@ export function useTableLifecycleEffects({
     const cacheKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
     const cached = getTableDataCache()[cacheKey];
 
-    if (cached) {
+    // Skip stale empty cache when user wants data tab — this can happen
+    // when a table was previously opened in structure/info mode only.
+    // Also remove from loadedTableKeys so the fetch proceeds below.
+    const isEmptyCache = cached != null && cached.total === 0 && cached.rows.length === 0;
+    if (cached != null && !(isEmptyCache && activeOpenedTable.view === "data")) {
       const safePage = cached.total > 0
         ? Math.min(cached.page, Math.max(1, Math.ceil(cached.total / cached.pageSize)))
         : 1;
@@ -133,6 +137,11 @@ export function useTableLifecycleEffects({
       loadedTableKeys.add(loadKey);
       prevOpenedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
       return;
+    }
+
+    // Empty cache was skipped — don't let loadedTableKeys block the refetch
+    if (isEmptyCache && activeOpenedTable.view === "data") {
+      loadedTableKeys.delete(loadKey);
     }
 
     // Not cached — check if this table has been loaded before.
