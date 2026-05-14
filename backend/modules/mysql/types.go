@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"sync"
 
@@ -98,6 +99,7 @@ type MysqlImportSqlRequest struct {
 type MysqlConnectionManager struct {
 	mu          sync.RWMutex
 	connections map[string]*sql.DB
+	heartbeats  map[string]context.CancelFunc // stop funcs for heartbeat goroutines
 	sshTunnels  *sshtunnel.Manager
 }
 
@@ -105,6 +107,7 @@ type MysqlConnectionManager struct {
 func NewMysqlConnectionManager() *MysqlConnectionManager {
 	return &MysqlConnectionManager{
 		connections: make(map[string]*sql.DB),
+		heartbeats:  make(map[string]context.CancelFunc),
 		sshTunnels:  sshtunnel.NewManager(),
 	}
 }
@@ -112,11 +115,17 @@ func NewMysqlConnectionManager() *MysqlConnectionManager {
 func (m *MysqlConnectionManager) CloseAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, cancel := range m.heartbeats {
+		if cancel != nil {
+			cancel()
+		}
+	}
 	for _, db := range m.connections {
 		if db != nil {
 			_ = db.Close()
 		}
 	}
 	m.connections = make(map[string]*sql.DB)
+	m.heartbeats = make(map[string]context.CancelFunc)
 	m.sshTunnels.CloseAll()
 }

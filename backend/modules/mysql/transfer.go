@@ -129,29 +129,29 @@ func (s *TransferService) ImportSQL(ctx context.Context, req MysqlImportSqlReque
 		return "", err
 	}
 
-	conn, err := db.Conn(context.Background())
+	conn, err := db.Conn(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to open dedicated connection: %w", err)
 	}
 	defer conn.Close()
 
 	if req.Database != "" {
-		if _, err := conn.ExecContext(context.Background(), fmt.Sprintf("USE %s", escapeMysqlIdentifier(req.Database))); err != nil {
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf("USE %s", escapeMysqlIdentifier(req.Database))); err != nil {
 			return "", fmt.Errorf("failed to switch database: %w", err)
 		}
 	}
 
-	if _, err := conn.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS=0"); err != nil {
+	if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=0"); err != nil {
 		return "", fmt.Errorf("failed to disable foreign key checks: %w", err)
 	}
-	defer conn.ExecContext(context.Background(), "SET FOREIGN_KEY_CHECKS=1")
+	defer conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=1")
 
 	executed := 0
 	for _, statement := range statements {
 		if !shouldExecuteMysqlStatement(statement) {
 			continue
 		}
-		if _, err := conn.ExecContext(context.Background(), statement); err != nil {
+		if _, err := conn.ExecContext(ctx, statement); err != nil {
 			return "", fmt.Errorf("failed to execute statement %d: %w", executed+1, err)
 		}
 		executed++
@@ -195,7 +195,9 @@ func (s *TransferService) saveDumpToFile(ctx context.Context, defaultName, conte
 }
 
 func (s *TransferService) buildDatabaseDump(db *sql.DB, database string, includeData bool) (string, error) {
-	rows, err := db.Query(fmt.Sprintf("SHOW TABLES FROM %s", escapeMysqlIdentifier(database)))
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("SHOW TABLES FROM %s", escapeMysqlIdentifier(database)))
+	cancel()
 	if err != nil {
 		return "", fmt.Errorf("failed to get tables: %w", err)
 	}
@@ -309,7 +311,7 @@ func (s *TransferService) buildSelectedTablesDump(db *sql.DB, database string, t
 
 func (s *TransferService) readCreateTableSQL(db *sql.DB, database, table string) (string, error) {
 	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", escapeMysqlIdentifier(database), escapeMysqlIdentifier(table))
-	rows, err := db.Query(query)
+	rows, err := db.QueryContext(context.Background(), query)
 	if err != nil {
 		return "", err
 	}
@@ -333,7 +335,7 @@ func (s *TransferService) readCreateTableSQL(db *sql.DB, database, table string)
 
 func (s *TransferService) buildTableDataDump(db *sql.DB, database, table string) (string, error) {
 	query := fmt.Sprintf("SELECT * FROM %s.%s", escapeMysqlIdentifier(database), escapeMysqlIdentifier(table))
-	rows, err := db.Query(query)
+	rows, err := db.QueryContext(context.Background(), query)
 	if err != nil {
 		return "", err
 	}

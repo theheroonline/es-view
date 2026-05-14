@@ -440,6 +440,11 @@ body {
   color: #0369a1;
 }
 
+.mdb-connection-badge-failed {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
 .mdb-tree-count {
   flex-shrink: 0;
   font-size: 11px;

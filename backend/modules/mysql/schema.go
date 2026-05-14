@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -15,7 +16,9 @@ func (m *Module) MysqlListDatabases(connectionID string) ([]string, error) {
 		return nil, fmt.Errorf("connection not found: %s", connectionID)
 	}
 
-	rows, err := db.Query("SHOW DATABASES")
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list databases: %w", err)
 	}
@@ -51,7 +54,9 @@ func (m *Module) MysqlListTables(connectionID string, database string) ([]string
 		query = fmt.Sprintf("SHOW TABLES FROM `%s`", database)
 	}
 
-	rows, err := db.Query(query)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	rows, err := queryWithRetry(db, query, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
@@ -88,7 +93,9 @@ func (m *Module) MysqlDescribeTable(connectionID string, database string, tableN
 		query = fmt.Sprintf("DESCRIBE `%s`", tableName)
 	}
 
-	rows, err := db.Query(query)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
@@ -125,7 +132,9 @@ func (m *Module) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta
 		query = fmt.Sprintf("SHOW INDEX FROM `%s`", req.TableName)
 	}
 
-	rows, err := db.Query(query)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list indexes: %w", err)
 	}
@@ -239,7 +248,9 @@ func (m *Module) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
 		query = fmt.Sprintf("CREATE %sINDEX `%s` ON `%s` (%s)%s", uniqueStr, req.IndexName, req.TableName, columnList, typeStr)
 	}
 
-	if _, err := db.Exec(query); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, query); err != nil {
 		return "", fmt.Errorf("failed to create index: %w", err)
 	}
 
@@ -264,7 +275,9 @@ func (m *Module) MysqlDropIndex(req MysqlDropIndexRequest) (string, error) {
 		query = fmt.Sprintf("DROP INDEX `%s` ON `%s`", req.IndexName, req.TableName)
 	}
 
-	if _, err := db.Exec(query); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, query); err != nil {
 		return "", fmt.Errorf("failed to drop index: %w", err)
 	}
 

@@ -55,6 +55,13 @@ export function AppSidebarContent({
       }
 
       connection.setFocusedConnectionId(profile.id);
+
+      // If status is "failed", treat as a reconnect attempt
+      if (status === "failed") {
+        void connection.handleConnectionChange(profile.id, { forceValidate: true });
+        return;
+      }
+
       if (isConnectionActive(profile)) {
         if (wasAlreadyFocused) {
           // Scenario A early-returns without navigating -- switch to the engine's default route here
@@ -93,11 +100,18 @@ export function AppSidebarContent({
           <span className={`mdb-status-dot status-${status}`} />
           <span className="mdb-connection-name">{profile.name}</span>
         </span>
-        {isConnectionFocused(profile) ? (
-          <span className="mdb-connection-badge">{t("connections.currentInUse")}</span>
-        ) : isConnectionActive(profile) ? (
-          <span className="mdb-connection-badge mdb-connection-badge-active">{t("connections.connected")}</span>
-        ) : null}
+        {status === "failed" && (
+          <span className="mdb-connection-badge mdb-connection-badge-failed" style={{ cursor: "pointer" }} title={t("connections.reconnect")}>
+            {t("connections.reconnectHint")}
+          </span>
+        )}
+        {status !== "failed" && (
+          isConnectionFocused(profile) ? (
+            <span className="mdb-connection-badge">{t("connections.currentInUse")}</span>
+          ) : isConnectionActive(profile) ? (
+            <span className="mdb-connection-badge mdb-connection-badge-active">{t("connections.connected")}</span>
+          ) : null
+        )}
       </div>
     );
   };

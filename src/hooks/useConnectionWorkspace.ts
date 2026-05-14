@@ -106,6 +106,8 @@ export function useConnectionWorkspace() {
   const [connectionActionError, setConnectionActionError] = useState("");
   const [connectionStatusById, setConnectionStatusById] = useState<Record<string, ConnectionStatus>>({});
   const pendingConnectionRef = useRef<Map<string, Promise<boolean>>>(new Map());
+  const activeMysqlIdRef = useRef<string | null>(null); // tracks active MySQL connection for health check
+  const connectionStatusRef = useRef<Record<string, ConnectionStatus>>({}); // tracks connection status for health check
   const [isWorkspaceSuspendedByEngine, setIsWorkspaceSuspendedByEngine] = useState<Record<EngineType, boolean>>({
     elasticsearch: false,
     mysql: false,
@@ -229,26 +231,41 @@ export function useConnectionWorkspace() {
 
     // Scenario B: already active but not focused → switch focus and restore workspace
     if (alreadyActive) {
-      focusConnection(connectionId, engine);
-      setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: false }));
-      markConnectionSuccess(connectionId);
-
-      // Restore workspace data for the connection we're focusing
-      if (engine === "mysql") {
+      // If status is "failed", force a reconnect instead of just restoring
+      if (connectionStatusById[connectionId] === "failed") {
         try {
-          const databases = await mysqlListDatabases(connectionId);
-          setDatabasesForConnection(connectionId, databases);
-        } catch (error) {
-          logError(error, {
-            source: "app.connection.mysql.listDatabases",
-            message: "Failed to restore MySQL databases after switching focus",
-          });
-          setDatabasesForConnection(connectionId, []);
+          if (engine === "mysql") {
+            await mysqlDisconnect(connectionId);
+          } else if (engine === "redis") {
+            await redisDisconnect(connectionId);
+          }
+        } catch {
+          // Ignore disconnect errors, proceed with reconnect
         }
-      }
+        deactivateConnection(connectionId, engine);
+        // Fall through to Scenario C for a fresh connection
+      } else {
+        focusConnection(connectionId, engine);
+        setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: false }));
+        markConnectionSuccess(connectionId);
 
-      await navigate(config.defaultRoute);
-      return true;
+        // Restore workspace data for the connection we're focusing
+        if (engine === "mysql") {
+          try {
+            const databases = await mysqlListDatabases(connectionId);
+            setDatabasesForConnection(connectionId, databases);
+          } catch (error) {
+            logError(error, {
+              source: "app.connection.mysql.listDatabases",
+              message: "Failed to restore MySQL databases after switching focus",
+            });
+            setDatabasesForConnection(connectionId, []);
+          }
+        }
+
+        await navigate(config.defaultRoute);
+        return true;
+      }
     }
 
     // Scenario C: new connection → activate + backend connect
@@ -522,6 +539,48 @@ export function useConnectionWorkspace() {
       }
     }
   }, [activeConnectionIdsByEngine, isWorkspaceSuspendedByEngine]);
+
+  // Periodic MySQL health check: runs every 60s when the connection is active.
+  // Uses a ref for the connection ID to avoid re-creating the interval on status changes.
+  // The interval checks the current status from a ref to avoid stale closures.
+  useEffect(() => {
+    connectionStatusRef.current = connectionStatusById;
+  }, [connectionStatusById]);
+
+  useEffect(() => {
+    const activeMysqlId = activeConnectionIdsByEngine.mysql?.[0];
+    if (!activeMysqlId) {
+      activeMysqlIdRef.current = null;
+      return;
+    }
+    activeMysqlIdRef.current = activeMysqlId;
+
+    const interval = setInterval(async () => {
+      const connId = activeMysqlIdRef.current;
+      if (!connId) return;
+
+      // Skip health check if connection is not in "success" state
+      const currentStatus = connectionStatusRef.current[connId] ?? "idle";
+      if (currentStatus !== "success") return;
+
+      try {
+        const { mysqlPing: ping } = await import("../modules/mysql/services/connectionClient");
+        await ping(connId);
+      } catch {
+        logError(new Error("MySQL health check failed"), {
+          source: "app.connection.mysql.healthCheck",
+          message: `Heartbeat ping failed for MySQL connection ${connId}`,
+        });
+        setConnectionStatusById((prev) => ({
+          ...prev,
+          [connId]: "failed",
+        }));
+        setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, mysql: true }));
+      }
+    }, 60_000);
+
+    return () => clearInterval(interval);
+  }, [activeConnectionIdsByEngine.mysql]);
 
   const isWorkspaceSuspended = activeEngine ? isWorkspaceSuspendedByEngine[activeEngine] : false;
 

@@ -61,17 +61,18 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	}
 	maxIdleConns := req.MaxIdleConns
 	if maxIdleConns <= 0 {
-		maxIdleConns = 10
+		maxIdleConns = 5
 	}
 	connMaxLifetime := time.Duration(req.ConnMaxLifetime) * time.Second
 	if connMaxLifetime <= 0 {
-		connMaxLifetime = 5 * time.Minute
+		connMaxLifetime = 25 * time.Minute
 	}
+	connMaxIdleTime := 3 * time.Minute
 
-	db.SetConnMaxLifetime(connMaxLifetime)
-	db.SetConnMaxIdleTime(connMaxLifetime)
-	db.SetMaxIdleConns(maxIdleConns)
 	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetConnMaxLifetime(connMaxLifetime)
+	db.SetConnMaxIdleTime(connMaxIdleTime)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -86,6 +87,17 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	oldDB := m.connManager.connections[req.ConnectionID]
 	m.connManager.connections[req.ConnectionID] = db
 	m.connManager.mu.Unlock()
+
+	// Stop any existing heartbeat for this connection
+	m.connManager.mu.Lock()
+	if oldCancel := m.connManager.heartbeats[req.ConnectionID]; oldCancel != nil {
+		oldCancel()
+	}
+	m.connManager.heartbeats[req.ConnectionID] = nil
+	m.connManager.mu.Unlock()
+
+	// Start heartbeat goroutine to keep the connection alive
+	go m.startHeartbeat(req.ConnectionID, db)
 
 	// Close old pool in background to avoid blocking the swap
 	if oldDB != nil {
@@ -108,6 +120,11 @@ func (m *Module) MysqlDisconnect(connectionID string) (string, error) {
 	db, exists := m.connManager.connections[connectionID]
 	if exists {
 		delete(m.connManager.connections, connectionID)
+	}
+	// Stop heartbeat goroutine
+	if cancel := m.connManager.heartbeats[connectionID]; cancel != nil {
+		cancel()
+		delete(m.connManager.heartbeats, connectionID)
 	}
 	m.connManager.mu.Unlock()
 
@@ -136,4 +153,55 @@ func (m *Module) MysqlPing(connectionID string) (string, error) {
 		return "", fmt.Errorf("ping failed: %w", err)
 	}
 	return "Pong", nil
+}
+
+// startHeartbeat runs a background goroutine that periodically pings the
+// database to keep the connection alive. It stops when the context is cancelled.
+func (m *Module) startHeartbeat(connectionID string, db *sql.DB) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	m.connManager.mu.Lock()
+	m.connManager.heartbeats[connectionID] = cancel
+	m.connManager.mu.Unlock()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	consecutiveFails := 0
+	const maxConsecutiveFails = 3
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("[mysql] heartbeat stopped for connection %s", connectionID)
+			return
+		case <-ticker.C:
+			m.connManager.mu.RLock()
+			currentDB := m.connManager.connections[connectionID]
+			m.connManager.mu.RUnlock()
+			if currentDB != db {
+				return
+			}
+
+			pingCtx, pingCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := db.PingContext(pingCtx)
+			pingCancel()
+			if err != nil {
+				consecutiveFails++
+				log.Printf("[mysql] heartbeat ping failed for connection %s (%d/%d): %v", connectionID, consecutiveFails, maxConsecutiveFails, err)
+				if consecutiveFails >= maxConsecutiveFails {
+					log.Printf("[mysql] removing connection %s after %d consecutive ping failures", connectionID, maxConsecutiveFails)
+					// Clean up before returning to avoid goroutine/resource leaks
+					m.connManager.mu.Lock()
+					delete(m.connManager.connections, connectionID)
+					delete(m.connManager.heartbeats, connectionID)
+					m.connManager.mu.Unlock()
+					db.Close()
+					return
+				}
+			} else {
+				consecutiveFails = 0
+			}
+		}
+	}
 }

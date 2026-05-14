@@ -19,20 +19,15 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	defer cancel()
 
 	if !isMysqlResultSetQuery(query) {
-		execResult, err := db.ExecContext(ctx, query)
+		_, err := execWithRetry(db, query, ctx)
 		if err != nil {
 			return MysqlQueryResult{}, fmt.Errorf("query failed: %w", err)
 		}
 
-		affectedRows, err := execResult.RowsAffected()
-		if err != nil {
-			affectedRows = 0
-		}
-
-		return MysqlQueryResult{Columns: []string{}, Rows: [][]interface{}{}, AffectedRows: affectedRows, IsResultSet: false}, nil
+		return MysqlQueryResult{Columns: []string{}, Rows: [][]any{}, AffectedRows: 0, IsResultSet: false}, nil
 	}
 
-	rows, err := db.QueryContext(ctx, query)
+	rows, err := queryWithRetry(db, query, ctx)
 	if err != nil {
 		return MysqlQueryResult{}, fmt.Errorf("query failed: %w", err)
 	}
@@ -43,11 +38,11 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 		return MysqlQueryResult{}, fmt.Errorf("failed to get columns: %w", err)
 	}
 
-	result := MysqlQueryResult{Columns: columns, Rows: [][]interface{}{}, IsResultSet: true}
+	result := MysqlQueryResult{Columns: columns, Rows: [][]any{}, IsResultSet: true}
 
 	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
+		values := make([]any, len(columns))
+		valuePtrs := make([]any, len(columns))
 		for i := range columns {
 			valuePtrs[i] = &values[i]
 		}

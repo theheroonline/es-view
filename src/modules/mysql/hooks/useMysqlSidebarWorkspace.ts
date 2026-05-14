@@ -213,7 +213,7 @@ export function useMysqlSidebarWorkspace({
     setSelectedTable(undefined);
     setSelectedSidebarTables([]);
     setSidebarSelectionAnchor(null);
-    if (!tablesByDb[database]) {
+    if (tablesByDb[database] === undefined) {
       await loadMysqlTables(database);
     }
     await navigate("/mysql/tables");
@@ -248,7 +248,7 @@ export function useMysqlSidebarWorkspace({
 
     if (!expandedSidebarDatabases.includes(database)) {
       await handleMysqlOpenDatabase(database);
-    } else if (!tablesByDb[database]) {
+    } else if (tablesByDb[database] === undefined) {
       await loadMysqlTables(database);
     }
 
