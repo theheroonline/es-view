@@ -7,6 +7,7 @@ require (
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/wailsapp/wails/v2 v2.11.0
 	golang.org/x/crypto v0.50.0
+	golang.org/x/sync v0.20.0
 )
 
 require (

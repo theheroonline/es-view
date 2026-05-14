@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	goMySQL "github.com/go-sql-driver/mysql"
 
 	"multi-database-browsing/backend/infra/sshtunnel"
+		"multi-database-browsing/backend/shared"
 )
 
 func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
@@ -40,7 +41,7 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 		targetAddr := fmt.Sprintf("%s:%d", req.Host, req.Port)
 		localPort, err := tunnel.ConnectAndForward(targetAddr)
 		if err != nil {
-			return "", fmt.Errorf("failed to establish SSH tunnel: %w", err)
+			return "", shared.NewConnectionFailed("mysql", "failed to establish SSH tunnel: "+err.Error())
 		}
 		addr = fmt.Sprintf("127.0.0.1:%d", localPort)
 	} else {
@@ -52,7 +53,7 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return "", fmt.Errorf("failed to open connection: %w", err)
+		return "", shared.NewConnectionFailed("mysql", "failed to open connection: "+err.Error())
 	}
 
 	maxOpenConns := req.MaxOpenConns
@@ -79,25 +80,28 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		return "", fmt.Errorf("failed to ping database: %w", err)
+		return "", shared.NewConnectionFailed("mysql", "failed to ping database: "+err.Error())
 	}
 
-	// Graceful reconnect: swap atomically, close old pool in background
+	// Create heartbeat context and cancel function BEFORE starting goroutine.
+	// This ensures MysqlDisconnect can find and call cancel() immediately.
+	hbCtx, hbCancel := context.WithCancel(context.Background())
+
+	// Atomic swap: connection + heartbeat cancel in a single lock scope.
 	m.connManager.mu.Lock()
 	oldDB := m.connManager.connections[req.ConnectionID]
+	oldHeartbeatCancel := m.connManager.heartbeats[req.ConnectionID]
 	m.connManager.connections[req.ConnectionID] = db
+	m.connManager.heartbeats[req.ConnectionID] = hbCancel
 	m.connManager.mu.Unlock()
 
-	// Stop any existing heartbeat for this connection
-	m.connManager.mu.Lock()
-	if oldCancel := m.connManager.heartbeats[req.ConnectionID]; oldCancel != nil {
-		oldCancel()
+	// Stop existing heartbeat before starting the new one.
+	if oldHeartbeatCancel != nil {
+		oldHeartbeatCancel()
 	}
-	m.connManager.heartbeats[req.ConnectionID] = nil
-	m.connManager.mu.Unlock()
 
-	// Start heartbeat goroutine to keep the connection alive
-	go m.startHeartbeat(req.ConnectionID, db)
+	// Start new heartbeat with pre-created context.
+	go m.startHeartbeat(req.ConnectionID, db, hbCtx)
 
 	// Close old pool in background to avoid blocking the swap
 	if oldDB != nil {
@@ -107,7 +111,9 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 			// Give in-flight queries a moment to finish
 			time.Sleep(2 * time.Second)
 			if err := oldDB.Close(); err != nil {
-				log.Printf("[mysql] error closing old connection pool %s: %v", req.ConnectionID, err)
+				shared.Logger.Error("error closing old connection pool",
+					slog.String("connection_id", req.ConnectionID),
+					slog.Any("error", err))
 			}
 		}()
 	}
@@ -129,11 +135,13 @@ func (m *Module) MysqlDisconnect(connectionID string) (string, error) {
 	m.connManager.mu.Unlock()
 
 	if !exists {
-		return "", fmt.Errorf("connection not found: %s", connectionID)
+		return "", shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
 	}
 
 	if err := db.Close(); err != nil {
-		log.Printf("[mysql] error closing connection pool %s: %v", connectionID, err)
+		shared.Logger.Error("error closing connection pool",
+			slog.String("connection_id", connectionID),
+			slog.Any("error", err))
 	}
 	_ = m.connManager.sshTunnels.Close(connectionID)
 	return "Disconnected successfully", nil
@@ -144,25 +152,20 @@ func (m *Module) MysqlPing(connectionID string) (string, error) {
 	db, exists := m.connManager.connections[connectionID]
 	m.connManager.mu.RUnlock()
 	if !exists {
-		return "", fmt.Errorf("connection not found: %s", connectionID)
+		return "", shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
-		return "", fmt.Errorf("ping failed: %w", err)
+		return "", shared.NewAppError(shared.ErrTimeout, "ping failed: "+err.Error(), "mysql")
 	}
 	return "Pong", nil
 }
 
 // startHeartbeat runs a background goroutine that periodically pings the
-// database to keep the connection alive. It stops when the context is cancelled.
-func (m *Module) startHeartbeat(connectionID string, db *sql.DB) {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	m.connManager.mu.Lock()
-	m.connManager.heartbeats[connectionID] = cancel
-	m.connManager.mu.Unlock()
+// database to keep the connection alive. It stops when ctx is cancelled.
+func (m *Module) startHeartbeat(connectionID string, db *sql.DB, ctx context.Context) {
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -173,7 +176,7 @@ func (m *Module) startHeartbeat(connectionID string, db *sql.DB) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[mysql] heartbeat stopped for connection %s", connectionID)
+			shared.Logger.Info("mysql heartbeat stopped", slog.String("connection_id", connectionID))
 			return
 		case <-ticker.C:
 			m.connManager.mu.RLock()
@@ -188,9 +191,14 @@ func (m *Module) startHeartbeat(connectionID string, db *sql.DB) {
 			pingCancel()
 			if err != nil {
 				consecutiveFails++
-				log.Printf("[mysql] heartbeat ping failed for connection %s (%d/%d): %v", connectionID, consecutiveFails, maxConsecutiveFails, err)
+				shared.Logger.Error("mysql heartbeat ping failed",
+					slog.String("connection_id", connectionID),
+					slog.Any("error", err),
+					slog.Int("consecutive_fails", consecutiveFails))
 				if consecutiveFails >= maxConsecutiveFails {
-					log.Printf("[mysql] removing connection %s after %d consecutive ping failures", connectionID, maxConsecutiveFails)
+					shared.Logger.Warn("removing connection after heartbeat ping failures",
+						slog.String("connection_id", connectionID),
+						slog.Int("failures", maxConsecutiveFails))
 					// Clean up before returning to avoid goroutine/resource leaks
 					m.connManager.mu.Lock()
 					delete(m.connManager.connections, connectionID)

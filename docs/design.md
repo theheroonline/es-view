@@ -12,10 +12,11 @@
 
 | 层级 | 技术 |
 |------|------|
-| 桌面框架 | Wails v2 |
-| 后端语言 | Go 1.21+ |
-| 前端框架 | React 18 + TypeScript |
-| UI 组件库 | Ant Design |
+| 桌面框架 | Wails v2.11 |
+| 后端语言 | Go 1.25 |
+| 前端框架 | React 19 + TypeScript 5.9 |
+| UI 组件库 | Ant Design 6 |
+| 构建工具 | Vite 7 |
 | 路由 | React Router v7 |
 | 状态管理 | React Context |
 | 国际化 | i18next (中文 / 英文) |
@@ -68,17 +69,19 @@ backend/
       module.go         # ES HTTP 代理 (支持 Basic / API Key 认证)
       types.go          # 请求/响应类型定义
     mysql/
-      module.go         # 连接管理器, 查询, 列表, 描述表, 索引管理
-      helpers.go        # 行扫描, 值规范化辅助函数
-      transfer.go       # 导出/导入 SQL 功能
+      module.go         # 模块入口: NewModule
       types.go          # 请求/响应类型定义
-      utils.go          # SQL 查询类型检测
+      connection.go     # 连接管理 (含 SSH 隧道)
+      query.go          # SQL 查询执行
+      schema.go         # 表/列/索引元数据查询
+      transfer.go       # 导出/导入 SQL (TransferService)
+      retry.go          # 查询重试逻辑
+      utils.go          # SQL 解析工具函数
+      helpers.go        # 行扫描、值规范化辅助函数
     redis/
       module.go         # 连接管理器, 扫描, 读写, TTL, 命令执行
-      helpers.go        # 值规范化 (string/hash/list/set/zset)
+      helpers.go        # JSON 值规范化 (string/hash/list/set/zset)
       types.go          # 请求/响应类型定义
-  shared/
-    db.go               # 共享数据库工具
 ```
 
 **后端架构要点：**
@@ -578,26 +581,109 @@ backend/infra/state_store/
 
 ---
 
-## 11. 性能考量
+## 11. SSH 隧道
 
-### 11.1 Redis 连接优化
+SSH 隧道为 MySQL 和 Redis 提供远程连接能力，由 `backend/infra/sshtunnel/tunnel.go` 统一管理。
+
+### 11.1 架构
+
+```
+前端 → Wails IPC → Go 后端 → SSH 隧道 → 远程 MySQL/Redis
+```
+
+### 11.2 隧道生命周期
+
+1. **创建**: 当连接配置包含 SSH 信息（主机、端口、用户名、认证方式）时，`Manager.GetOrCreate(connectionID)` 检查是否已存在活跃隧道，存在则复用，否则新建。
+2. **连接**: 隧道通过 `ssh.Dial()` 建立，创建本地端口转发监听器（如 `localhost:随机端口`）。
+3. **复用**: 同一 connectionID 的连接共享同一隧道实例，避免重复 SSH 握手。
+4. **关闭**: 调用 `Manager.Close(connectionID)` 时关闭隧道，释放本地端口和 SSH 连接。应用退出时 `Shutdown()` 关闭所有隧道。
+
+### 11.3 与数据库模块的集成
+
+- **MySQL**: `mysql/connection.go` 中，若连接配置包含 SSH 信息，先通过 `Manager.GetOrCreate()` 获取隧道，然后连接到隧道的本地转发端口。
+- **Redis**: `redis/module.go` 中，同样模式 — 先建立隧道，再连接 Redis 客户端到本地端口。
+- 数据库模块不直接管理 SSH 连接，只与 `sshtunnel.Manager` 交互。
+
+### 11.4 错误处理
+
+- 隧道创建失败时，错误向上传递至连接层，前端显示连接失败。
+- 隧道断开后不会自动重连 — 用户需要手动重新激活连接。
+- 本地端口冲突时，SSH 库自动分配可用端口，不会使用固定端口号。
+
+---
+
+## 12. 错误处理
+
+### 12.1 IPC 错误传递
+
+Go 后端方法返回的 `error` 会通过 Wails 运行时自动转换为 JavaScript 异常。前端通过 `invoke()` 的 Promise `.catch()` 捕获。
+
+### 12.2 前端错误规范化
+
+`src/lib/transport/mapInvokeError.ts` 将 Wails invoke 错误统一规范化，添加上下文元数据（方法名、参数摘要），便于日志追踪。
+
+### 12.3 React 错误边界
+
+`src/components/ErrorBoundary.tsx` 捕获 React 组件树中的渲染错误，防止整个应用崩溃。错误由 `src/lib/errorLog.ts` 记录，用户可通过 `ErrorLogModal` 查看。
+
+### 12.4 错误日志约定
+
+Go 后端日志使用前缀标识模块来源：
+- `[mysql]` — MySQL 模块
+- `[redis]` — Redis 模块
+- `[es]` — Elasticsearch 模块
+
+前端通过 `logError()` 记录错误，包含 `source`（标识来源）和 `message`（人类可读描述）字段。
+
+---
+
+## 13. 安全考量
+
+### 13.1 密钥存储
+
+- 连接配置（含密码、API Key）通过 `AppStateStore` 持久化到 OS 配置目录的 JSON 文件中（`~/.config/multi-database-browsing/` 或等效路径）。
+- **当前为明文存储**，未加密。本地磁盘访问者可读取凭证。
+- 未来改进方向：集成 OS 密钥链（Windows Credential Manager、macOS Keychain、Linux Secret Service）。
+
+### 13.2 传输安全
+
+- **SSH 隧道**: MySQL 和 Redis 支持通过 SSH 加密隧道连接远程数据库，所有流量经 SSH 加密。
+- **Elasticsearch**: 支持 HTTPS 连接，可配置跳过 TLS 证书验证（适用于自签名证书）。
+- **Wails IPC**: 前端与后端通信在本地进程内，不暴露于网络。
+
+### 13.3 SQL 注入防护
+
+- MySQL 查询使用参数化查询（预处理语句），防止 SQL 注入。
+- 表名/数据库名使用反引号包裹（`` `db`.`table` ``），避免标识符注入。
+
+### 13.4 已知安全限制
+
+- 密码明文存储在本地磁盘
+- 无会话超时机制（连接建立后持续保持，直到用户手动断开或应用退出）
+- 无请求速率限制（本地应用，不涉及外部 API 限流）
+
+---
+
+## 14. 性能考量
+
+### 14.1 Redis 连接优化
 
 - **连接池复用**：后端按 `connectionID → map[int]*goRedis.Client` 管理连接，同一数据库编号共享连接，避免每次命令都握手
 - **避免 SELECT**：不使用 `SELECT dbN` 命令切换数据库，而是为每个数据库创建独立连接，消除隐式状态切换
 
-### 11.2 MySQL 查询优化
+### 14.2 MySQL 查询优化
 
 - **预处理查询**：使用参数化查询防止 SQL 注入
 - **限制结果集**：数据浏览默认使用 LIMIT + OFFSET，避免返回全量数据
 - **索引缓存**：表结构信息、索引信息在前端 Context 缓存，减少重复查询
 
-### 11.3 Elasticsearch 分页策略
+### 14.3 Elasticsearch 分页策略
 
 - **浅层分页（≤10k）**：使用 ES 原生 `from` + `size` 分页，性能最佳
 - **深分页（>10k）**：切换为 `search_after` 策略，避免 `from+size` 超过 ES 的 `index.max_result_window` 限制
 - **索引缓存**：索引列表按连接缓存，切换连接时命中缓存，避免重复请求
 
-### 11.4 前端渲染优化
+### 14.4 前端渲染优化
 
 - **路由懒加载**：所有页面组件通过 `React.lazy` + `Suspense` 加载，首屏不加载未使用的页面
 - **条件渲染 Tab 内容**：Tab 组件始终在 DOM 中，但页面内容由 `AppRoutes` 路由控制，只渲染当前路由对应的组件
@@ -605,9 +691,9 @@ backend/infra/state_store/
 
 ---
 
-## 12. 已知限制与建议方向
+## 15. 已知限制与建议方向
 
-### 12.1 当前限制
+### 15.1 当前限制
 
 - Redis 不支持 Pub/Sub
 - Redis 不支持慢日志分析
@@ -615,7 +701,7 @@ backend/infra/state_store/
 - 无深色模式切换
 - 窗口状态 (位置、大小) 不在会话间持久化
 
-### 12.2 建议下一步
+### 15.2 建议下一步
 
 1. 完善 MySQL 多表导出流程的行为测试
 2. 考虑 Redis 连接持久化 / 重连逻辑

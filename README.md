@@ -6,10 +6,16 @@
 
 ---
 
+## 截图 / Screenshots 📸
+
+> 📷 截图待添加。建议添加：ES 数据浏览、MySQL 表管理、Redis 键浏览 各一张。
+
+---
+
 ## 技术栈 / Tech Stack 🏗️
 
-- **后端 / Backend**: Go 1.21+ (Wails v2 framework)
-- **前端 / Frontend**: React 19 + TypeScript + Ant Design
+- **后端 / Backend**: Go 1.25 (Wails v2.11)
+- **前端 / Frontend**: React 19 + TypeScript 5.9 + Ant Design 6 + Vite 7
 - **数据库驱动 / Drivers**:
   - MySQL: `github.com/go-sql-driver/mysql`
   - Redis: `github.com/redis/go-redis/v9`
@@ -45,6 +51,9 @@
 - ❌ Redis pub/sub 订阅不支持
 - ❌ Redis 慢日志分析不支持
 - ❌ Elasticsearch 跨集群查询不支持
+- ⚠️ ES 数据浏览表格视图未虚拟化，大结果集可能卡顿
+- ⚠️ ES 右键菜单可能同时显示应用菜单和浏览器原生菜单
+- ⚠️ MySQL TableManager 组件未做 memo 优化，频繁状态变更可能影响性能
 
 ---
 
@@ -59,63 +68,35 @@
 
 ## 架构与结构 / Architecture 🏢
 
-### 前端架构（React）
-```
-src/
-├── App.tsx                    # 主应用入口
-├── layout/
-│   └── WorkspaceChrome.tsx    # 共享桌面壳层（侧栏、标签、工作区）
-├── modules/                   # 数据库模块（自包含）
-│   ├── es/                    # Elasticsearch 模块
-│   │   ├── pages/             # 连接、数据浏览、SQL 查询
-│   │   ├── services/          # HTTP 请求服务
-│   │   ├── components/        # ES 专用 UI 组件
-│   │   └── i18n/resources.ts
-│   ├── mysql/                 # MySQL 模块
-│   │   ├── pages/
-│   │   ├── services/
-│   │   ├── components/
-│   │   ├── types.ts           # 类型定义（ColumnMeta、IndexMeta 等）
-│   │   └── i18n/resources.ts
-│   └── redis/                 # Redis 模块
-│       ├── pages/
-│       ├── services/
-│       ├── components/
-│       └── i18n/resources.ts
-├── state/                     # 模块专用 Context
-│   ├── ElasticsearchContext.tsx
-│   ├── MysqlContext.tsx
-│   └── RedisContext.tsx
-├── lib/
-│   ├── wailsapi.ts           # Wails IPC 包装（snake_case → PascalCase）
-│   ├── types.ts              # 共享类型（Connection、ApiResponse 等）
-│   └── storage.ts            # localStorage 工具函数
-└── i18n/
-    ├── config.ts             # i18next 初始化与聚合
-    └── resources/shared.ts   # 共享翻译
-```
+本项目采用 **前后端分离 + 模块化** 架构。前端按引擎（ES / MySQL / Redis）组织功能模块，后端对应三个独立模块通过 Wails IPC 通信。
 
-### 后端架构（Go）
+**后端目录结构**:
 ```
 backend/
-├── main.go                    # 入口
-├── app.go                     # App 结构与方法（Wails 绑定）
-├── app_lifecycle.go           # 生命周期钩子（Startup、Shutdown）
-├── app_state.go               # 状态持久化
-├── state_store.go             # localStorage 式状态存储
-├── elasticsearch.go           # ES 实现核心
-├── mysql.go                   # MySQL 实现核心
-├── mysql_transfer*.go         # MySQL 导入导出（服务、dump、SQL 解析）
-├── redis.go                   # Redis 实现核心
-├── helpers.go                 # 通用工具
-└── types.go                   # Go 类型定义
+├── app/        # Wails 绑定入口 (proxy.go 暴露所有 IPC 方法)
+├── modules/    # 数据库模块: elasticsearch/  mysql/  redis/
+├── infra/      # 基础设施: sshtunnel/  state_store/
+└── shared/     # 共享工具函数
 ```
 
+**前端目录结构**:
+```
+src/
+├── modules/    # 引擎功能模块: es/  mysql/  redis/ (pages, services, features)
+├── state/      # React Context: 跨引擎连接状态 + 各引擎工作区状态
+├── hooks/      # 共享 Hooks (连接生命周期、虚拟滚动等)
+├── lib/        # 传输层 (transport/), 连接配置 (connection/), 类型定义
+└── app/        # Shell 布局: 侧边栏 + 工作区 + 路由
+```
+
+> 详细架构设计（含状态管理、IPC 通信、SSH 隧道、错误处理）请参阅 [docs/design.md](docs/design.md)。
+> IPC 方法完整列表请参阅 [docs/ipc-api.md](docs/ipc-api.md)。
+
 **架构特点：**
-1. **模块化** - 三个数据库模块独立，共享壳层
-2. **上下文管理** - Context 层保存模块级状态（索引、数据、筛选）
-3. **IPC 层** - `wailsapi.ts` 负责 snake_case → PascalCase 转换
-4. **状态持久化** - `AppStateStore` 保存连接配置、最近使用数据
+1. **模块化** — 三个数据库模块独立，共享壳层
+2. **上下文管理** — Context 层保存模块级状态（索引、数据、筛选）
+3. **传输层抽象** — ES 请求支持 Wails IPC (桌面) 和 HTTP 代理 (浏览器) 双模式
+4. **状态持久化** — `AppStateStore` 保存连接配置、最近使用数据
 
 ---
 
@@ -123,8 +104,8 @@ backend/
 
 ### 前置需求 / Prerequisites
 - **Node.js 18+** (前端依赖)
-- **Go 1.21+** (后端编译)
-- **Wails CLI** - 执行：`go install github.com/wailsapp/wails/cmd/wails@latest`
+- **Go 1.25** (后端编译)
+- **Wails CLI** - 执行：`go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 - **Git** (可选，用于克隆仓库)
 
 ### 1️⃣ 安装依赖 / Install Dependencies
@@ -247,13 +228,15 @@ wails doctor          # 检查环境与依赖完整性
 - `appname` / `outputfilename` - 应用名称和二进制名
 
 ### .env（可选）
-开发时的环境变量，用于本地配置：
+开发时的环境变量，控制传输层模式：
 
 ```bash
-# .env.local
-DEBUG=true          # 调试模式
-API_TIMEOUT=30000   # API 超时时间（ms）
+# .env (或 .env.local)
+VITE_PLATFORM=browser   # browser = 纯前端开发（HTTP 代理）
+                        # wails   = 桌面应用模式（Wails IPC）
 ```
+
+详细说明请参阅 [.env.example](.env.example)。
 
 ### 用户数据目录
 应用运行时的配置和缓存：
@@ -321,24 +304,15 @@ SELECT * FROM mydb.users;
 ## 测试与验证 / Testing & Verification ✅
 
 ### 前端测试
-当前前端暂无自动化测试，建议的测试范围：
+> ⚠️ 自动化测试覆盖仍在完善中，目前主要依赖手动测试验证
 
-```typescript
-// 推荐测试场景
-1. MySQL 多表导出弹窗的表选择流程
-2. Elasticsearch 深度分页的 search_after 逻辑
-3. Redis SCAN 遍历大数据库的性能
-4. i18n 语言切换的完整性
-```
-
-**运行手动测试**：
 ```bash
 wails dev                # 启动应用
 # 在 UI 中手动执行测试场景，观察控制台输出
 ```
 
 ### 后端测试
-部分 Go 代码有单元测试，执行：
+后端模块包含单元测试，执行：
 
 ```bash
 go test ./...            # 运行所有测试
@@ -346,26 +320,11 @@ go test -v ./...         # 详细输出
 go test -cover ./...     # 显示覆盖率
 ```
 
-### 性能基准测试（Benchmark）
-验证优化效果的方法：
-
-**Redis 连接复用性能**：
-```bash
-# 测试：打开 Redis 连接，切换 10 个数据库
-# 期望：单连接模式 vs 多连接模式，3-5 倍差异
-```
-
-**MySQL 竞态修复**：
-```bash
-# 测试：并行执行 10 个跨库查询
-# 期望：所有查询返回正确的库和表
-```
-
-**Elasticsearch 分页**：
-```bash
-# 测试：查询超过 10000 条记录
-# 期望：自动+手动分页无缝切换，进度提示正常显示
-```
+### 手动验证场景
+- **MySQL 多表导出**: 在 Table Manager 中右键多表 → 导出 → 验证 SQL 内容
+- **ES 深度分页**: 查询超过 10000 条记录的索引 → 验证 search_after 分页
+- **Redis SCAN 性能**: 打开含大量键的数据库 → 验证加载时间
+- **i18n 完整性**: 切换中/英文 → 验证所有文本已翻译
 
 ---
 
@@ -498,11 +457,14 @@ wails build
 - i18n 模块聚合 - 共享资源 + 模块资源
 - MySQL 导出/导入分层 - transfer service / dump helper / SQL parser
 - MySQL 多表导出交互优化 - 弹窗选择表
+- 后端模块化重构 - `backend/modules/mysql/`, `backend/modules/redis/`, `backend/modules/elasticsearch/`
+- 路由驱动 Tab 可见性 - `getEngineFromPath()` 替代 `activeEngine` 状态
 
 ### 🔄 下一步建议
 1. **前端行为测试** - MySQL 表总览右键菜单的多表导出流程
-2. **后端目录重构** - 评估 `backend/mysql_*.go` 是否需要 `mysql/` 子目录
-3. **工作区行为分离** - TableManager 中与右侧工作区无关的逻辑提取
+2. **工作区行为分离** - TableManager 中与右侧工作区无关的逻辑提取
+3. **Redis 连接重连** - 连接断开后的自动重连逻辑
+4. **ES 表格虚拟化** - 大数据浏览时的性能优化
 
 ---
 
@@ -540,12 +502,13 @@ wails build
 
 | 功能 | 文件位置 |
 |------|---------|
-| Wails IPC 包装 | [src/lib/wailsapi.ts](src/lib/wailsapi.ts) |
-| 架构文档 | [CLAUDE.md](CLAUDE.md) |
+| Wails IPC 入口 | [backend/app/proxy.go](backend/app/proxy.go) — 所有 IPC 方法 |
+| 架构文档 | [docs/design.md](docs/design.md) |
+| IPC 方法列表 | [docs/ipc-api.md](docs/ipc-api.md) |
 | ES 数据浏览 | [src/modules/es/pages/DataBrowser.tsx](src/modules/es/pages/DataBrowser.tsx) |
-| MySQL 索引管理 | [src/modules/mysql/pages/TableManager.tsx](src/modules/mysql/pages/TableManager.tsx) |
+| MySQL 表管理 | [src/modules/mysql/pages/TableManager.tsx](src/modules/mysql/pages/TableManager.tsx) |
 | Redis 连接池 | [backend/modules/redis/module.go](backend/modules/redis/module.go) |
-| MySQL 竞态修复 | [backend/modules/mysql/module.go](backend/modules/mysql/module.go) |
+| 连接生命周期 | [src/hooks/useConnectionWorkspace.ts](src/hooks/useConnectionWorkspace.ts) |
 
 ---
 

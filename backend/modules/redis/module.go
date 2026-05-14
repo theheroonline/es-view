@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +12,7 @@ import (
 	goRedis "github.com/redis/go-redis/v9"
 
 	"multi-database-browsing/backend/infra/sshtunnel"
+	"multi-database-browsing/backend/shared"
 )
 
 type Module struct {
@@ -31,7 +32,7 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 	dbClients, exists := m.connManager.connections[connectionID]
 	if !exists {
 		m.connManager.mu.RUnlock()
-		return nil, fmt.Errorf("connection not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("redis", "connection not found: "+connectionID)
 	}
 
 	if client, ok := dbClients[database]; ok {
@@ -42,46 +43,30 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 	baseOpts, hasOptions := m.connManager.options[connectionID]
 	m.connManager.mu.RUnlock()
 	if !hasOptions || baseOpts == nil {
-		return nil, fmt.Errorf("connection options not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("redis", "connection options not found: "+connectionID)
 	}
 
-	// singleflight: ensure only one goroutine creates a client for this (connID, db) pair.
-	// Uses sync.Map.Swap (not CompareAndSwap) because CAS on a non-existent key always
-	// returns false in Go, which would deadlock the first caller.
 	key := fmt.Sprintf("%s:%d", connectionID, database)
-	var creatorDone chan struct{}
-	for {
-		done := make(chan struct{})
-		actual, loaded := m.connManager.inFlight.Swap(key, done)
-		if !loaded {
-			// We are the first to set this key — we own the creation.
-			creatorDone = done
-			break
-		}
-		// Another goroutine is creating — wait for it to finish, then retry.
-		if ch, ok := actual.(chan struct{}); ok {
-			<-ch
-		} else {
-			time.Sleep(10 * time.Millisecond)
-		}
-		// Check if the client was created while we were waiting.
-		m.connManager.mu.RLock()
-		dbClients, exists = m.connManager.connections[connectionID]
-		if exists {
-			if client, ok := dbClients[database]; ok {
-				m.connManager.mu.RUnlock()
-				return client, nil
-			}
-		}
-		m.connManager.mu.RUnlock()
+	result, err, _ := m.connManager.inFlight.Do(key, func() (interface{}, error) {
+		return m.createRedisClient(connectionID, database, baseOpts)
+	})
+	if err != nil {
+		return nil, err
 	}
+	return result.(*goRedis.Client), nil
+}
 
-	// creatorDone belongs only to this goroutine. Close it when done creating
-	// so that waiting goroutines can wake up and find the new client.
-	defer close(creatorDone)
-	// Clean up the in-flight marker after signaling waiters.
-	// Must be registered AFTER the close defer so it runs first (LIFO).
-	defer m.connManager.inFlight.Delete(key)
+func (m *Module) createRedisClient(connectionID string, database int, baseOpts *goRedis.Options) (*goRedis.Client, error) {
+	// Double-check after singleflight gate — another caller may have created it.
+	m.connManager.mu.RLock()
+	dbClients, exists := m.connManager.connections[connectionID]
+	if exists {
+		if client, ok := dbClients[database]; ok {
+			m.connManager.mu.RUnlock()
+			return client, nil
+		}
+	}
+	m.connManager.mu.RUnlock()
 
 	newClient := goRedis.NewClient(cloneRedisOptions(baseOpts, database))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -89,23 +74,22 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 	cancel()
 	if err != nil {
 		newClient.Close()
-		return nil, fmt.Errorf("failed to connect to database %d: %w", database, err)
+		return nil, shared.NewConnectionFailed("redis", fmt.Sprintf("failed to connect to database %d: %s", database, err))
 	}
 
 	m.connManager.mu.Lock()
+	defer m.connManager.mu.Unlock()
+
 	dbClients, exists = m.connManager.connections[connectionID]
 	if !exists {
 		newClient.Close()
-		m.connManager.mu.Unlock()
-		return nil, fmt.Errorf("connection not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("redis", "connection not found: "+connectionID)
 	}
 	if existingClient, ok := dbClients[database]; ok {
 		newClient.Close()
-		m.connManager.mu.Unlock()
 		return existingClient, nil
 	}
 	dbClients[database] = newClient
-	m.connManager.mu.Unlock()
 	return newClient, nil
 }
 
@@ -122,7 +106,7 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 		targetAddr := fmt.Sprintf("%s:%d", req.Host, req.Port)
 		localPort, err := tunnel.ConnectAndForward(targetAddr)
 		if err != nil {
-			return "", fmt.Errorf("failed to establish SSH tunnel: %w", err)
+			return "", shared.NewConnectionFailed("redis", "failed to establish SSH tunnel: "+err.Error())
 		}
 		addr = fmt.Sprintf("127.0.0.1:%d", localPort)
 	} else {
@@ -147,7 +131,7 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 
 	if err := client.Ping(ctx).Err(); err != nil {
 		client.Close()
-		return "", fmt.Errorf("failed to connect: %w", err)
+		return "", shared.NewConnectionFailed("redis", "failed to connect: "+err.Error())
 	}
 
 	m.connManager.mu.Lock()
@@ -157,7 +141,10 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 		for db, existingClient := range existingClients {
 			if existingClient != nil {
 				if err := existingClient.Close(); err != nil {
-					log.Printf("[redis] error closing existing client for connection %s db %d: %v", req.ConnectionID, db, err)
+					shared.Logger.Error("error closing existing redis client",
+						slog.String("connection_id", req.ConnectionID),
+						slog.Int("db", db),
+						slog.Any("error", err))
 				}
 			}
 		}
@@ -175,13 +162,16 @@ func (m *Module) RedisDisconnect(connectionID string) (string, error) {
 
 	dbClients, exists := m.connManager.connections[connectionID]
 	if !exists {
-		return "", fmt.Errorf("connection not found: %s", connectionID)
+		return "", shared.NewConnectionFailed("redis", "connection not found: "+connectionID)
 	}
 
 	for db, client := range dbClients {
 		if client != nil {
 			if err := client.Close(); err != nil {
-				log.Printf("[redis] error closing client for connection %s db %d: %v", connectionID, db, err)
+				shared.Logger.Error("error closing redis client",
+					slog.String("connection_id", connectionID),
+					slog.Int("db", db),
+					slog.Any("error", err))
 			}
 		}
 	}
@@ -267,7 +257,7 @@ func (m *Module) RedisScanKeys(req RedisScanRequest) (RedisScanResult, error) {
 	cmd := client.Scan(ctx, cursor, pattern, count)
 	keys, nextCursor, err := cmd.Result()
 	if err != nil {
-		return RedisScanResult{}, fmt.Errorf("scan failed: %w", err)
+		return RedisScanResult{}, shared.NewAppError(shared.ErrQueryFailed, "scan failed: "+err.Error(), "redis")
 	}
 
 	items, err := m.getKeysTypeAndTTLBatch(client, ctx, keys)
@@ -548,7 +538,7 @@ func (m *Module) getKeysTypeAndTTLBatch(client *goRedis.Client, ctx context.Cont
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		return nil, fmt.Errorf("pipeline exec failed: %w", err)
+		return nil, shared.NewAppError(shared.ErrQueryFailed, "pipeline exec failed: "+err.Error(), "redis")
 	}
 
 	items := make([]RedisKeySummary, len(keys))

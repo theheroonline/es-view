@@ -9,6 +9,8 @@ import (
 
 	goRedis "github.com/redis/go-redis/v9"
 
+	"golang.org/x/sync/singleflight"
+
 	"multi-database-browsing/backend/infra/sshtunnel"
 )
 
@@ -117,8 +119,8 @@ type RedisConnectionManager struct {
 	connections map[string]map[int]*goRedis.Client
 	options     map[string]*goRedis.Options
 	sshTunnels  *sshtunnel.Manager
-	// inFlight guards concurrent creation of the same db client.
-	inFlight    sync.Map // key: string("connID:db"), value: chan struct{}
+	// inFlight deduplicates concurrent client creation for the same (connID, db) pair.
+	inFlight    singleflight.Group
 }
 
 func NewRedisConnectionManager() *RedisConnectionManager {

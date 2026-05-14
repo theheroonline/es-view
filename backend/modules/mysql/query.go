@@ -3,8 +3,9 @@ package mysql
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"time"
+
+	"multi-database-browsing/backend/shared"
 )
 
 func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult, error) {
@@ -12,7 +13,7 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	db, exists := m.connManager.connections[connectionID]
 	m.connManager.mu.RUnlock()
 	if !exists {
-		return MysqlQueryResult{}, fmt.Errorf("connection not found: %s", connectionID)
+		return MysqlQueryResult{}, shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -21,7 +22,7 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	if !isMysqlResultSetQuery(query) {
 		_, err := execWithRetry(db, query, ctx)
 		if err != nil {
-			return MysqlQueryResult{}, fmt.Errorf("query failed: %w", err)
+			return MysqlQueryResult{}, shared.NewAppError(shared.ErrQueryFailed, "query failed: "+err.Error(), "mysql")
 		}
 
 		return MysqlQueryResult{Columns: []string{}, Rows: [][]any{}, AffectedRows: 0, IsResultSet: false}, nil
@@ -29,13 +30,13 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 
 	rows, err := queryWithRetry(db, query, ctx)
 	if err != nil {
-		return MysqlQueryResult{}, fmt.Errorf("query failed: %w", err)
+		return MysqlQueryResult{}, shared.NewAppError(shared.ErrQueryFailed, "query failed: "+err.Error(), "mysql")
 	}
 	defer rows.Close()
 
 	columns, err := rows.Columns()
 	if err != nil {
-		return MysqlQueryResult{}, fmt.Errorf("failed to get columns: %w", err)
+		return MysqlQueryResult{}, shared.NewAppError(shared.ErrQueryFailed, "failed to get columns: "+err.Error(), "mysql")
 	}
 
 	result := MysqlQueryResult{Columns: columns, Rows: [][]any{}, IsResultSet: true}
@@ -48,7 +49,7 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 		}
 
 		if err := rows.Scan(valuePtrs...); err != nil {
-			return MysqlQueryResult{}, fmt.Errorf("scan failed: %w", err)
+			return MysqlQueryResult{}, shared.NewAppError(shared.ErrQueryFailed, "scan failed: "+err.Error(), "mysql")
 		}
 
 		for i, value := range values {
@@ -59,7 +60,7 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	}
 
 	if err := rows.Err(); err != nil {
-		return MysqlQueryResult{}, fmt.Errorf("scan failed: %w", err)
+		return MysqlQueryResult{}, shared.NewAppError(shared.ErrQueryFailed, "scan failed: "+err.Error(), "mysql")
 	}
 
 	return result, nil

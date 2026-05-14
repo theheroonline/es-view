@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { logError } from "../lib/errorLog";
 import type { ConnectionProfile } from "../lib/types";
 import { pingEsCluster } from "../modules/es/services/clusterService";
-import { mysqlConnect, mysqlDisconnect, mysqlListDatabases } from "../modules/mysql/services/client";
+import { mysqlConnect, mysqlDisconnect, mysqlListDatabases, mysqlPing } from "../modules/mysql/services/client";
 import { redisConnect, redisDisconnect } from "../modules/redis/services/connectionClient";
 import { useElasticsearchContext } from "../state/ElasticsearchContext";
 import { useMysqlContext } from "../state/MysqlContext";
@@ -32,6 +32,8 @@ const ENGINE_CONFIG: Record<EngineType, EngineConfig> = {
   elasticsearch: {
     defaultRoute: "/data",
     label: "Elasticsearch",
+    // ES is a stateless HTTP proxy — no backend connection to establish or tear down.
+    // Every request is a fresh HTTP call with auth headers.
     needsConnect: false,
     needsDisconnect: false,
     connectionsRoute: "/es/connections",
@@ -133,6 +135,11 @@ export function useConnectionWorkspace() {
     }));
   };
 
+  // switchViewSync: Clears error, unsuspends workspace, and activates the connection.
+  // IMPORTANT: must await activateConnection() to ensure React state (activeEngine,
+  // focusedConnectionIdByEngine) is flushed before subsequent async operations (backend
+  // connect, data load). Without await, useEffect-based data fetching in engine providers
+  // may read stale null connections, causing early-return blank pages.
   const switchViewSync = async (connectionId: string, engine: EngineType) => {
     setConnectionActionError("");
     setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: false }));
@@ -214,7 +221,8 @@ export function useConnectionWorkspace() {
     const alreadyActive = activeConnectionIdsByEngine[engine]?.includes(connectionId);
     const alreadyFocused = focusedConnectionIdByEngine[engine] === connectionId;
 
-    // Scenario A: already focused AND current engine is active → just wake up if suspended
+    // Scenario A: already focused + same engine → early-return without navigating
+    // (sidebar layer supplements navigation in this case). Only wake up if suspended.
     if (alreadyFocused && activeEngine === engine) {
       if (isWorkspaceSuspendedByEngine[engine]) {
         setConnectionActionError("");
@@ -229,7 +237,7 @@ export function useConnectionWorkspace() {
       return false;
     }
 
-    // Scenario B: already active but not focused → switch focus and restore workspace
+    // Scenario B: already active but not focused → switch focus + restore workspace data + navigate
     if (alreadyActive) {
       // If status is "failed", force a reconnect instead of just restoring
       if (connectionStatusById[connectionId] === "failed") {
@@ -268,7 +276,7 @@ export function useConnectionWorkspace() {
       }
     }
 
-    // Scenario C: new connection → activate + backend connect
+    // Scenario C: new connection → switchViewSync → backend connect → load initial data → navigate
 
     // Dedup: if this connectionId is already connecting, reuse the in-flight promise
     const existing = pendingConnectionRef.current.get(connectionId);
@@ -564,8 +572,7 @@ export function useConnectionWorkspace() {
       if (currentStatus !== "success") return;
 
       try {
-        const { mysqlPing: ping } = await import("../modules/mysql/services/connectionClient");
-        await ping(connId);
+        await mysqlPing(connId);
       } catch {
         logError(new Error("MySQL health check failed"), {
           source: "app.connection.mysql.healthCheck",

@@ -1,3 +1,5 @@
+// Package main is the entry point for the Multi-Database Browsing desktop application.
+// It initializes the Wails runtime with the backend App and embedded frontend assets.
 package main
 
 import (

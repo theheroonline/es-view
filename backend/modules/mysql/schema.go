@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+
+	"multi-database-browsing/backend/shared"
 )
 
 func (m *Module) MysqlListDatabases(connectionID string) ([]string, error) {
@@ -13,20 +15,20 @@ func (m *Module) MysqlListDatabases(connectionID string) ([]string, error) {
 	db, exists := m.connManager.connections[connectionID]
 	m.connManager.mu.RUnlock()
 	if !exists {
-		return nil, fmt.Errorf("connection not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list databases: %w", err)
+		return nil, shared.NewAppError(shared.ErrSchemaError, "failed to list databases: "+err.Error(), "mysql")
 	}
 	defer rows.Close()
 
 	columns, data, err := scanRowsToNullStringMaps(rows)
 	if err != nil {
-		return nil, fmt.Errorf("scan failed: %w", err)
+		return nil, shared.NewAppError(shared.ErrSchemaError, "scan failed: "+err.Error(), "mysql")
 	}
 
 	systemDatabases := map[string]bool{"information_schema": true, "performance_schema": true, "mysql": true, "sys": true}
@@ -46,25 +48,25 @@ func (m *Module) MysqlListTables(connectionID string, database string) ([]string
 	db, exists := m.connManager.connections[connectionID]
 	m.connManager.mu.RUnlock()
 	if !exists {
-		return nil, fmt.Errorf("connection not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
 	}
 
 	query := "SHOW TABLES"
 	if database != "" {
-		query = fmt.Sprintf("SHOW TABLES FROM `%s`", database)
+		query = fmt.Sprintf("SHOW TABLES FROM %s", escapeMysqlIdentifier(database))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 	rows, err := queryWithRetry(db, query, ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tables: %w", err)
+		return nil, shared.NewAppError(shared.ErrSchemaError, "failed to list tables: "+err.Error(), "mysql")
 	}
 	defer rows.Close()
 
 	columns, data, err := scanRowsToNullStringMaps(rows)
 	if err != nil {
-		return nil, fmt.Errorf("scan failed: %w", err)
+		return nil, shared.NewAppError(shared.ErrSchemaError, "scan failed: "+err.Error(), "mysql")
 	}
 
 	tables := make([]string, 0, len(data))
@@ -83,21 +85,21 @@ func (m *Module) MysqlDescribeTable(connectionID string, database string, tableN
 	db, exists := m.connManager.connections[connectionID]
 	m.connManager.mu.RUnlock()
 	if !exists {
-		return nil, fmt.Errorf("connection not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
 	}
 
 	var query string
 	if database != "" {
-		query = fmt.Sprintf("DESCRIBE `%s`.`%s`", database, tableName)
+		query = fmt.Sprintf("DESCRIBE %s.%s", escapeMysqlIdentifier(database), escapeMysqlIdentifier(tableName))
 	} else {
-		query = fmt.Sprintf("DESCRIBE `%s`", tableName)
+		query = fmt.Sprintf("DESCRIBE %s", escapeMysqlIdentifier(tableName))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to describe table: %w", err)
+		return nil, shared.NewAppError(shared.ErrSchemaError, "failed to describe table: "+err.Error(), "mysql")
 	}
 	defer rows.Close()
 
@@ -106,7 +108,7 @@ func (m *Module) MysqlDescribeTable(connectionID string, database string, tableN
 		var col MysqlColumnMeta
 		var defaultVal sql.NullString
 		if err := rows.Scan(&col.Field, &col.Type, &col.Null, &col.Key, &defaultVal, &col.Extra); err != nil {
-			return nil, fmt.Errorf("scan failed: %w", err)
+			return nil, shared.NewAppError(shared.ErrSchemaError, "scan failed: "+err.Error(), "mysql")
 		}
 		if defaultVal.Valid {
 			col.Default = &defaultVal.String
@@ -127,22 +129,22 @@ func (m *Module) MysqlListIndexes(req MysqlListIndexesRequest) ([]MysqlIndexMeta
 
 	var query string
 	if req.Database != "" {
-		query = fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", req.Database, req.TableName)
+		query = fmt.Sprintf("SHOW INDEX FROM %s.%s", escapeMysqlIdentifier(req.Database), escapeMysqlIdentifier(req.TableName))
 	} else {
-		query = fmt.Sprintf("SHOW INDEX FROM `%s`", req.TableName)
+		query = fmt.Sprintf("SHOW INDEX FROM %s", escapeMysqlIdentifier(req.TableName))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list indexes: %w", err)
+		return nil, shared.NewAppError(shared.ErrSchemaError, "failed to list indexes: "+err.Error(), "mysql")
 	}
 	defer rows.Close()
 
 	_, data, err := scanRowsToNullStringMaps(rows)
 	if err != nil {
-		return nil, fmt.Errorf("scan failed: %w", err)
+		return nil, shared.NewAppError(shared.ErrSchemaError, "scan failed: "+err.Error(), "mysql")
 	}
 
 	type indexColumn struct {
@@ -228,7 +230,7 @@ func (m *Module) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
 		if i > 0 {
 			columnList += ", "
 		}
-		columnList += fmt.Sprintf("`%s`", col)
+		columnList += fmt.Sprintf("%s", escapeMysqlIdentifier(col))
 	}
 
 	uniqueStr := ""
@@ -243,15 +245,15 @@ func (m *Module) MysqlCreateIndex(req MysqlCreateIndexRequest) (string, error) {
 
 	var query string
 	if req.Database != "" {
-		query = fmt.Sprintf("CREATE %sINDEX `%s` ON `%s`.`%s` (%s)%s", uniqueStr, req.IndexName, req.Database, req.TableName, columnList, typeStr)
+		query = fmt.Sprintf("CREATE %sINDEX %s ON %s.%s (%s)%s", uniqueStr, escapeMysqlIdentifier(req.IndexName), escapeMysqlIdentifier(req.Database), escapeMysqlIdentifier(req.TableName), columnList, typeStr)
 	} else {
-		query = fmt.Sprintf("CREATE %sINDEX `%s` ON `%s` (%s)%s", uniqueStr, req.IndexName, req.TableName, columnList, typeStr)
+		query = fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)%s", uniqueStr, escapeMysqlIdentifier(req.IndexName), escapeMysqlIdentifier(req.TableName), columnList, typeStr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 	if _, err := db.ExecContext(ctx, query); err != nil {
-		return "", fmt.Errorf("failed to create index: %w", err)
+		return "", shared.NewAppError(shared.ErrSchemaError, "failed to create index: "+err.Error(), "mysql")
 	}
 
 	return fmt.Sprintf("Index '%s' created successfully", req.IndexName), nil
@@ -270,15 +272,15 @@ func (m *Module) MysqlDropIndex(req MysqlDropIndexRequest) (string, error) {
 
 	var query string
 	if req.Database != "" {
-		query = fmt.Sprintf("DROP INDEX `%s` ON `%s`.`%s`", req.IndexName, req.Database, req.TableName)
+		query = fmt.Sprintf("DROP INDEX %s ON %s.%s", escapeMysqlIdentifier(req.IndexName), escapeMysqlIdentifier(req.Database), escapeMysqlIdentifier(req.TableName))
 	} else {
-		query = fmt.Sprintf("DROP INDEX `%s` ON `%s`", req.IndexName, req.TableName)
+		query = fmt.Sprintf("DROP INDEX %s ON %s", escapeMysqlIdentifier(req.IndexName), escapeMysqlIdentifier(req.TableName))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 	if _, err := db.ExecContext(ctx, query); err != nil {
-		return "", fmt.Errorf("failed to drop index: %w", err)
+		return "", shared.NewAppError(shared.ErrSchemaError, "failed to drop index: "+err.Error(), "mysql")
 	}
 
 	return fmt.Sprintf("Index '%s' dropped successfully", req.IndexName), nil
