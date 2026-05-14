@@ -149,7 +149,10 @@ export function useTableLifecycleEffects({
     void handleOpenTableRef.current(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
   }, [activeOpenedTable, isTableWorkspace]);
 
-  // 仅在切换到不同表时同步过滤草稿，避免因 visibleColumns 等无关字段变化覆盖用户正在编辑的过滤条件
+  // Sync filter draft from the opened table's persisted filterTree when:
+  // 1. Connection changes → always re-sync
+  // 2. Table changes (even if seen before) → re-sync to restore filter
+  // 3. Columns become available after initial load → re-sync
   const lastSyncedTableRef = useRef<{ connectionId: string | null | undefined; database: string; table: string } | null>(null);
   const prevDataColumnsLengthRef = useRef(dataColumns.length);
   const prevConnectionIdRef = useRef(connectionId);
@@ -170,11 +173,10 @@ export function useTableLifecycleEffects({
     const isNewTable = prev?.database !== activeOpenedTable.database || prev?.table !== activeOpenedTable.table;
     const columnsJustBecameAvailable = prevDataColumnsLengthRef.current === 0 && dataColumns.length > 0;
 
-    if (isNewTable) {
-      lastSyncedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
-    }
-
+    // Always re-sync when switching tables (even back to a previously seen one)
+    // so that filterDraftTree is restored from activeOpenedTable.filterTree.
     if (isNewTable || columnsJustBecameAvailable) {
+      lastSyncedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
       syncFilterDraftFromOpenedTable(activeOpenedTable, dataColumns);
     }
     prevDataColumnsLengthRef.current = dataColumns.length;

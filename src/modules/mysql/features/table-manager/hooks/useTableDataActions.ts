@@ -75,7 +75,16 @@ export function useTableDataActions({
 
   const syncFilterDraftFromOpenedTable = useCallback((table: MysqlOpenedTable | null, columns: string[]) => {
     const firstColumn = columns[0];
-    if (!firstColumn) return; // Columns not loaded yet — skip to avoid creating empty-column conditions
+    if (!firstColumn) {
+      // Columns not loaded yet — try to restore from saved filterTree using its column names
+      if (table?.filterTree) {
+        const cond = table.filterTree.children.find((c) => c.kind === "condition");
+        if (cond && cond.kind === "condition" && cond.column) {
+          setFilterDraftTree(cloneFilterGroup(table.filterTree, cond.column));
+        }
+      }
+      return;
+    }
     const tree = table?.filterTree
       ? cloneFilterGroup(table.filterTree, firstColumn)
       : createFilterGroup("and", [createFilterCondition(firstColumn)]);
