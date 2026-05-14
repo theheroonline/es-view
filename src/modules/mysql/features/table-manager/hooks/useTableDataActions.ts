@@ -74,7 +74,8 @@ export function useTableDataActions({
   }, []);
 
   const syncFilterDraftFromOpenedTable = useCallback((table: MysqlOpenedTable | null, columns: string[]) => {
-    const firstColumn = columns[0] ?? "";
+    const firstColumn = columns[0];
+    if (!firstColumn) return; // Columns not loaded yet — skip to avoid creating empty-column conditions
     const tree = table?.filterTree
       ? cloneFilterGroup(table.filterTree, firstColumn)
       : createFilterGroup("and", [createFilterCondition(firstColumn)]);

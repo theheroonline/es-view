@@ -65,6 +65,7 @@ export function DataTabPanel({
   // 本地状态用于管理输入框值（避免每次输入都刷新数据）
   const [pageSizeInput, setPageSizeInput] = useState(String(dataState.pageSize));
   const [pageInput, setPageInput] = useState(String(dataState.page));
+  const [filterApplyError, setFilterApplyError] = useState<string | null>(null);
 
   // 当外部数据改变时，同步输入框值
   useEffect(() => {
@@ -109,6 +110,16 @@ export function DataTabPanel({
   const filterConditions = rootFilterTree.children.filter(
     (child): child is FilterConditionDraft => child.kind === "condition"
   );
+
+  const handleApplyFilter = () => {
+    setFilterApplyError(null);
+    const hasAnyEmptyColumn = filterConditions.some((c) => !c.column || !c.column.trim());
+    if (hasAnyEmptyColumn) {
+      setFilterApplyError(t("mysql.tableManager.filterEmptyColumn"));
+      return;
+    }
+    onApplyFilter(rootFilterTree);
+  };
 
   const updateCondition = (id: string, updater: (condition: FilterConditionDraft) => FilterConditionDraft) => {
     setFilterDraftTree((prev) => {
@@ -225,9 +236,14 @@ export function DataTabPanel({
               <button className="btn btn-sm btn-ghost" onClick={onClearFilter}>
                 {t("mysql.tableManager.clearFilter")}
               </button>
-              <button className="btn btn-sm btn-primary" onClick={() => onApplyFilter(rootFilterTree)}>
+              <button className="btn btn-sm btn-primary" onClick={handleApplyFilter}>
                 {t("mysql.tableManager.apply")}
               </button>
+              {filterApplyError && (
+                <span className="text-danger" style={{ fontSize: 12, lineHeight: "20px" }}>
+                  {filterApplyError}
+                </span>
+              )}
               <button className="btn btn-sm btn-ghost" onClick={() => setFilterPanelOpen(false)}>
                 {t("common.close")}
               </button>

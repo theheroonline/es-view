@@ -451,6 +451,16 @@ export function useConnectionWorkspace() {
         }
       }
 
+      // Reset workspace state for the disconnected connection to prevent
+      // stale data from appearing on reconnect.
+      if (engine === "mysql") {
+        resetMysqlWorkspace(targetConnectionId);
+      } else if (engine === "redis") {
+        setSelectedRedisDatabase(null);
+      } else if (engine === "elasticsearch") {
+        resetEsWorkspace(targetConnectionId);
+      }
+
       deactivateConnection(targetConnectionId, engine);
       setIsWorkspaceSuspendedByEngine((prev) => ({ ...prev, [engine]: false }));
       setConnectionStatusById((prev) => {

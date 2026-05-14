@@ -48,6 +48,22 @@ export const formatSqlValue = (value: unknown): string => {
 };
 
 /**
+ * Check if a string looks like a pure number (integer or decimal, optionally negative).
+ * Used to avoid quoting numeric filter values that target BIGINT/DECIMAL columns.
+ */
+const isNumericString = (value: string): boolean => /^-?\d+(\.\d+)?$/.test(value);
+
+/**
+ * Format a raw string value for SQL comparison.
+ * Numeric-looking values are emitted without quotes to avoid implicit
+ * type conversion issues (e.g. bigint column = '1234567890123456789').
+ */
+const formatFilterValue = (value: string): string => {
+  if (isNumericString(value)) return value;
+  return escapeSqlLiteral(value);
+};
+
+/**
  * Build SQL WHERE condition from filter condition node
  * Returns null if condition is invalid
  */
@@ -63,22 +79,22 @@ export const buildConditionSql = (
 
   switch (condition.operator) {
     case "eq":
-      return `${identifier} = ${escapeSqlLiteral(conditionValue)}`;
+      return `${identifier} = ${formatFilterValue(conditionValue)}`;
     case "ne":
-      return `${identifier} <> ${escapeSqlLiteral(conditionValue)}`;
+      return `${identifier} <> ${formatFilterValue(conditionValue)}`;
     case "gt":
-      return `${identifier} > ${escapeSqlLiteral(conditionValue)}`;
+      return `${identifier} > ${formatFilterValue(conditionValue)}`;
     case "gte":
-      return `${identifier} >= ${escapeSqlLiteral(conditionValue)}`;
+      return `${identifier} >= ${formatFilterValue(conditionValue)}`;
     case "between": {
       const [start, end] = splitBetweenValue(conditionValue);
       if (!start.trim() || !end.trim()) return null;
-      return `${identifier} BETWEEN ${escapeSqlLiteral(start)} AND ${escapeSqlLiteral(end)}`;
+      return `${identifier} BETWEEN ${formatFilterValue(start)} AND ${formatFilterValue(end)}`;
     }
     case "lt":
-      return `${identifier} < ${escapeSqlLiteral(conditionValue)}`;
+      return `${identifier} < ${formatFilterValue(conditionValue)}`;
     case "lte":
-      return `${identifier} <= ${escapeSqlLiteral(conditionValue)}`;
+      return `${identifier} <= ${formatFilterValue(conditionValue)}`;
     case "contains":
       return `${identifier} LIKE '%${likeLiteralEscaper(conditionValue)}%' ESCAPE '\\\\'`;
     case "startsWith":

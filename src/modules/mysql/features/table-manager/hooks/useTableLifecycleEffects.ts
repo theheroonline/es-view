@@ -4,8 +4,8 @@ import { getMysqlOpenedTableKey, type MysqlOpenedTable, type MysqlTableDataCache
 import type { DataState, RightPanelTab, TableInfo } from "../utils";
 
 // Module-level set tracking tables that have been loaded during this session.
-// Prevents redundant refetches when activeOpenedTable reference changes
-// without the underlying db+table actually changing.
+// Key includes connectionId to prevent cross-connection pollution when
+// different connections access the same database/table names.
 const loadedTableKeys = new Set<string>();
 
 interface UseTableLifecycleEffectsProps {
@@ -65,8 +65,9 @@ export function useTableLifecycleEffects({
   const handleOpenTableRef = useRef(handleOpenTable);
   handleOpenTableRef.current = handleOpenTable;
 
-  // Track previously opened table to skip redundant re-fetches on double-click
-  const prevOpenedTableRef = useRef<{ database: string; table: string } | null>(null);
+  // Track previously opened table to skip redundant re-fetches on double-click.
+  // Include connectionId to distinguish between different connections with the same db/table.
+  const prevOpenedTableRef = useRef<{ connectionId: string | null | undefined; database: string; table: string } | null>(null);
 
   // Refs for values read in the connection-lifecycle effect without adding them to deps.
   // These fields change frequently (on every render) but the effect should only react
@@ -83,6 +84,7 @@ export function useTableLifecycleEffects({
   useEffect(() => {
     if (!isTableWorkspace || !activeOpenedTable) return;
     if (
+      prevOpenedTableRef.current?.connectionId === connectionId &&
       prevOpenedTableRef.current?.database === activeOpenedTable.database &&
       prevOpenedTableRef.current?.table === activeOpenedTable.table
     ) {
@@ -91,9 +93,12 @@ export function useTableLifecycleEffects({
 
     // ── activeOpenedTable actually changed ──
 
-    // Try restore from cache for the NEW table
-    const newKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
-    const cached = getTableDataCache()[newKey];
+    // Key for module-level loadedTableKeys — must include connectionId
+    // to prevent cross-connection pollution.
+    const loadKey = `${connectionId}::${activeOpenedTable.database}::${activeOpenedTable.table}`;
+    // Key for connection-scoped tableDataCache — already isolated per connection.
+    const cacheKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    const cached = getTableDataCache()[cacheKey];
 
     if (cached) {
       const safePage = cached.total > 0
@@ -125,37 +130,55 @@ export function useTableLifecycleEffects({
       });
       latestDataRequestRef.current += 1;
       activeDataRequestKeyRef.current = null;
-      loadedTableKeys.add(newKey);
-      prevOpenedTableRef.current = { database: activeOpenedTable.database, table: activeOpenedTable.table };
+      loadedTableKeys.add(loadKey);
+      prevOpenedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
       return;
     }
 
     // Not cached — check if this table has been loaded before.
     // If it has but cache was cleared (e.g., column toggle), don't refetch
     // to avoid resetting the user's position to page 1.
-    if (loadedTableKeys.has(newKey)) {
+    if (loadedTableKeys.has(loadKey)) {
       return;
     }
 
     // Not cached and never loaded — proceed with normal fetch
     // Cache is saved inside handleOpenTable → fetchData after the fetch completes
-    loadedTableKeys.add(newKey);
-    prevOpenedTableRef.current = { database: activeOpenedTable.database, table: activeOpenedTable.table };
+    loadedTableKeys.add(loadKey);
+    prevOpenedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
     void handleOpenTableRef.current(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
   }, [activeOpenedTable, isTableWorkspace]);
 
   // 仅在切换到不同表时同步过滤草稿，避免因 visibleColumns 等无关字段变化覆盖用户正在编辑的过滤条件
-  const lastSyncedTableRef = useRef<{ database: string; table: string } | null>(null);
+  const lastSyncedTableRef = useRef<{ connectionId: string | null | undefined; database: string; table: string } | null>(null);
+  const prevDataColumnsLengthRef = useRef(dataColumns.length);
+  const prevConnectionIdRef = useRef(connectionId);
 
   useEffect(() => {
     if (!activeOpenedTable) return;
-    const prev = lastSyncedTableRef.current;
-    if (prev?.database === activeOpenedTable.database && prev?.table === activeOpenedTable.table) {
+
+    // Connection change always triggers a fresh sync
+    if (prevConnectionIdRef.current !== connectionId) {
+      prevConnectionIdRef.current = connectionId;
+      lastSyncedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
+      prevDataColumnsLengthRef.current = 0; // Reset to allow column re-sync
+      syncFilterDraftFromOpenedTable(activeOpenedTable, dataColumns);
       return;
     }
-    lastSyncedTableRef.current = { database: activeOpenedTable.database, table: activeOpenedTable.table };
-    syncFilterDraftFromOpenedTable(activeOpenedTable, dataColumns);
-  }, [activeOpenedTable, dataColumns, syncFilterDraftFromOpenedTable]);
+
+    const prev = lastSyncedTableRef.current;
+    const isNewTable = prev?.database !== activeOpenedTable.database || prev?.table !== activeOpenedTable.table;
+    const columnsJustBecameAvailable = prevDataColumnsLengthRef.current === 0 && dataColumns.length > 0;
+
+    if (isNewTable) {
+      lastSyncedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
+    }
+
+    if (isNewTable || columnsJustBecameAvailable) {
+      syncFilterDraftFromOpenedTable(activeOpenedTable, dataColumns);
+    }
+    prevDataColumnsLengthRef.current = dataColumns.length;
+  }, [activeOpenedTable, dataColumns, syncFilterDraftFromOpenedTable, connectionId]);
 
   useEffect(() => {
     if (!connectionId) {
@@ -183,7 +206,7 @@ export function useTableLifecycleEffects({
       void refreshTablesForDb(expandedDatabase);
     }
 
-    if (selectedTableInfoRef.current && locationPathname !== "/mysql/table" && selectedTableInfoRef.current.database !== expandedDatabase) {
+    if (selectedTableInfoRef.current && locationPathname === "/mysql/tables" && selectedTableInfoRef.current.database !== expandedDatabase) {
       latestDataRequestRef.current += 1;
       activeDataRequestKeyRef.current = null;
       setSelectedTableInfo(null);

@@ -121,6 +121,9 @@ export function useMysqlSidebarWorkspace({
   const [dropDatabaseConfirmDialog, setDropDatabaseConfirmDialog] = useState<DropDatabaseConfirmDialogState | null>(null);
   const openingTableRef = useRef<string | null>(null);
 
+  // Track previous MySQL connection ID to detect MySQL-to-MySQL switches.
+  const prevMysqlConnectionIdRef = useRef<string | null | undefined>(null);
+
   const closeMysqlMenus = () => {
     setMysqlDatabaseContextMenu(null);
     setMysqlTableContextMenu(null);
@@ -138,7 +141,32 @@ export function useMysqlSidebarWorkspace({
     setSelectedSidebarTables([]);
     setSidebarSelectionAnchor(null);
     closeMysqlMenus();
+    setCreateDatabaseDialog(null);
+    setDatabasePropertiesDialog(null);
+    setTableTransferDialog(null);
+    setTableTransferTask(null);
+    setDropDatabaseConfirmDialog(null);
   }, [activeConnectionId, getProfileById]);
+
+  // When switching between different MySQL connections, reset sidebar dialogs
+  // and menus to prevent cross-connection state leakage.
+  // Sidebar databases/tables are already reset by the effect above when
+  // MysqlContext changes the focused workspace.
+  useEffect(() => {
+    if (prevMysqlConnectionIdRef.current === activeConnectionId) return;
+    // Skip initial mount
+    if (prevMysqlConnectionIdRef.current === undefined) {
+      prevMysqlConnectionIdRef.current = activeConnectionId;
+      return;
+    }
+    prevMysqlConnectionIdRef.current = activeConnectionId;
+    closeMysqlMenus();
+    setCreateDatabaseDialog(null);
+    setDatabasePropertiesDialog(null);
+    setTableTransferDialog(null);
+    setTableTransferTask(null);
+    setDropDatabaseConfirmDialog(null);
+  }, [activeConnectionId]);
 
   const getOrderedSidebarTables = (database: string, tables: string[]) => {
     const availableTables = tablesByDb[database] ?? [];

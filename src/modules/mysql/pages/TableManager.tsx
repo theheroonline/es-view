@@ -522,9 +522,30 @@ export default function MysqlTableManager() {
 
 
   // 仅在表切换时清除选中状态，避免分页/其他状态变化触发闪烁
+  // Also reset transient UI state (modals, drafts, selection) when switching tables
+  // to prevent state from one table leaking into another.
   useEffect(() => {
     setSelectedCells([]);
     setSelectionAnchor(null);
+    setSelectedRowIndex(null);
+    setFilterPanelOpen(false);
+    setSortModalOpen(false);
+    setColumnMenuOpen(false);
+    setSqlModalOpen(false);
+    setColumnEditOpen(false);
+    setBatchEditModalOpen(false);
+    setAddRowModalOpen(false);
+    setFilterDraftTree(null);
+    setSortDraft({ column: "", direction: "asc" });
+    setBatchEditValue("");
+    setBatchEditError("");
+    setSqlModalValue("");
+    setSqlModalResult("");
+    setSqlModalLoading(false);
+    setAddRowFormData({});
+    setAddRowError("");
+    setColumnHeaderContextMenu(null);
+    setError("");
   }, [activeOpenedTableKey]);
 
   useTableMenuDismiss({
