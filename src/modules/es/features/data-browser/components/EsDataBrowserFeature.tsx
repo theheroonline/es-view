@@ -344,7 +344,7 @@ export function EsDataBrowserFeature() {
           onToggleCondition={toggleCondition}
         />
 
-        <div className="toolbar" style={{ margin: "0 0 16px 0", border: "none", background: "transparent", padding: 0, position: "relative" }}>
+        <div className="toolbar" style={{ margin: "0 0 8px 0", border: "none", background: "transparent", padding: 0, position: "relative" }}>
           <div className="flex-gap items-center">
             <div className="flex-gap items-center" style={{ background: "white", padding: "6px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
               <button

@@ -63,7 +63,6 @@ export function useTableManagerState() {
   const [columnHeaderContextMenu, setColumnHeaderContextMenu] = useState<ColumnHeaderContextMenu | null>(null);
   const [selectedOverviewTables, setSelectedOverviewTables] = useState<string[]>([]);
   const [overviewSelectionAnchor, setOverviewSelectionAnchor] = useState<string | null>(null);
-
   const selectedOverviewTablesRef = useRef<string[]>([]);
   const latestDataRequestRef = useRef(0);
   const activeDataRequestKeyRef = useRef<string | null>(null);

@@ -42,7 +42,7 @@ interface UseExcelTableReturn {
   setColumnWidth: (columnName: string, width: number, isFinal?: boolean) => void;
 }
 
-const ROW_HEIGHT = 40; // 与当前单元格 padding 的实际视觉行高对齐，减少中段滚动偏移抖动
+const ROW_HEIGHT = 32; // 紧凑行高：32px，提高同屏行数
 const BUFFER_SIZE = 20; // 虚拟滚动缓冲区 - 增加到 20 以减少闪烁
 const DEFAULT_COLUMN_WIDTH = 120; // 默认列宽（像素）
 const MIN_COLUMN_WIDTH = 50; // 最小列宽

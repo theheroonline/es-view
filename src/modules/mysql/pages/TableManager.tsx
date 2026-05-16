@@ -600,6 +600,57 @@ export default function MysqlTableManager() {
     setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, nextTab);
   }, [activeOpenedTable, setOpenedTableView, setRightPanelTab]);
 
+  const toolbarActions = useMemo(() => {
+    if (rightPanelTab !== "data") return null;
+
+    return (
+      <div className="tm-toolbar-actions">
+        <button className="btn btn-sm btn-ghost" onClick={handleAddNewRow}>
+          {t("mysql.tableManager.addNewRow")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={handleToggleFilterPanel}>
+          {t("mysql.tableManager.filterData")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={handleOpenSortModal}>
+          {t("mysql.tableManager.sortData")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={() => setColumnMenuOpen((prev) => !prev)}>
+          {t("mysql.tableManager.displayColumns")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={() => { void fetchData(); }} disabled={dataState.loading}>
+          {dataState.loading ? t("common.loading") : t("common.refresh")}
+        </button>
+        {columnMenuOpen && dataState.columns.length > 0 && (
+          <div className="tm-column-menu-dropdown">
+            <div className="tm-column-menu-body">
+              <div className="tm-column-menu-tools">
+                <button className="btn btn-sm btn-ghost" onClick={handleSelectAllVisibleColumns}>
+                  {t("common.selectAll")}
+                </button>
+                <button className="btn btn-sm btn-ghost" onClick={() => setColumnMenuOpen(false)}>
+                  {t("common.close")}
+                </button>
+              </div>
+              {dataState.columns.map((column) => {
+                const checked = visibleDataColumns.includes(column);
+                return (
+                  <label key={column} className={`tm-column-option ${checked ? "is-checked" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => handleVisibleColumnToggle(column, event.target.checked)}
+                    />
+                    {column}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [rightPanelTab, columnMenuOpen, dataState.loading, dataState.columns, visibleDataColumns, t, handleAddNewRow, handleToggleFilterPanel, handleOpenSortModal, fetchData, handleSelectAllVisibleColumns, handleVisibleColumnToggle, setColumnMenuOpen]);
+
   // ─── Render ───
   if (!activeMysqlConnection) {
     return (
@@ -613,70 +664,58 @@ export default function MysqlTableManager() {
 
   return (
     <div className="page">
-      <div className="tm-shell">
-        <div className="card tm-main-card">
-          <TableManagerWorkspace
-            isTableWorkspace={isTableWorkspace}
-            activeOpenedTable={activeOpenedTable}
-            rightPanelTab={rightPanelTab}
-            onSelectTab={handleSelectWorkspaceTab}
-            overviewPaneProps={{
-              expandedDatabase: expandedDatabase ?? null,
-              tables: overviewTables,
-              selectedTable,
-              selectedOverviewTables,
-              loading,
-              onTableClick: handleOverviewTableClick,
-              onClearSelection: clearOverviewTableSelection,
-              onBrowseTable: handleBrowseData,
-              onTableDragStart: handleOverviewTableDragStart,
-              onTableContextMenu: handleTableContextMenu,
-              onRefreshTables: refreshTablesForDb,
-              onOpenCreateTable: () => openCreateTable(expandedDatabase ?? ""),
-            }}
-            dataPaneProps={{
-              connectionId,
-              selectedTableInfo,
-              dataState,
-              visibleDataColumns,
-              selectedCellKeySet,
-              selectedRowIndex,
-              filterPanelOpen,
-              filterDraftTree,
-              totalPages,
-              filterOperators,
-              columnMenuOpen,
-              onSetColumnMenuOpen: setColumnMenuOpen,
-              onVisibleColumnToggle: handleVisibleColumnToggle,
-              onSelectAllVisibleColumns: handleSelectAllVisibleColumns,
-              onAddNewRow: handleAddNewRow,
-              onToggleFilterPanel: handleToggleFilterPanel,
-              onOpenSortModal: handleOpenSortModal,
-              onRefreshData: fetchData,
-              onSetFilterPanelOpen: setFilterPanelOpen,
-              onSetFilterDraftTree: setFilterDraftTree,
-              onPageChange: handlePageChange,
-              onPageSizeChange: handlePageSizeChange,
-              onCellClick: handleCellClick,
-              onRowContextMenu: handleRowContextMenu,
-              onSaveCell: handleSaveCell,
-              onClearFilter: clearFilter,
-              onApplyFilter: applyFilter,
-            }}
-            structurePaneProps={{
-              selectedTableInfo,
-              onAddColumn: openAddColumnModal,
-              onManageIndexes: openIndexModal,
-              onMoveColumn: handleMoveColumn,
-              onEditColumn: openEditColumnModal,
-              onDropColumn: handleDropColumn,
-            }}
-            infoPaneProps={{
-              selectedTableInfo,
-            }}
-          />
-        </div>
-      </div>
+      <TableManagerWorkspace
+        isTableWorkspace={isTableWorkspace}
+        activeOpenedTable={activeOpenedTable}
+        rightPanelTab={rightPanelTab}
+        onSelectTab={handleSelectWorkspaceTab}
+        toolbarActions={toolbarActions}
+        overviewPaneProps={{
+          expandedDatabase: expandedDatabase ?? null,
+          tables: overviewTables,
+          selectedTable,
+          selectedOverviewTables,
+          loading,
+          onTableClick: handleOverviewTableClick,
+          onBrowseTable: handleBrowseData,
+          onTableDragStart: handleOverviewTableDragStart,
+          onTableContextMenu: handleTableContextMenu,
+          onRefreshTables: refreshTablesForDb,
+          onOpenCreateTable: () => openCreateTable(expandedDatabase ?? ""),
+        }}
+        dataPaneProps={{
+          connectionId,
+          selectedTableInfo,
+          dataState,
+          visibleDataColumns,
+          selectedCellKeySet,
+          selectedRowIndex,
+          filterPanelOpen,
+          filterDraftTree,
+          totalPages,
+          filterOperators,
+          onSetFilterPanelOpen: setFilterPanelOpen,
+          onSetFilterDraftTree: setFilterDraftTree,
+          onPageChange: handlePageChange,
+          onPageSizeChange: handlePageSizeChange,
+          onCellClick: handleCellClick,
+          onRowContextMenu: handleRowContextMenu,
+          onSaveCell: handleSaveCell,
+          onClearFilter: clearFilter,
+          onApplyFilter: applyFilter,
+        }}
+        structurePaneProps={{
+          selectedTableInfo,
+          onAddColumn: openAddColumnModal,
+          onManageIndexes: openIndexModal,
+          onMoveColumn: handleMoveColumn,
+          onEditColumn: openEditColumnModal,
+          onDropColumn: handleDropColumn,
+        }}
+        infoPaneProps={{
+          selectedTableInfo,
+        }}
+      />
 
       {/* Error */}
       {error && (

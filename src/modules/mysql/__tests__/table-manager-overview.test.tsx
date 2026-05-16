@@ -5,7 +5,6 @@ import { TableOverviewPane } from "../features/table-manager/components/TableOve
 describe("TableOverviewPane", () => {
   it("wires overview actions through to the panel", () => {
     const onTableClick = vi.fn();
-    const onClearSelection = vi.fn();
     const onBrowseTable = vi.fn();
     const onTableDragStart = vi.fn();
     const onTableContextMenu = vi.fn();
@@ -20,7 +19,6 @@ describe("TableOverviewPane", () => {
         selectedOverviewTables={["users"]}
         loading={false}
         onTableClick={onTableClick}
-        onClearSelection={onClearSelection}
         onBrowseTable={onBrowseTable}
         onTableDragStart={onTableDragStart}
         onTableContextMenu={onTableContextMenu}
@@ -29,14 +27,12 @@ describe("TableOverviewPane", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "mysql.tableManager.clearTableSelection" }));
     fireEvent.click(screen.getByRole("button", { name: "mysql.tableManager.refreshTables" }));
     fireEvent.click(screen.getByRole("button", { name: "mysql.tableManager.createTable" }));
     fireEvent.click(screen.getByText("users"));
     fireEvent.doubleClick(screen.getByText("users"));
     fireEvent.contextMenu(screen.getByText("users"));
 
-    expect(onClearSelection).toHaveBeenCalledTimes(1);
     expect(onRefreshTables).toHaveBeenCalledWith("app_db");
     expect(onOpenCreateTable).toHaveBeenCalledTimes(1);
     expect(onTableClick).toHaveBeenCalled();
@@ -53,7 +49,6 @@ describe("TableOverviewPane", () => {
         selectedOverviewTables={[]}
         loading={false}
         onTableClick={vi.fn()}
-        onClearSelection={vi.fn()}
         onBrowseTable={vi.fn()}
         onTableDragStart={vi.fn()}
         onTableContextMenu={vi.fn()}

@@ -21,8 +21,8 @@ export function EsDataBrowserToolbar({
 }: EsDataBrowserToolbarProps) {
   return (
     <div className="card" style={{ flex: "0 0 auto" }}>
-      <div className="card-body" style={{ display: "grid", gap: "12px" }}>
-        <div className="module-toolbar-grid" style={{ display: "flex", gap: "12px", alignItems: "flex-end" }}>
+      <div className="card-body" style={{ display: "grid", gap: "8px" }}>
+        <div className="module-toolbar-grid" style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
           <div className="module-toolbar-field" style={{ flex: "0 0 auto" }}>
             <label>{t("dataBrowser.selectIndex")}</label>
             <div style={{ position: "relative", display: "flex", alignItems: "center", width: "200px" }}>

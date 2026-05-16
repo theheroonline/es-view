@@ -8,7 +8,6 @@ export interface TableOverviewPaneProps {
   selectedOverviewTables: string[];
   loading: boolean;
   onTableClick: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
-  onClearSelection: () => void;
   onBrowseTable: (database: string, table: string) => void;
   onTableDragStart: (event: DragEvent<HTMLDivElement>, database: string, table: string) => void;
   onTableContextMenu: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
@@ -23,7 +22,6 @@ export function TableOverviewPane({
   selectedOverviewTables,
   loading,
   onTableClick,
-  onClearSelection,
   onBrowseTable,
   onTableDragStart,
   onTableContextMenu,
@@ -38,7 +36,6 @@ export function TableOverviewPane({
       selectedOverviewTables={selectedOverviewTables}
       loading={loading}
       onTableClick={onTableClick}
-      onClearSelection={onClearSelection}
       onBrowseTable={onBrowseTable}
       onTableDragStart={onTableDragStart}
       onTableContextMenu={onTableContextMenu}

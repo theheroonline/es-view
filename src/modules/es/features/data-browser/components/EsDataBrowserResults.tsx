@@ -53,7 +53,7 @@ export function EsDataBrowserResults({
   const isAllRowsSelected = rows.length > 0 && rows.every((row) => selectedDocs.has(row._id));
 
   return (
-    <div className="card" style={{ flex: 1, minHeight: "200px", display: "flex", flexDirection: "column", overflow: "visible" }}>
+    <div className="card" style={{ flex: 1, minHeight: "150px", display: "flex", flexDirection: "column", overflow: "visible" }}>
       <div className="card-header">
         <h3 className="card-title">{t("dataBrowser.queryResult")}</h3>
         <div className="flex-gap" style={{ alignItems: "center" }}>
@@ -148,7 +148,7 @@ export function EsDataBrowserResults({
                         </tr>
                         {expandedRows.has(row._id) && (
                           <tr className="expanded-row">
-                            <td colSpan={allColumns.length + 4} style={{ background: "#f8fafc", padding: "12px 16px" }}>
+                            <td colSpan={allColumns.length + 4} style={{ background: "#f8fafc", padding: "8px 12px" }}>
                               <pre style={{ margin: 0, fontSize: "12px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                                 {JSON.stringify(row._source, null, 2)}
                               </pre>
@@ -167,11 +167,11 @@ export function EsDataBrowserResults({
           <div className="es-view-pane" data-active={viewMode === "json"}>
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <div style={{
-                padding: "12px 16px",
+                padding: "8px 12px",
                 background: "#eff6ff",
                 border: "1px solid #bfdbfe",
                 borderRadius: "8px",
-                marginBottom: "12px",
+                marginBottom: "8px",
                 fontSize: "13px",
                 color: "#1e40af"
               }}>

@@ -14,6 +14,7 @@ export interface TableManagerWorkspaceProps {
   dataPaneProps: TableDataPaneProps;
   structurePaneProps: TableStructurePaneProps;
   infoPaneProps: TableInfoPaneProps;
+  toolbarActions?: React.ReactNode;
 }
 
 export function TableManagerWorkspace({
@@ -25,6 +26,7 @@ export function TableManagerWorkspace({
   dataPaneProps,
   structurePaneProps,
   infoPaneProps,
+  toolbarActions,
 }: TableManagerWorkspaceProps) {
   const { t } = useTranslation();
 
@@ -42,7 +44,7 @@ export function TableManagerWorkspace({
 
   return (
     <>
-      <div className="tm-tab-strip">
+      <div className="tm-unified-toolbar">
         <div className="tm-tab-buttons">
           <button
             className={`btn btn-sm tm-tab-button ${rightPanelTab === "data" ? "btn-primary is-active" : "btn-ghost"}`}
@@ -63,6 +65,7 @@ export function TableManagerWorkspace({
             {t("mysql.tableManager.info")}
           </button>
         </div>
+        {toolbarActions}
       </div>
 
       <div className="tm-tab-panel">

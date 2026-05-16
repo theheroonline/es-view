@@ -19,8 +19,6 @@ export interface DatabaseOverviewPanelProps {
   loading: boolean;
   /** Called when a table is clicked in the overview */
   onTableClick: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
-  /** Called when selected overview tables should be cleared */
-  onClearSelection: () => void;
   /** Called when a table is double-clicked to browse */
   onBrowseTable: (database: string, table: string) => void;
   /** Called when a table drag operation starts */
@@ -40,7 +38,6 @@ export function DatabaseOverviewPanel({
   selectedOverviewTables,
   loading,
   onTableClick,
-  onClearSelection,
   onBrowseTable,
   onTableDragStart,
   onTableContextMenu,
@@ -69,11 +66,6 @@ export function DatabaseOverviewPanel({
           </p>
         </div>
         <div className="tm-overview-actions">
-          {selectedOverviewTables.length > 0 ? (
-            <button className="btn btn-sm btn-ghost" onClick={onClearSelection}>
-              {t("mysql.tableManager.clearTableSelection")}
-            </button>
-          ) : null}
           <button
             className="btn btn-sm btn-ghost"
             onClick={() => onRefreshTables(expandedDatabase)}
