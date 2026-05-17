@@ -7,6 +7,7 @@ export interface TableOverviewPaneProps {
   selectedTable?: string | null;
   selectedOverviewTables: string[];
   loading: boolean;
+  connectionId?: string;
   onTableClick: (event: MouseEvent<HTMLDivElement>, database: string, table: string) => void;
   onBrowseTable: (database: string, table: string) => void;
   onTableDragStart: (event: DragEvent<HTMLDivElement>, database: string, table: string) => void;
@@ -21,6 +22,7 @@ export function TableOverviewPane({
   selectedTable,
   selectedOverviewTables,
   loading,
+  connectionId,
   onTableClick,
   onBrowseTable,
   onTableDragStart,
@@ -35,9 +37,10 @@ export function TableOverviewPane({
       selectedTable={selectedTable}
       selectedOverviewTables={selectedOverviewTables}
       loading={loading}
+      connectionId={connectionId}
       onTableClick={onTableClick}
       onBrowseTable={onBrowseTable}
-      onTableDragStart={onTableDragStart}
+      onDragStart={onTableDragStart}
       onTableContextMenu={onTableContextMenu}
       onRefreshTables={(database) => {
         void onRefreshTables(database);

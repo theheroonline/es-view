@@ -5,7 +5,7 @@ const PATH_ENGINE_MAP: Array<{ prefixes: string[]; engine: EngineType }> = [
   { prefixes: ["/redis/"], engine: "redis" },
 ];
 
-const ES_PATHS: string[] = ["/", "/data", "/sql", "/rest", "/indices"];
+const ES_PATHS: string[] = ["/data", "/sql", "/rest", "/indices"];
 
 export function getEngineFromPath(pathname: string): EngineType | null {
   for (const { prefixes, engine } of PATH_ENGINE_MAP) {

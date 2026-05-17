@@ -176,7 +176,6 @@ func (m *Module) startHeartbeat(connectionID string, db *sql.DB, ctx context.Con
 	for {
 		select {
 		case <-ctx.Done():
-			shared.Logger.Info("mysql heartbeat stopped", slog.String("connection_id", connectionID))
 			return
 		case <-ticker.C:
 			m.connManager.mu.RLock()

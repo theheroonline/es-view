@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMysqlContext } from "../../../state/MysqlContext";
@@ -42,9 +42,6 @@ import {
   escapeSqlIdentifier,
   mysqlColumnTypeOptions,
 } from "../features/table-manager/utils";
-import {
-  type RightPanelTab,
-} from "../features/table-manager/types";
 
 export default function MysqlTableManager() {
   const MAX_SHIFT_SELECTION_CELLS = 5000;
@@ -320,7 +317,6 @@ export default function MysqlTableManager() {
     refreshDatabases,
     refreshTablesForDb,
     handleOpenTable,
-    setOpenedTableView,
   } = useTableLifecycleActions({
     connectionId,
     expandedDatabase,
@@ -594,12 +590,6 @@ export default function MysqlTableManager() {
     t,
   });
 
-  const handleSelectWorkspaceTab = useCallback((nextTab: RightPanelTab) => {
-    if (!activeOpenedTable) return;
-    setRightPanelTab(nextTab);
-    setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, nextTab);
-  }, [activeOpenedTable, setOpenedTableView, setRightPanelTab]);
-
   const toolbarActions = useMemo(() => {
     if (rightPanelTab !== "data") return null;
 
@@ -668,9 +658,9 @@ export default function MysqlTableManager() {
         isTableWorkspace={isTableWorkspace}
         activeOpenedTable={activeOpenedTable}
         rightPanelTab={rightPanelTab}
-        onSelectTab={handleSelectWorkspaceTab}
         toolbarActions={toolbarActions}
         overviewPaneProps={{
+          connectionId,
           expandedDatabase: expandedDatabase ?? null,
           tables: overviewTables,
           selectedTable,

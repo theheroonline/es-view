@@ -71,13 +71,6 @@ export function InfoTabPanel({ selectedTableInfo }: InfoTabPanelProps) {
             </Fragment>
           ))}
         </div>
-
-        <div className="tm-info-section">
-          <div className="muted tm-info-label">{t("mysql.tableManager.createSql")}</div>
-          <pre className="tm-sql-preview">
-            {info.createSql}
-          </pre>
-        </div>
       </div>
     </div>
   );

@@ -20,12 +20,17 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	defer cancel()
 
 	if !isMysqlResultSetQuery(query) {
-		_, err := execWithRetry(db, query, ctx)
+	result, err := execWithRetry(db, query, ctx)
 		if err != nil {
 			return MysqlQueryResult{}, shared.NewAppError(shared.ErrQueryFailed, "query failed: "+err.Error(), "mysql")
 		}
 
-		return MysqlQueryResult{Columns: []string{}, Rows: [][]any{}, AffectedRows: 0, IsResultSet: false}, nil
+		var affectedRows int64
+		if n, err := result.RowsAffected(); err == nil {
+			affectedRows = n
+		}
+
+		return MysqlQueryResult{Columns: []string{}, Rows: [][]any{}, AffectedRows: affectedRows, IsResultSet: false}, nil
 	}
 
 	rows, err := queryWithRetry(db, query, ctx)
