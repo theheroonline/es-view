@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { logError } from "../../../../../lib/errorLog";
-import { getMysqlOpenedTableKey, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
+import { getMysqlOpenedTableKey, getMysqlOpenedTableTabKey, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
 import { mysqlListDatabases, mysqlListTables } from "../../../services/queryClient";
 import type { ColumnMeta } from "../../../types";
 import { fetchTableDetailSnapshot } from "../services/tableSchemaService";
@@ -105,14 +105,14 @@ export function useTableLifecycleActions({
       const remainingOpenedTables = openedTables.filter((item) => dbs.includes(item.database));
       if (remainingOpenedTables.length !== openedTables.length) {
         setOpenedTables(remainingOpenedTables);
-        const nextActiveKey = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey)
+        const nextActiveKey = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey)
           ? activeOpenedTableKey
           : null;
         setActiveOpenedTableKey(nextActiveKey);
         setSelectedTableInfo(null);
         setDataState(defaultDataState);
         if (locationPathname === "/mysql/table") {
-          const hasActive = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey);
+          const hasActive = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey);
           if (!hasActive) {
             void navigate("/mysql/tables");
           }
@@ -148,14 +148,14 @@ export function useTableLifecycleActions({
       const remainingOpenedTables = openedTables.filter((item) => item.database !== db || tbls.includes(item.table));
       if (remainingOpenedTables.length !== openedTables.length) {
         setOpenedTables(remainingOpenedTables);
-        const nextActiveKey = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey)
+        const nextActiveKey = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey)
           ? activeOpenedTableKey
           : null;
         setActiveOpenedTableKey(nextActiveKey);
         setSelectedTableInfo(null);
         setDataState(defaultDataState);
         if (locationPathname === "/mysql/table") {
-          const hasActive = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey);
+          const hasActive = activeOpenedTableKey && remainingOpenedTables.some((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey);
           if (!hasActive) {
             void navigate("/mysql/tables");
           }
@@ -260,9 +260,9 @@ export function useTableLifecycleActions({
   }, [activeDataRequestKeyRef, connectionId, currentLoadingTableKeyRef, fetchData, latestDataRequestRef, loadTableInfo, setDataColumnMeta, setDataState, setError, setRightPanelTab, setSelectedDatabase, setSelectedTable, setSelectedTableInfo, saveTableDataCache]);
 
   const setOpenedTableView = useCallback((db: string, table: string, view: RightPanelTab) => {
-    const nextKey = getMysqlOpenedTableKey(db, table);
+    const nextKey = getMysqlOpenedTableTabKey(db, table, view);
     setOpenedTables((prev) => prev.map((item) => (
-      getMysqlOpenedTableKey(item.database, item.table) === nextKey ? { ...item, view } : item
+      getMysqlOpenedTableTabKey(item.database, item.table, item.view) === nextKey ? { ...item, view } : item
     )));
   }, [setOpenedTables]);
 

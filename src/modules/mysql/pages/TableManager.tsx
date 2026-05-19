@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMysqlContext } from "../../../state/MysqlContext";
-import { getMysqlOpenedTableKey } from "../types";
+import { getMysqlOpenedTableTabKey } from "../types";
 import { AddRowModal } from "../features/table-manager/components/AddRowModal";
 import { BatchEditModal } from "../features/table-manager/components/BatchEditModal";
 import { ColumnEditModal } from "../features/table-manager/components/ColumnEditModal";
@@ -203,9 +203,11 @@ export default function MysqlTableManager() {
 
   const activeOpenedTable = useMemo(() => {
     return activeOpenedTableKey
-      ? openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey) ?? null
+      ? openedTables.find((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey) ?? null
       : null;
   }, [activeOpenedTableKey, openedTables]);
+
+  const displayPanelTab = activeOpenedTable?.view ?? rightPanelTab;
 
   const filterOperators = buildFilterOperators(t);
 
@@ -591,7 +593,7 @@ export default function MysqlTableManager() {
   });
 
   const toolbarActions = useMemo(() => {
-    if (rightPanelTab !== "data") return null;
+    if (displayPanelTab !== "data") return null;
 
     return (
       <div className="tm-toolbar-actions">
@@ -639,7 +641,7 @@ export default function MysqlTableManager() {
         )}
       </div>
     );
-  }, [rightPanelTab, columnMenuOpen, dataState.loading, dataState.columns, visibleDataColumns, t, handleAddNewRow, handleToggleFilterPanel, handleOpenSortModal, fetchData, handleSelectAllVisibleColumns, handleVisibleColumnToggle, setColumnMenuOpen]);
+  }, [displayPanelTab, columnMenuOpen, dataState.loading, dataState.columns, visibleDataColumns, t, handleAddNewRow, handleToggleFilterPanel, handleOpenSortModal, fetchData, handleSelectAllVisibleColumns, handleVisibleColumnToggle, setColumnMenuOpen]);
 
   // ─── Render ───
   if (!activeMysqlConnection) {
@@ -657,7 +659,7 @@ export default function MysqlTableManager() {
       <TableManagerWorkspace
         isTableWorkspace={isTableWorkspace}
         activeOpenedTable={activeOpenedTable}
-        rightPanelTab={rightPanelTab}
+        rightPanelTab={displayPanelTab}
         toolbarActions={toolbarActions}
         overviewPaneProps={{
           connectionId,

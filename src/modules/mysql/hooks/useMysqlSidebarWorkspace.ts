@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logError } from "../../../lib/errorLog";
 import type { ConnectionProfile } from "../../../lib/types";
-import { getMysqlOpenedTableKey } from "../types";
+import { getMysqlOpenedTableKey, getMysqlOpenedTableTabKey } from "../types";
 import { useMysqlContext } from "../../../state/MysqlContext";
 import { getCharsetOption, MYSQL_CHARSET_OPTIONS } from "../constants/databaseOptions";
 import {
@@ -263,11 +263,11 @@ export function useMysqlSidebarWorkspace({
     setOpenedTables(remainingTables);
 
     const nextActive = activeOpenedTableKey
-      ? remainingTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey)
+      ? remainingTables.find((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey)
         ?? remainingTables[remainingTables.length - 1]
         ?? null
       : null;
-    setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableKey(nextActive.database, nextActive.table) : null);
+    setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableTabKey(nextActive.database, nextActive.table, nextActive.view) : null);
     await navigate("/mysql/tables");
   };
 
@@ -319,26 +319,16 @@ export function useMysqlSidebarWorkspace({
   };
 
   const handleMysqlOpenSidebarTable = async (database: string, table: string) => {
-    const nextKey = getMysqlOpenedTableKey(database, table);
+    const nextKey = getMysqlOpenedTableTabKey(database, table, "data");
     // 防止快速重复点击同一表触发多次请求
     if (openingTableRef.current === nextKey) return;
     openingTableRef.current = nextKey;
     // 表已在打开列表中且处于当前视图时，仅激活 tab 即可
-    const alreadyOpen = openedTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey && item.view === "data");
+    const alreadyOpen = openedTables.some((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === nextKey);
     setSelectedDatabase(database);
     setSelectedTable(table);
     if (!alreadyOpen) {
-      setOpenedTables((prev) => {
-        const existing = prev.find((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey);
-        if (existing) {
-          return prev.map((item) => (
-            getMysqlOpenedTableKey(item.database, item.table) === nextKey
-              ? { ...item, view: "data" }
-              : item
-          ));
-        }
-        return [...prev, { database, table, view: "data" }];
-      });
+      setOpenedTables((prev) => [...prev, { database, table, view: "data" }]);
     }
     setActiveOpenedTableKey(nextKey);
     await navigate("/mysql/table");
@@ -346,19 +336,23 @@ export function useMysqlSidebarWorkspace({
     setTimeout(() => { openingTableRef.current = null; }, 500);
   };
 
-  const handleActivateMysqlOpenedTable = async (database: string, table: string) => {
-    const nextKey = getMysqlOpenedTableKey(database, table);
+  const handleActivateMysqlOpenedTable = async (database: string, table: string, view: string) => {
+    const nextKey = getMysqlOpenedTableTabKey(database, table, view);
     setSelectedDatabase(database);
     setSelectedTable(table);
     setActiveOpenedTableKey(nextKey);
     await navigate("/mysql/table");
   };
 
-  const handleCloseMysqlOpenedTable = async (database: string, table: string) => {
-    const targetKey = getMysqlOpenedTableKey(database, table);
-    const remainingTables = openedTables.filter((item) => getMysqlOpenedTableKey(item.database, item.table) !== targetKey);
+  const handleCloseMysqlOpenedTable = async (database: string, table: string, view: string) => {
+    const targetKey = getMysqlOpenedTableTabKey(database, table, view);
+    const remainingTables = openedTables.filter((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) !== targetKey);
     setOpenedTables(remainingTables);
-    saveTableDataCache(targetKey, null);
+    // Clear cache only when closing the last remaining tab for a table
+    const hasRemainingForTable = remainingTables.some((item) => item.database === database && item.table === table);
+    if (!hasRemainingForTable) {
+      saveTableDataCache(getMysqlOpenedTableKey(database, table), null);
+    }
 
     if (selectedDatabase === database && selectedTable === table) {
       setSelectedTable(undefined);
@@ -372,14 +366,14 @@ export function useMysqlSidebarWorkspace({
         return;
       }
 
-      setActiveOpenedTableKey(getMysqlOpenedTableKey(nextActive.database, nextActive.table));
+      setActiveOpenedTableKey(getMysqlOpenedTableTabKey(nextActive.database, nextActive.table, nextActive.view));
       setSelectedDatabase(nextActive.database);
       setSelectedTable(nextActive.table);
       await navigate(`/mysql/table${location.search || "?tab=data"}`);
       return;
     }
 
-    const nextActiveKey = activeOpenedTableKey && remainingTables.some((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey)
+    const nextActiveKey = activeOpenedTableKey && remainingTables.some((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey)
       ? activeOpenedTableKey
       : null;
     setActiveOpenedTableKey(nextActiveKey);
@@ -407,19 +401,28 @@ export function useMysqlSidebarWorkspace({
   };
 
   const closeCurrentMysqlTab = async (key: string) => {
-    const target = openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === key);
+    const target = openedTables.find((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === key);
     setMysqlTabContextMenu(null);
     if (!target) {
       return;
     }
-    await handleCloseMysqlOpenedTable(target.database, target.table);
+    await handleCloseMysqlOpenedTable(target.database, target.table, target.view);
   };
 
   const closeOtherMysqlTabs = async (key: string) => {
-    const keep = openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === key) ?? null;
+    const keep = openedTables.find((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === key) ?? null;
     setMysqlTabContextMenu(null);
     if (!keep) {
       return;
+    }
+
+    // Clear cache for tables being closed that aren't the kept one
+    const closedTables = openedTables.filter((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) !== key);
+    for (const item of closedTables) {
+      const hasOther = closedTables.some((other) => other.database === item.database && other.table === item.table && getMysqlOpenedTableTabKey(other.database, other.table, other.view) !== getMysqlOpenedTableTabKey(item.database, item.table, item.view));
+      if (!hasOther) {
+        saveTableDataCache(getMysqlOpenedTableKey(item.database, item.table), null);
+      }
     }
 
     setOpenedTables([keep]);
@@ -509,12 +512,12 @@ export function useMysqlSidebarWorkspace({
       const remainingTables = openedTables.filter((item) => item.database !== database);
       const didRemoveActiveTable = Boolean(
         activeOpenedTableKey &&
-        openedTables.some((item) => item.database === database && getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey)
+        openedTables.some((item) => item.database === database && getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey)
       );
       setOpenedTables(remainingTables);
       if (didRemoveActiveTable) {
         const nextActive = remainingTables[remainingTables.length - 1] ?? null;
-        setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableKey(nextActive.database, nextActive.table) : null);
+        setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableTabKey(nextActive.database, nextActive.table, nextActive.view) : null);
         if (!nextActive && location.pathname === "/mysql/table") {
           await navigate("/mysql/tables");
         }

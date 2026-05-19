@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { logError } from "../../../../../lib/errorLog";
-import { getMysqlOpenedTableKey, type MysqlFilterNode, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
+import { getMysqlOpenedTableKey, getMysqlOpenedTableTabKey, type MysqlFilterNode, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
 import { fetchTablePage } from "../services/tableDataService";
 import {
     buildConditionSql as buildFilterConditionSql,
@@ -67,6 +67,11 @@ export function useTableDataActions({
   saveTableDataCache,
   dataColumnMeta,
 }: UseTableDataActionsProps) {
+  const dataStatePageRef = useRef(dataState.page);
+  const dataStatePageSizeRef = useRef(dataState.pageSize);
+  dataStatePageRef.current = dataState.page;
+  dataStatePageSizeRef.current = dataState.pageSize;
+
   const getWhereClause = useCallback((tree?: FilterGroupDraft | null) => {
     if (!tree) return "";
     const sql = buildNodeSql(tree);
@@ -97,14 +102,14 @@ export function useTableDataActions({
       table: string,
       next: Partial<Pick<MysqlOpenedTable, "filterTree" | "sortColumn" | "sortDirection">>
     ) => {
-      const nextKey = getMysqlOpenedTableKey(db, table);
+      const nextKey = getMysqlOpenedTableTabKey(db, table, activeOpenedTable?.view ?? "data");
       setOpenedTables((prev) => prev.map((item) => (
-        getMysqlOpenedTableKey(item.database, item.table) === nextKey
+        getMysqlOpenedTableTabKey(item.database, item.table, item.view) === nextKey
           ? { ...item, ...next }
           : item
       )));
     },
-    [setOpenedTables]
+    [activeOpenedTable?.view, setOpenedTables]
   );
 
   const fetchData = useCallback(async (
@@ -118,20 +123,22 @@ export function useTableDataActions({
     const targetTable = table ?? selectedTableInfo?.table;
     if (!connectionId || !targetDb || !targetTable) return;
 
-    const currentPage = page ?? dataState.page;
-    const currentSize = pageSize ?? dataState.pageSize;
+    const currentPage = page ?? dataStatePageRef.current;
+    const currentSize = pageSize ?? dataStatePageSizeRef.current;
     const requestKey = `${targetDb}.${targetTable}`;
     const requestId = latestDataRequestRef.current + 1;
     latestDataRequestRef.current = requestId;
     activeDataRequestKeyRef.current = requestKey;
 
-    const isTargetActiveTable = !!(db && table && activeOpenedTable?.database === db && activeOpenedTable?.table === table);
+    const isTargetActiveTable =
+      (db === undefined && table === undefined) ||
+      !!(activeOpenedTable && activeOpenedTable.database === db && activeOpenedTable.table === table);
     const currentFilterTree = overrides?.filterTree ?? (isTargetActiveTable ? activeOpenedTable?.filterTree : undefined);
     const currentSortColumn = isTargetActiveTable
-      ? overrides?.sortColumn ?? activeOpenedTable.sortColumn
+      ? overrides?.sortColumn ?? activeOpenedTable?.sortColumn
       : overrides?.sortColumn;
     const currentSortDirection = isTargetActiveTable
-      ? overrides?.sortDirection ?? activeOpenedTable.sortDirection
+      ? overrides?.sortDirection ?? activeOpenedTable?.sortDirection
       : overrides?.sortDirection;
 
     const whereClause = getWhereClause(currentFilterTree);
@@ -220,13 +227,13 @@ export function useTableDataActions({
   }, [activeOpenedTable?.visibleColumns, dataState.columns]);
 
   const updateOpenedTableVisibleColumns = useCallback((db: string, table: string, visibleColumns: string[]) => {
-    const nextKey = getMysqlOpenedTableKey(db, table);
+    const nextKey = getMysqlOpenedTableTabKey(db, table, activeOpenedTable?.view ?? "data");
     setOpenedTables((prev) => prev.map((item) => (
-      getMysqlOpenedTableKey(item.database, item.table) === nextKey
+      getMysqlOpenedTableTabKey(item.database, item.table, item.view) === nextKey
         ? { ...item, visibleColumns: visibleColumns.length > 0 ? visibleColumns : dataState.columns }
         : item
     )));
-  }, [dataState.columns, setOpenedTables]);
+  }, [activeOpenedTable?.view, dataState.columns, setOpenedTables]);
 
   const handleVisibleColumnToggle = useCallback(async (column: string, checked: boolean) => {
     if (!activeOpenedTable) return;

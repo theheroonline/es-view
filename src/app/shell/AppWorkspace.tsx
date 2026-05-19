@@ -47,11 +47,11 @@ export default function AppWorkspace({
           locationPathname={location.pathname}
           tableManagerLabel={t("mysql.sidebar.tableManager")}
           sqlQueryLabel={t("mysql.sidebar.sqlQuery")}
-          onActivateTable={(database, table) => {
-            void mysql.handleActivateMysqlOpenedTable(database, table);
+          onActivateTable={(item) => {
+            void mysql.handleActivateMysqlOpenedTable(item.database, item.table, item.view);
           }}
-          onCloseTable={(database, table) => {
-            void mysql.handleCloseMysqlOpenedTable(database, table);
+          onCloseTable={(database, table, view) => {
+            void mysql.handleCloseMysqlOpenedTable(database, table, view);
           }}
           onTableContextMenu={mysql.handleMysqlTabContextMenu}
         />

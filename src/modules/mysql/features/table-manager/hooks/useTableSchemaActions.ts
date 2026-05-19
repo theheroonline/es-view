@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { logError } from "../../../../../lib/errorLog";
 import type { MysqlOpenedTable } from "../../../types";
-import { getMysqlOpenedTableKey } from "../../../types";
+import { getMysqlOpenedTableKey, getMysqlOpenedTableTabKey } from "../../../types";
 import { executeTableSchemaQuery } from "../services/tableSchemaService";
 import { defaultDataState, type DataState, type RightPanelTab, type TableInfo } from "../utils";
 
@@ -86,9 +86,9 @@ export function useTableSchemaActions({
         const targetKey = getMysqlOpenedTableKey(db, table);
         const remainingOpenedTables = openedTables.filter((item) => getMysqlOpenedTableKey(item.database, item.table) !== targetKey);
         setOpenedTables(remainingOpenedTables);
-        if (activeOpenedTableKey === targetKey) {
+        if (activeOpenedTableKey && activeOpenedTableKey.startsWith(`${db}::${table}::`)) {
           const nextActive = remainingOpenedTables[remainingOpenedTables.length - 1] ?? null;
-          setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableKey(nextActive.database, nextActive.table) : null);
+          setActiveOpenedTableKey(nextActive ? getMysqlOpenedTableTabKey(nextActive.database, nextActive.table, nextActive.view) : null);
           if (locationPathname === "/mysql/table") {
             await navigate(nextActive ? "/mysql/table" : "/mysql/tables");
           }

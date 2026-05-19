@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
 import { useEffect, useRef } from "react";
-import { getMysqlOpenedTableKey, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
+import { getMysqlOpenedTableKey, getMysqlOpenedTableTabKey, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
 import type { DataState, RightPanelTab, TableInfo } from "../utils";
 
 // Module-level set tracking tables that have been loaded during this session.
@@ -65,10 +65,6 @@ export function useTableLifecycleEffects({
   const handleOpenTableRef = useRef(handleOpenTable);
   handleOpenTableRef.current = handleOpenTable;
 
-  // Track previously opened table to skip redundant re-fetches on double-click.
-  // Include connectionId to distinguish between different connections with the same db/table.
-  const prevOpenedTableRef = useRef<{ connectionId: string | null | undefined; database: string; table: string } | null>(null);
-
   // Refs for values read in the connection-lifecycle effect without adding them to deps.
   // These fields change frequently (on every render) but the effect should only react
   // to connection / navigation / sidebar-tree changes.
@@ -77,19 +73,17 @@ export function useTableLifecycleEffects({
   activeOpenedTableRef.current = activeOpenedTable;
   selectedTableInfoRef.current = selectedTableInfo;
 
+  // Track previously opened table key (db+table+view) to detect actual tab switches.
+  const prevTableTabKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     selectedOverviewTablesRef.current = selectedOverviewTables;
   }, [selectedOverviewTables, selectedOverviewTablesRef]);
 
   useEffect(() => {
     if (!isTableWorkspace || !activeOpenedTable) return;
-    if (
-      prevOpenedTableRef.current?.connectionId === connectionId &&
-      prevOpenedTableRef.current?.database === activeOpenedTable.database &&
-      prevOpenedTableRef.current?.table === activeOpenedTable.table
-    ) {
-      return;
-    }
+    const currentTabKey = getMysqlOpenedTableTabKey(connectionId ?? "", activeOpenedTable.database, activeOpenedTable.table);
+    if (prevTableTabKeyRef.current === currentTabKey) return;
 
     // ── activeOpenedTable actually changed ──
 
@@ -108,9 +102,9 @@ export function useTableLifecycleEffects({
       const safePage = cached.total > 0
         ? Math.min(cached.page, Math.max(1, Math.ceil(cached.total / cached.pageSize)))
         : 1;
-      const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+      const tableKey = getMysqlOpenedTableTabKey(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
       setOpenedTables((prev) => prev.map((item) => (
-        getMysqlOpenedTableKey(item.database, item.table) === tableKey
+        getMysqlOpenedTableTabKey(item.database, item.table, item.view) === tableKey
           ? { ...item, page: safePage, pageSize: cached.pageSize }
           : item
       )));
@@ -135,7 +129,7 @@ export function useTableLifecycleEffects({
       latestDataRequestRef.current += 1;
       activeDataRequestKeyRef.current = null;
       loadedTableKeys.add(loadKey);
-      prevOpenedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
+      prevTableTabKeyRef.current = currentTabKey;
       return;
     }
 
@@ -154,7 +148,7 @@ export function useTableLifecycleEffects({
     // Not cached and never loaded — proceed with normal fetch
     // Cache is saved inside handleOpenTable → fetchData after the fetch completes
     loadedTableKeys.add(loadKey);
-    prevOpenedTableRef.current = { connectionId, database: activeOpenedTable.database, table: activeOpenedTable.table };
+    prevTableTabKeyRef.current = currentTabKey;
     void handleOpenTableRef.current(activeOpenedTable.database, activeOpenedTable.table, activeOpenedTable.view);
   }, [activeOpenedTable, isTableWorkspace]);
 

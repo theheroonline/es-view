@@ -87,6 +87,10 @@ export function getMysqlOpenedTableKey(database: string, table: string) {
   return `${database}::${table}`;
 }
 
+export function getMysqlOpenedTableTabKey(database: string, table: string, view: string) {
+  return `${database}::${table}::${view}`;
+}
+
 export interface MysqlTableDataCacheEntry {
   columns: string[];
   rows: Array<Array<unknown>>;
