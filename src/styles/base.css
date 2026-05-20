@@ -1,0 +1,47 @@
+:root {
+  color-scheme: light;
+  font-family: "Aptos", "Segoe UI Variable Display", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  color: #223042;
+  background-color: #d8e1eb;
+  --primary-color: #215f9b;
+  --sidebar-width: clamp(214px, 18vw, 272px);
+  --chrome-height: clamp(46px, 4.6vh, 54px);
+  --content-gap: clamp(8px, 1vw, 14px);
+  --panel-radius: 12px;
+  --panel-shadow: 0 16px 40px rgba(28, 44, 64, 0.08), 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 26%),
+    linear-gradient(180deg, #ebf0f5 0%, #d8e0e9 100%);
+}
+
+/* Status indicators (used across modules) */
+.mdb-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #8fa0b3;
+}
+
+.mdb-status-dot.status-success {
+  background: #22c55e;
+}
+
+.mdb-status-dot.status-failed {
+  background: #ef4444;
+}
+
+.mdb-status-dot.status-idle {
+  background: #94a3b8;
+}

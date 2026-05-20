@@ -4,7 +4,7 @@ import { HashRouter } from "react-router-dom";
 import App from "./App";
 import { waitForWails } from "./lib/wailsapi";
 import "./i18n/config";
-import "./styles.css";
+import "./styles/index.css";
 
 // Wait for Wails to be ready before mounting React
 waitForWails().then(() => {
