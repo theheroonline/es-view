@@ -231,77 +231,136 @@
   line-height: 1.5;
 }
 
-/* --- Key Table --- */
-.redis-key-table-wrapper {
+/* --- Key Tree --- */
+.redis-key-tree-container {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  margin: 0 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
 }
 
-.redis-key-table-wrapper .table {
-  display: flex;
-  flex-direction: column;
-}
-
-.redis-key-table-wrapper thead {
-  display: contents;
-}
-
-.redis-key-table-wrapper thead tr {
-  display: grid;
-  grid-template-columns: 1fr 100px;
-  gap: 0;
-  position: sticky;
-  top: 0;
-  background: linear-gradient(180deg, #f8fafc 0%, #f3f6fa 100%);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-  z-index: 10;
-}
-
-.redis-key-table-wrapper thead th {
-  font-size: 11px;
-  font-weight: 700;
-  color: #556274;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 8px 10px;
-  text-align: left;
-}
-
-.redis-key-table-wrapper tbody {
-  display: contents;
-}
-
-.redis-key-table-wrapper tbody tr {
-  display: grid;
-  grid-template-columns: 1fr 100px;
-  gap: 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.02);
-  transition: background 0.15s ease;
-}
-
-.redis-key-table-wrapper tbody tr:hover {
-  background: #fafbfd;
-}
-
-.redis-key-table-wrapper tbody tr:hover td {
-  background: #fafbfd;
-}
-
-.redis-key-table-wrapper th,
-.redis-key-table-wrapper td {
-  padding: 8px 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.redis-key-tree {
   font-size: 12px;
   color: #2c3d4f;
+  user-select: none;
+  line-height: 1.5;
 }
 
-.redis-key-table-wrapper input[type="checkbox"] {
+/* --- Folder --- */
+.redis-tree-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: background 0.12s ease;
+  min-height: 24px;
+}
+
+.redis-tree-folder-header:hover {
+  background: rgba(248, 251, 255, 0.94);
+}
+
+.redis-tree-folder-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #8fa0b3;
+  font-size: 10px;
+}
+
+.redis-tree-folder-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #c9a84c;
+  font-size: 14px;
+}
+
+.redis-tree-folder-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #32455b;
+  font-size: 12px;
+}
+
+.redis-tree-folder-count {
+  font-size: 11px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  min-width: 16px;
+  text-align: right;
+  font-weight: 400;
+}
+
+/* --- Leaf (actual Redis key) --- */
+.redis-tree-leaf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  min-height: 24px;
+}
+
+.redis-tree-leaf:hover {
+  background: rgba(248, 251, 255, 0.94);
+}
+
+.redis-tree-leaf.is-selected {
+  background: linear-gradient(180deg, #dfeafb 0%, #d4e1f4 100%);
+  color: #1c375b;
+}
+
+/* Type dot: small colored circle with first letter */
+.redis-tree-leaf-dot {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.redis-tree-leaf-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: inherit;
+}
+
+/* Empty state */
+.redis-tree-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  color: #728297;
+  font-size: 12px;
+  padding: 20px;
+  text-align: center;
 }
 
 /* --- Pagination --- */

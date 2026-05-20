@@ -8,6 +8,7 @@ export const redisResources = {
       browser: {
         title: "Redis Key Browser",
         noConnection: "Please select a Redis connection first",
+        noKeys: "No keys match the current pattern",
         patternPlaceholder: "Enter a match pattern, e.g. user:*",
         newKey: "New Key",
         createKey: "Create Key",
@@ -71,6 +72,7 @@ export const redisResources = {
       browser: {
         title: "Redis Key 浏览",
         noConnection: "请先选择 Redis 连接",
+        noKeys: "没有匹配当前模式的 key",
         patternPlaceholder: "输入匹配模式，例如 user:*",
         newKey: "新增 Key",
         createKey: "新增 Key",
