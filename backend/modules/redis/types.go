@@ -21,11 +21,28 @@ type RedisConnectRequest struct {
 	Database     int    `json:"database"`
 	Username     string `json:"username"`
 	Password     string `json:"password"`
+	// SSH tunnel (basic)
 	SshEnabled   bool   `json:"sshEnabled"`
 	SshHost      string `json:"sshHost"`
 	SshPort      int    `json:"sshPort"`
 	SshUsername  string `json:"sshUsername"`
 	SshPassword  string `json:"sshPassword"`
+	// SSH key authentication
+	SshPrivateKeyPath string `json:"sshPrivateKeyPath"`
+	SshPrivateKeyPem  string `json:"sshPrivateKeyPem"`
+	SshPassphrase     string `json:"sshPassphrase"`
+	SshUseAgent       bool   `json:"sshUseAgent"`
+	// SSH host key verification
+	SshHostKeyMode    string `json:"sshHostKeyMode"`
+	SshKnownHostsPath string `json:"sshKnownHostsPath"`
+	// TLS
+	TlsMode           string `json:"tlsMode"` // "" | "required" | "verify_ca" | "verify_identity" | "custom"
+	TlsCaCertPath     string `json:"tlsCaCertPath"`
+	TlsCaCertPem      string `json:"tlsCaCertPem"`
+	TlsClientCertPath string `json:"tlsClientCertPath"`
+	TlsClientCertPem  string `json:"tlsClientCertPem"`
+	TlsClientKeyPath  string `json:"tlsClientKeyPath"`
+	TlsClientKeyPem   string `json:"tlsClientKeyPem"`
 }
 
 type RedisDatabaseInfo struct {

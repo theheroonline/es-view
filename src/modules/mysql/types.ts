@@ -11,6 +11,20 @@ export interface MysqlConnection {
   password?: string;
   ssh?: SshTunnelConfig;
   sshPassword?: string;
+  // TLS
+  tlsMode?: string;
+  tlsCaCertPath?: string;
+  tlsClientCertPath?: string;
+  tlsClientKeyPath?: string;
+  // Bootstrap
+  initSql?: string;
+  ignoreSqlErrors?: boolean;
+  // Driver params
+  driverParams?: Record<string, string>;
+  // Auto-reconnect
+  autoReconnect?: boolean;
+  maxReconnectAttempts?: number;
+  reconnectInterval?: number;
 }
 
 export interface DatabaseMeta {

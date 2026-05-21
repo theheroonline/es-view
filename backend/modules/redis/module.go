@@ -97,10 +97,16 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 	var addr string
 	if req.SshEnabled {
 		sshCfg := sshtunnel.Config{
-			Host:     req.SshHost,
-			Port:     req.SshPort,
-			Username: req.SshUsername,
-			Password: req.SshPassword,
+			Host:           req.SshHost,
+			Port:           req.SshPort,
+			Username:       req.SshUsername,
+			Password:       req.SshPassword,
+			PrivateKeyPath: req.SshPrivateKeyPath,
+			PrivateKeyPem:  req.SshPrivateKeyPem,
+			Passphrase:     req.SshPassphrase,
+			UseAgent:       req.SshUseAgent,
+			HostKeyMode:    req.SshHostKeyMode,
+			KnownHostsPath: req.SshKnownHostsPath,
 		}
 		tunnel := m.connManager.sshTunnels.GetOrCreate(req.ConnectionID, sshCfg)
 		targetAddr := fmt.Sprintf("%s:%d", req.Host, req.Port)
@@ -113,6 +119,12 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 		addr = fmt.Sprintf("%s:%d", req.Host, req.Port)
 	}
 
+	// Configure TLS
+	tlsConfig, err := setupRedisTLS(&req)
+	if err != nil {
+		return "", shared.NewConnectionFailed("redis", "TLS configuration error: "+err.Error())
+	}
+
 	baseOpts := &goRedis.Options{
 		Addr:         addr,
 		Password:     req.Password,
@@ -123,6 +135,7 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 		WriteTimeout: 10 * time.Second,
 		PoolSize:     25,
 		MinIdleConns: 5,
+		TLSConfig:    tlsConfig,
 	}
 	client := goRedis.NewClient(baseOpts)
 

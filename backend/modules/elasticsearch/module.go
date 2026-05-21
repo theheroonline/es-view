@@ -18,7 +18,7 @@ func NewModule() *Module {
 }
 
 func (m *Module) HttpRequest(params HttpRequestParams) (string, error) {
-	client := &http.Client{}
+	client := buildEsHTTPClient(&params)
 
 	var bodyReader io.Reader
 	if params.Body != "" {

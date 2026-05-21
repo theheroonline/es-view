@@ -404,6 +404,28 @@
   color: #dc2626;
 }
 
+.mdb-connection-type {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.mdb-connection-type-prod {
+  background: #fef2f2;
+  color: #dc2626;
+}
+.mdb-connection-type-test {
+  background: #fefce8;
+  color: #ca8a04;
+}
+.mdb-connection-type-dev {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
 .mdb-tree-count {
   flex-shrink: 0;
   font-size: 11px;

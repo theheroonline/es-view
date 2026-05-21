@@ -12,6 +12,13 @@ export interface EsConnection {
   verifyTls: boolean;
   ssh?: SshTunnelConfig;
   sshPassword?: string;
+  // TLS
+  tlsMode?: string;
+  tlsCaCertPath?: string;
+  tlsClientCertPath?: string;
+  tlsClientKeyPath?: string;
+  // Environment type
+  connectionType?: "development" | "test" | "production";
 }
 
 export interface IndexMeta {

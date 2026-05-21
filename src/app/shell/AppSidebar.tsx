@@ -99,6 +99,15 @@ export function AppSidebarContent({
         <span className="mdb-connection-main">
           <span className={`mdb-status-dot status-${status}`} />
           <span className="mdb-connection-name">{profile.name}</span>
+          {profile.connectionType === "production" && (
+            <span className="mdb-connection-type mdb-connection-type-prod" title="Production">PROD</span>
+          )}
+          {profile.connectionType === "test" && (
+            <span className="mdb-connection-type mdb-connection-type-test" title="Test">TEST</span>
+          )}
+          {profile.connectionType === "development" && (
+            <span className="mdb-connection-type mdb-connection-type-dev" title="Development">DEV</span>
+          )}
         </span>
         {status === "failed" && (
           <span className="mdb-connection-badge mdb-connection-badge-failed" style={{ cursor: "pointer" }} title={t("connections.reconnect")}>

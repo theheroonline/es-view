@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 
 	goMySQL "github.com/go-sql-driver/mysql"
 
 	"multi-database-browsing/backend/infra/sshtunnel"
-		"multi-database-browsing/backend/shared"
+	"multi-database-browsing/backend/shared"
 )
 
 func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
@@ -19,23 +20,48 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	config.Passwd = req.Password
 	config.Net = "tcp"
 	config.DBName = req.Database
-	config.Params = map[string]string{
-		"charset":   "utf8mb4",
-		"collation": "utf8mb4_unicode_ci",
-	}
 	config.ParseTime = true
 	config.Loc = time.Local
 	config.Timeout = 3 * time.Second
 	config.ReadTimeout = 5 * time.Second
 	config.WriteTimeout = 5 * time.Second
 
+	// Default charset/collation (can be overridden by DriverParams)
+	config.Params = map[string]string{
+		"charset":   "utf8mb4",
+		"collation": "utf8mb4_unicode_ci",
+	}
+
+	// Apply custom driver parameters
+	if req.DriverParams != nil {
+		maps.Copy(config.Params, req.DriverParams)
+	}
+
+	// Configure TLS
+	if req.TlsMode != "" {
+		tlsConfigKey, err := setupTLS(&req)
+		if err != nil {
+			return "", shared.NewConnectionFailed("mysql", "TLS configuration error: "+err.Error())
+		}
+		if tlsConfigKey != "" {
+			config.TLSConfig = tlsConfigKey
+		}
+	}
+
+	// Build SSH tunnel address
 	var addr string
 	if req.SshEnabled {
 		sshCfg := sshtunnel.Config{
-			Host:     req.SshHost,
-			Port:     req.SshPort,
-			Username: req.SshUsername,
-			Password: req.SshPassword,
+			Host:           req.SshHost,
+			Port:           req.SshPort,
+			Username:       req.SshUsername,
+			Password:       req.SshPassword,
+			PrivateKeyPath: req.SshPrivateKeyPath,
+			PrivateKeyPem:  req.SshPrivateKeyPem,
+			Passphrase:     req.SshPassphrase,
+			UseAgent:       req.SshUseAgent,
+			HostKeyMode:    req.SshHostKeyMode,
+			KnownHostsPath: req.SshKnownHostsPath,
 		}
 		tunnel := m.connManager.sshTunnels.GetOrCreate(req.ConnectionID, sshCfg)
 		targetAddr := fmt.Sprintf("%s:%d", req.Host, req.Port)
@@ -80,11 +106,25 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
+		// Clean up TLS config on connection failure
+		if req.TlsMode == "custom" {
+			goMySQL.DeregisterTLSConfig("mdb-custom-" + req.ConnectionID)
+		}
 		return "", shared.NewConnectionFailed("mysql", "failed to ping database: "+err.Error())
 	}
 
+	// Execute init SQL statements
+	if req.InitSql != "" {
+		if err := executeInitSQL(db, req); err != nil {
+			db.Close()
+			if req.TlsMode == "custom" {
+				goMySQL.DeregisterTLSConfig("mdb-custom-" + req.ConnectionID)
+			}
+			return "", shared.NewConnectionFailed("mysql", err.Error())
+		}
+	}
+
 	// Create heartbeat context and cancel function BEFORE starting goroutine.
-	// This ensures MysqlDisconnect can find and call cancel() immediately.
 	hbCtx, hbCancel := context.WithCancel(context.Background())
 
 	// Atomic swap: connection + heartbeat cancel in a single lock scope.
@@ -93,6 +133,10 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	oldHeartbeatCancel := m.connManager.heartbeats[req.ConnectionID]
 	m.connManager.connections[req.ConnectionID] = db
 	m.connManager.heartbeats[req.ConnectionID] = hbCancel
+	// Store connect request for auto-reconnect
+	if req.AutoReconnect {
+		m.connManager.connectReqs[req.ConnectionID] = req
+	}
 	m.connManager.mu.Unlock()
 
 	// Stop existing heartbeat before starting the new one.
@@ -106,9 +150,7 @@ func (m *Module) MysqlConnect(req MysqlConnectRequest) (string, error) {
 	// Close old pool in background to avoid blocking the swap
 	if oldDB != nil {
 		go func() {
-			// SetIdleTimeout to 0 so idle connections close immediately
 			oldDB.SetConnMaxIdleTime(1 * time.Second)
-			// Give in-flight queries a moment to finish
 			time.Sleep(2 * time.Second)
 			if err := oldDB.Close(); err != nil {
 				shared.Logger.Error("error closing old connection pool",
@@ -132,10 +174,12 @@ func (m *Module) MysqlDisconnect(connectionID string) (string, error) {
 		cancel()
 		delete(m.connManager.heartbeats, connectionID)
 	}
+	// Remove stored connect request
+	delete(m.connManager.connectReqs, connectionID)
 	m.connManager.mu.Unlock()
 
 	if !exists {
-		return "", shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
+		return "", shared.NewAppError(shared.ErrConnectionNotFound, "connection not found: "+connectionID, "mysql")
 	}
 
 	if err := db.Close(); err != nil {
@@ -143,6 +187,8 @@ func (m *Module) MysqlDisconnect(connectionID string) (string, error) {
 			slog.String("connection_id", connectionID),
 			slog.Any("error", err))
 	}
+	// Clean up TLS config
+	goMySQL.DeregisterTLSConfig("mdb-custom-" + connectionID)
 	_ = m.connManager.sshTunnels.Close(connectionID)
 	return "Disconnected successfully", nil
 }
@@ -152,7 +198,7 @@ func (m *Module) MysqlPing(connectionID string) (string, error) {
 	db, exists := m.connManager.connections[connectionID]
 	m.connManager.mu.RUnlock()
 	if !exists {
-		return "", shared.NewConnectionFailed("mysql", "connection not found: "+connectionID)
+		return "", shared.NewAppError(shared.ErrConnectionNotFound, "connection not found: "+connectionID, "mysql")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -180,6 +226,7 @@ func (m *Module) startHeartbeat(connectionID string, db *sql.DB, ctx context.Con
 		case <-ticker.C:
 			m.connManager.mu.RLock()
 			currentDB := m.connManager.connections[connectionID]
+			req, hasReq := m.connManager.connectReqs[connectionID]
 			m.connManager.mu.RUnlock()
 			if currentDB != db {
 				return
@@ -194,16 +241,28 @@ func (m *Module) startHeartbeat(connectionID string, db *sql.DB, ctx context.Con
 					slog.String("connection_id", connectionID),
 					slog.Any("error", err),
 					slog.Int("consecutive_fails", consecutiveFails))
+
 				if consecutiveFails >= maxConsecutiveFails {
+					// Try auto-reconnect if enabled
+					if hasReq && req.AutoReconnect {
+						if m.tryAutoReconnect(connectionID, req) {
+							consecutiveFails = 0
+							continue
+						}
+					}
+
 					shared.Logger.Warn("removing connection after heartbeat ping failures",
 						slog.String("connection_id", connectionID),
 						slog.Int("failures", maxConsecutiveFails))
-					// Clean up before returning to avoid goroutine/resource leaks
 					m.connManager.mu.Lock()
 					delete(m.connManager.connections, connectionID)
 					delete(m.connManager.heartbeats, connectionID)
+					delete(m.connManager.connectReqs, connectionID)
 					m.connManager.mu.Unlock()
 					db.Close()
+					if req.TlsMode == "custom" {
+						goMySQL.DeregisterTLSConfig("mdb-custom-" + connectionID)
+					}
 					return
 				}
 			} else {
@@ -211,4 +270,77 @@ func (m *Module) startHeartbeat(connectionID string, db *sql.DB, ctx context.Con
 			}
 		}
 	}
+}
+
+// tryAutoReconnect attempts to re-establish a failed connection.
+// Returns true if reconnect succeeded.
+func (m *Module) tryAutoReconnect(connectionID string, req MysqlConnectRequest) bool {
+	maxAttempts := req.MaxReconnectAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+	interval := req.ReconnectInterval
+	if interval <= 0 {
+		interval = 10
+	}
+
+	shared.Logger.Info("attempting auto-reconnect for MySQL connection",
+		slog.String("connection_id", connectionID),
+		slog.Int("max_attempts", maxAttempts))
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		time.Sleep(time.Duration(interval) * time.Second)
+
+		// Check if connection was explicitly disconnected during wait
+		m.connManager.mu.RLock()
+		_, stillExists := m.connManager.connections[connectionID]
+		m.connManager.mu.RUnlock()
+		if !stillExists {
+			return false
+		}
+
+		// Rebuild connection using the stored request
+		result, err := m.MysqlConnect(req)
+		if err != nil {
+			shared.Logger.Error("auto-reconnect attempt failed",
+				slog.String("connection_id", connectionID),
+				slog.Int("attempt", attempt),
+				slog.Any("error", err))
+			continue
+		}
+
+		shared.Logger.Info("auto-reconnect succeeded",
+			slog.String("connection_id", connectionID),
+			slog.Int("attempt", attempt),
+			slog.String("result", result))
+		return true
+	}
+
+	shared.Logger.Warn("auto-reconnect exhausted all attempts",
+		slog.String("connection_id", connectionID),
+		slog.Int("attempts", maxAttempts))
+	return false
+}
+
+// executeInitSQL parses and executes init SQL statements after connection.
+func executeInitSQL(db *sql.DB, req MysqlConnectRequest) error {
+	statements := splitMysqlStatements(req.InitSql)
+	for _, stmt := range statements {
+		if !shouldExecuteMysqlStatement(stmt) {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err := db.ExecContext(ctx, stmt)
+		cancel()
+		if err != nil {
+			if req.IgnoreSqlErrors {
+				shared.Logger.Warn("init SQL statement failed (ignored)",
+					slog.String("statement", stmt),
+					slog.Any("error", err))
+				continue
+			}
+			return fmt.Errorf("init SQL failed: %s: %w", stmt, err)
+		}
+	}
+	return nil
 }

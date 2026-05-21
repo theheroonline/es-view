@@ -13,6 +13,14 @@ export interface EsTransportRequest {
   body?: string;
   verifyTls: boolean;
   auth?: EsTransportAuth;
+  // TLS
+  tlsMode?: string;
+  tlsCaCertPath?: string;
+  tlsCaCertPem?: string;
+  tlsClientCertPath?: string;
+  tlsClientCertPem?: string;
+  tlsClientKeyPath?: string;
+  tlsClientKeyPem?: string;
 }
 
 export interface EsTransportResponse {
