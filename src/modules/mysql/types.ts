@@ -122,6 +122,7 @@ export interface MysqlTableDataCacheEntry {
 
 export interface MysqlQueryResult {
   columns: string[];
+  columnTypes?: string[];
   rows: Array<Array<unknown>>;
   affectedRows: number;
   isResultSet: boolean;

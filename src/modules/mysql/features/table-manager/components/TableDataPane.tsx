@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import type { MysqlFilterOperator } from "../../../types";
+import type { ColumnType } from "../../../types/columnTypes";
 import type { DataState, FilterGroupDraft, TableInfo } from "../utils";
 import { DataTabPanel } from "./DataTabPanel";
 
@@ -14,6 +15,8 @@ export interface TableDataPaneProps {
   filterDraftTree: FilterGroupDraft | null;
   totalPages: number;
   filterOperators: Array<{ value: MysqlFilterOperator; label: string }>;
+  columnTypes?: ColumnType[];
+  columnTypeLabels?: string[];
   onSetFilterPanelOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   onSetFilterDraftTree: (
     tree: FilterGroupDraft | null | ((prev: FilterGroupDraft | null) => FilterGroupDraft | null)
@@ -43,6 +46,8 @@ export function TableDataPane({
   filterDraftTree,
   totalPages,
   filterOperators,
+  columnTypes,
+  columnTypeLabels,
   onSetFilterPanelOpen,
   onSetFilterDraftTree,
   onPageChange,
@@ -65,6 +70,8 @@ export function TableDataPane({
       filterDraftTree={filterDraftTree}
       totalPages={totalPages}
       filterOperators={filterOperators}
+      columnTypes={columnTypes}
+      columnTypeLabels={columnTypeLabels}
       setFilterPanelOpen={onSetFilterPanelOpen}
       setFilterDraftTree={onSetFilterDraftTree}
       onPageChange={onPageChange}

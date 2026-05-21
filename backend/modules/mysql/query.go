@@ -47,16 +47,20 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	// Build a set of column indices that contain binary data (BLOB, BINARY, VARBINARY, BIT).
 	// This allows safe encoding of binary values while leaving text columns untouched.
 	binaryCols := make(map[int]bool)
+	var columnTypeNames []string
 	if columnTypes, err := rows.ColumnTypes(); err == nil {
+		columnTypeNames = make([]string, len(columnTypes))
 		for i, ct := range columnTypes {
-			switch ct.DatabaseTypeName() {
+			dbTypeName := ct.DatabaseTypeName()
+			columnTypeNames[i] = dbTypeName
+			switch dbTypeName {
 			case "BLOB", "MEDIUMBLOB", "LONGBLOB", "TINYBLOB", "BINARY", "VARBINARY", "BIT":
 				binaryCols[i] = true
 			}
 		}
 	}
 
-	result := MysqlQueryResult{Columns: columns, Rows: [][]any{}, IsResultSet: true}
+	result := MysqlQueryResult{Columns: columns, ColumnTypes: columnTypeNames, Rows: [][]any{}, IsResultSet: true}
 
 	for rows.Next() {
 		values := make([]any, len(columns))

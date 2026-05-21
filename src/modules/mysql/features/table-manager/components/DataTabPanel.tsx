@@ -1,6 +1,7 @@
 import { type MouseEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MysqlFilterOperator } from "../../../types";
+import type { ColumnType } from "../../../types/columnTypes";
 import {
     type DataState,
     type FilterConditionDraft,
@@ -25,6 +26,8 @@ interface DataTabPanelProps {
   filterDraftTree: FilterGroupDraft | null;
   totalPages: number;
   filterOperators: Array<{ value: MysqlFilterOperator; label: string }>;
+  columnTypes?: ColumnType[];
+  columnTypeLabels?: string[];
 
   setFilterPanelOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   setFilterDraftTree: (tree: FilterGroupDraft | null | ((prev: FilterGroupDraft | null) => FilterGroupDraft | null)) => void;
@@ -50,6 +53,8 @@ export function DataTabPanel({
   filterDraftTree,
   totalPages,
   filterOperators,
+  columnTypes,
+  columnTypeLabels,
   setFilterPanelOpen,
   setFilterDraftTree,
   onPageChange,
@@ -308,6 +313,8 @@ export function DataTabPanel({
           selectedRowIndex={selectedRowIndex}
           loading={dataState.loading}
           tableKey={selectedTableInfo ? `${connectionId ?? ""}:${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
+          columnTypes={columnTypes}
+          columnTypeLabels={columnTypeLabels}
           onCellClick={onCellClick}
           onRowContextMenu={onRowContextMenu}
           onSaveCell={onSaveCell}

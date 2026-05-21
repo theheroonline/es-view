@@ -1,6 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { format as formatSql } from "sql-formatter";
+import {
+  CodeOutlined,
+  DatabaseOutlined,
+  TableOutlined,
+  FieldStringOutlined,
+} from "@ant-design/icons";
 import { logError } from "../../../lib/errorLog";
 import { useMysqlContext } from "../../../state/MysqlContext";
 import { useSharedConnectionState } from "../../../state/SharedConnectionState";
@@ -8,6 +14,8 @@ import { mysqlConnect } from "../services/connectionClient";
 import { mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/queryClient";
 import { mysqlDescribeTable } from "../services/schemaClient";
 import QueryGeneratorModal from "../components/QueryGeneratorModal";
+import { getDbTypeCategory } from "../lib/detectValueType";
+import { ExcelLikeTable } from "../features/table-manager/components/ExcelLikeTable";
 import type { ExecutedStatementResult, ColumnMeta } from "../types";
 
 interface AutocompleteItem {
@@ -361,8 +369,6 @@ export default function MysqlSqlQuery() {
   const [connectedDatabaseId, setConnectedDatabaseId] = useState<string | null>(null);
   const [activeResultId, setActiveResultId] = useState<string | null>(null);
   const [resultVisibleColumns, setResultVisibleColumns] = useState<Record<string, string[]>>({});
-  const [expandedRowsByResult, setExpandedRowsByResult] = useState<Record<string, Set<number>>>({});
-  const [selectedRowByResult, setSelectedRowByResult] = useState<Record<string, number | null>>({});
   const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
 
   const connectionId = getActiveConnectionIdByEngine("mysql");
@@ -959,41 +965,6 @@ export default function MysqlSqlQuery() {
       delete nextColumns[resultId];
       return nextColumns;
     });
-    setExpandedRowsByResult((prevExpanded) => {
-      const nextExpanded = { ...prevExpanded };
-      delete nextExpanded[resultId];
-      return nextExpanded;
-    });
-  };
-
-  const toggleResultRowExpand = (resultId: string, rowIndex: number) => {
-    setExpandedRowsByResult((prev) => {
-      const next = { ...prev };
-      const expandedSet = new Set(next[resultId] ?? []);
-      if (expandedSet.has(rowIndex)) {
-        expandedSet.delete(rowIndex);
-      } else {
-        expandedSet.add(rowIndex);
-      }
-      next[resultId] = expandedSet;
-      return next;
-    });
-  };
-
-  const renderResultCellValue = (value: unknown) => {
-    if (value === null || value === undefined) {
-      return <span className="muted">NULL</span>;
-    }
-
-    const content = typeof value === "object" ? JSON.stringify(value) : String(value);
-    const shouldTruncate = content.length > 80;
-    const preview = shouldTruncate ? `${content.slice(0, 80)}...` : content;
-
-    return (
-      <span className="truncated-cell" title={content} data-truncated={shouldTruncate ? "true" : "false"}>
-        <span className="truncated-text">{preview}</span>
-      </span>
-    );
   };
 
   const handleEditorChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -1232,74 +1203,152 @@ export default function MysqlSqlQuery() {
                   left: `${autocompletePosition.left}px`,
                   zIndex: 9999,
                   background: "#fff",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "8px",
-                  boxShadow: "0 10px 28px rgba(15,23,42,0.14)",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  boxShadow: "0 12px 32px rgba(15,23,42,0.16), 0 0 0 1px rgba(0,0,0,0.03)",
                   overflow: "auto",
-                  minWidth: "260px",
-                  maxWidth: "600px",
-                  maxHeight: "200px"
+                  minWidth: "320px",
+                  maxWidth: "640px",
+                  maxHeight: "350px"
                 }}
               >
               {autocompleteLoading && (
-                <div style={{ padding: "4px 8px", fontSize: "10px", color: "#6b7280", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: "10px", height: "10px", border: "2px solid #e5e7eb", borderTopColor: "#3b82f6", borderRadius: "50%", display: "inline-block", animation: "spin 0.6s linear infinite" }} />
+                <div style={{ padding: "6px 12px", fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ width: "12px", height: "12px", border: "2px solid #e5e7eb", borderTopColor: "#3b82f6", borderRadius: "50%", display: "inline-block", animation: "sql-spinner 0.6s linear infinite" }} />
                   Loading schema...
                 </div>
               )}
-              {autocompleteItems.map((item, index) => (
-                <div
-                  key={`${item.type}-${item.label}-${index}`}
-                  ref={(element) => {
-                    autocompleteOptionRefs.current[index] = element;
-                  }}
-                  role="option"
-                  aria-selected={index === autocompleteIndex}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "10px",
-                    padding: "3px 8px",
-                    border: 0,
-                    background: index === autocompleteIndex ? "#dbeafe" : "#fff",
-                    boxShadow: index === autocompleteIndex ? "inset 0 0 0 1px #60a5fa" : "none",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: "11px",
-                    lineHeight: 1.3,
-                    color: index === autocompleteIndex ? "#0f172a" : "#1f2937",
-                    transition: "background-color 120ms ease, box-shadow 120ms ease, color 120ms ease"
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    applyAutocomplete(item);
-                  }}
-                  onClick={() => applyAutocomplete(item)}
-                  onMouseEnter={() => setAutocompleteIndex(index)}
-                >
-                  <span style={{ display: "flex", gap: "8px", alignItems: "center", minWidth: 0, paddingRight: "8px" }}>
-                    <span
+              {(() => {
+                // Render in sorted order, inserting group headers when type changes
+                const typeLabels: Record<string, string> = {
+                  keyword: "Keywords",
+                  table: "Tables",
+                  column: "Columns",
+                  database: "Databases",
+                };
+
+                let lastType = "";
+                return autocompleteItems.map((item, index) => {
+                  const isActive = index === autocompleteIndex;
+                  const typeIcon = item.type === "keyword"
+                    ? <CodeOutlined style={{ fontSize: "11px" }} />
+                    : item.type === "table"
+                      ? <TableOutlined style={{ fontSize: "11px" }} />
+                      : item.type === "column"
+                        ? <FieldStringOutlined style={{ fontSize: "11px" }} />
+                        : <DatabaseOutlined style={{ fontSize: "11px" }} />;
+
+                  const typeColor = item.type === "keyword"
+                    ? "#1d4ed8"
+                    : item.type === "table"
+                      ? "#047857"
+                      : item.type === "column"
+                        ? "#c2410c"
+                        : "#4b5563";
+
+                  const groupHeader = item.type !== lastType ? (
+                    <div
+                      key={`group-${item.type}-${index}`}
                       style={{
-                        fontSize: "9px",
-                        lineHeight: 1,
-                        padding: "2px 3px",
-                        borderRadius: "4px",
-                        background: item.type === "keyword" ? "#eff6ff" : item.type === "table" ? "#ecfdf5" : item.type === "column" ? "#fff7ed" : "#f3f4f6",
-                        color: item.type === "keyword" ? "#1d4ed8" : item.type === "table" ? "#047857" : item.type === "column" ? "#c2410c" : "#4b5563",
+                        padding: "4px 12px",
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#94a3b8",
                         textTransform: "uppercase",
-                        flexShrink: 0
+                        letterSpacing: "0.05em",
+                        borderBottom: "1px solid #f1f5f9",
+                        background: "#fafbfc",
                       }}
                     >
-                      {item.type === "keyword" ? "K" : item.type === "table" ? "T" : item.type === "column" ? "C" : "DB"}
-                    </span>
-                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontWeight: index === autocompleteIndex ? 600 : 500 }}>{item.label}</span>
-                  </span>
-                  <span className="muted" style={{ fontSize: "10px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "140px", flexShrink: 0, color: index === autocompleteIndex ? "#1d4ed8" : "#6b7280" }}>
-                    {item.detail}
-                  </span>
-                </div>
-              ))}
+                      {typeLabels[item.type]}
+                    </div>
+                  ) : null;
+
+                  lastType = item.type;
+
+                  return (
+                    <Fragment key={`${item.type}-${item.label}-${index}`}>
+                      {groupHeader}
+                      <div
+                        ref={(element) => {
+                          autocompleteOptionRefs.current[index] = element;
+                        }}
+                        role="option"
+                        aria-selected={isActive}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "10px",
+                          padding: "4px 12px",
+                          border: 0,
+                          background: isActive ? "#f0f7ff" : "#fff",
+                          boxShadow: isActive ? "inset 0 0 0 1px #93c5fd" : "none",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          fontSize: "12px",
+                          lineHeight: 1.5,
+                          color: isActive ? "#0f172a" : "#1e293b",
+                          transition: "background-color 100ms ease, box-shadow 100ms ease, color 100ms ease",
+                        }}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          applyAutocomplete(item);
+                        }}
+                        onClick={() => applyAutocomplete(item)}
+                        onMouseEnter={() => setAutocompleteIndex(index)}
+                      >
+                        <span style={{ display: "flex", gap: "8px", alignItems: "center", minWidth: 0, paddingRight: "8px" }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: "22px",
+                              height: "22px",
+                              borderRadius: "5px",
+                              background: item.type === "keyword" ? "#eff6ff"
+                                : item.type === "table" ? "#ecfdf5"
+                                  : item.type === "column" ? "#fff7ed" : "#f3f4f6",
+                              color: typeColor,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {typeIcon}
+                          </span>
+                          <span
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              fontWeight: isActive ? 600 : 400,
+                              color: typeColor,
+                            }}
+                          >
+                            {item.label}
+                          </span>
+                        </span>
+                        {item.detail && (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              maxWidth: "160px",
+                              flexShrink: 0,
+                              color: isActive ? "#3b82f6" : "#94a3b8",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            {item.detail}
+                          </span>
+                        )}
+                      </div>
+                    </Fragment>
+                  );
+                });
+              })()}
               </div>
             )}
           </div>
@@ -1391,84 +1440,13 @@ export default function MysqlSqlQuery() {
                       {activeResult.error}
                     </div>
                   ) : resultSet?.isResultSet ? (
-                    <div className="table-wrapper" style={{ margin: "0 16px 16px", flex: 1, minHeight: 0 }}>
-                      <table className="table">
-                        <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 10 }}>
-                          <tr>
-                            <th style={{ width: "48px", textAlign: "center" }}> </th>
-                            {visibleColumns.map((column) => (
-                              <th key={column}>{column}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {resultSet.rows.length > 0 ? resultSet.rows.map((row, rowIndex) => {
-                            const expandedRows = expandedRowsByResult[activeResult.id] ?? new Set<number>();
-                            const isExpanded = expandedRows.has(rowIndex);
-                            const isSelected = selectedRowByResult[activeResult.id ?? ""] === rowIndex;
-                            const rowHighlight = isExpanded || isSelected;
-                            const detailObject = Object.fromEntries(
-                              visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]])
-                            );
-
-                            return (
-                              <Fragment key={`${activeResult.id}-${rowIndex}`}>
-                                <tr style={rowHighlight ? { background: "#eff6ff" } : undefined}>
-                                  <td style={{ textAlign: "center", background: rowHighlight ? "#eff6ff" : "inherit", position: rowHighlight ? "sticky" : undefined, left: rowHighlight ? 0 : undefined, zIndex: rowHighlight ? 5 : undefined, borderRight: rowHighlight ? "2px solid #93c5fd" : undefined }}>
-                                    <button
-                                      className="btn btn-ghost btn-icon"
-                                      onClick={() => toggleResultRowExpand(activeResult.id, rowIndex)}
-                                      style={{ fontSize: "10px", padding: "2px 6px" }}
-                                      title={isExpanded ? t("dataBrowser.collapseRow") : t("dataBrowser.expandRow")}
-                                    >
-                                      {isExpanded ? "▼" : "▶"}
-                                    </button>
-                                  </td>
-                                  {visibleColumns.map((column) => (
-                                    <td
-                                      key={`${rowIndex}-${column}`}
-                                      style={{ cursor: "pointer" }}
-                                      onClick={() => setSelectedRowByResult((prev) => ({
-                                        ...prev,
-                                        [activeResult.id ?? ""]: isSelected ? null : rowIndex
-                                      }))}
-                                    >
-                                      {renderResultCellValue(row[resultSet.columns.indexOf(column)])}
-                                    </td>
-                                  ))}
-                                </tr>
-                                {isExpanded && (
-                                  <tr className="expanded-row">
-                                    <td colSpan={visibleColumns.length + 1} style={{ padding: 0, background: "#eff6ff", position: "sticky", left: 0, zIndex: 5 }}>
-                                      <div style={{ borderLeft: "3px solid #3b82f6" }}>
-                                        <div style={{ padding: "12px 16px" }}>
-                                          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
-                                            <button
-                                              className="btn btn-sm btn-ghost"
-                                              onClick={() => void copyToClipboard(JSON.stringify(detailObject, null, 2))}
-                                            >
-                                              {t("dataBrowser.copyRow")}
-                                            </button>
-                                          </div>
-                                          <pre style={{ margin: 0, fontSize: "12px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                                            {JSON.stringify(detailObject, null, 2)}
-                                          </pre>
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            );
-                          }) : (
-                            <tr>
-                              <td colSpan={visibleColumns.length + 1} className="muted" style={{ textAlign: "center", padding: "32px" }}>
-                                {t("mysql.query.noRows")}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div style={{ margin: "0 16px 16px", flex: 1, minHeight: 0 }}>
+                      <ExcelLikeTable
+                        columns={visibleColumns}
+                        data={resultSet.rows}
+                        columnTypes={(resultSet.columnTypes ?? []).map((t) => getDbTypeCategory(t))}
+                        columnTypeLabels={resultSet.columnTypes ?? []}
+                      />
                     </div>
                   ) : (
                     <div style={{ padding: "24px", textAlign: "center" }}>

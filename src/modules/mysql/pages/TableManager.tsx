@@ -36,6 +36,8 @@ import { useTableSelectionActions } from "../features/table-manager/hooks/useTab
 import { useTableSqlExecution } from "../features/table-manager/hooks/useTableSqlExecution";
 import { useTableTreeMenuActions } from "../features/table-manager/hooks/useTableTreeMenuActions";
 import { useTableManagerState } from "../features/table-manager/state/useTableManagerState";
+import { getDbTypeCategory } from "../lib/detectValueType";
+import type { ColumnType } from "../types/columnTypes";
 import {
   buildFilterOperators,
   defaultDataState,
@@ -592,6 +594,15 @@ export default function MysqlTableManager() {
     t,
   });
 
+  // 列类型信息，传递给 ExcelLikeTable 用于类型着色
+  const columnTypes = useMemo<ColumnType[]>(() => {
+    return dataColumnMeta.map((col) => getDbTypeCategory(col.type));
+  }, [dataColumnMeta]);
+
+  const columnTypeLabels = useMemo<string[]>(() => {
+    return dataColumnMeta.map((col) => col.type);
+  }, [dataColumnMeta]);
+
   const toolbarActions = useMemo(() => {
     if (displayPanelTab !== "data") return null;
 
@@ -686,6 +697,8 @@ export default function MysqlTableManager() {
           filterDraftTree,
           totalPages,
           filterOperators,
+          columnTypes,
+          columnTypeLabels,
           onSetFilterPanelOpen: setFilterPanelOpen,
           onSetFilterDraftTree: setFilterDraftTree,
           onPageChange: handlePageChange,

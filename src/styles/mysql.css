@@ -3,6 +3,10 @@
    Table Manager, SQL Query, Create Table, etc.
    ============================================ */
 
+@keyframes sql-spinner {
+  to { transform: rotate(360deg); }
+}
+
 /* --- Toolbar --- */
 .tm-toolbar {
   display: flex;
@@ -709,6 +713,23 @@
   transition: background-color 0.15s ease;
 }
 
+.excel-table-header-cell-rownum {
+  padding: 4px 2px;
+  text-align: center;
+  font-weight: 600;
+  color: #8c97a5;
+  white-space: nowrap;
+  border-right: 1px solid #e4ebf3;
+  user-select: none;
+  height: 34px;
+  background: #f5f7fa;
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
+  font-size: 11px;
+  cursor: default;
+}
+
 .excel-table-header-cell:last-child {
   border-right: none;
 }
@@ -769,6 +790,7 @@
 .excel-table-cell {
   padding: 0 8px;
   border-right: 1px solid #d0d7e0;
+  min-width: 60px;
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -785,23 +807,62 @@
 .excel-table-cell-rownum {
   width: 50px;
   min-width: 50px;
+  max-width: 50px;
   text-align: center;
-  color: #999;
-  background: #fafbfc;
+  color: #8c97a5;
+  background: #f5f7fa;
   font-weight: 500;
-  flex-shrink: 0;
+  font-size: 11px;
+  border-right: 1px solid #e4ebf3;
+  user-select: none;
 }
 
 .excel-table-cell-null {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  color: #64748b;
-  background: #eef2f7;
+  display: inline;
+  color: #6b7885;
   font-style: italic;
-  line-height: 20px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* Type-aware cell colors */
+.excel-table-cell-number {
+  color: #0052cc;
+  text-align: right;
+}
+
+.excel-table-cell-datetime {
+  color: #006600;
+  text-align: right;
+}
+
+.excel-table-cell-boolean {
+  color: #ff6400;
+  text-align: center;
+}
+
+.excel-table-cell-string {
+  text-align: left;
+}
+
+.excel-table-cell-binary {
+  color: #646464;
+  text-align: left;
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  font-size: 11px;
+}
+
+/* Column header type label */
+.excel-table-header-type {
+  font-size: 10px;
+  color: #8c97a5;
+  font-style: italic;
+  display: block;
+  margin-top: 2px;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .excel-table-cell-selected {

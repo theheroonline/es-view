@@ -54,6 +54,7 @@ type MysqlConnectRequest struct {
 // MysqlQueryResult represents the result of a query.
 type MysqlQueryResult struct {
 	Columns      []string        `json:"columns"`
+	ColumnTypes  []string        `json:"columnTypes"`
 	Rows         [][]interface{} `json:"rows"`
 	AffectedRows int64           `json:"affectedRows"`
 	IsResultSet  bool            `json:"isResultSet"`
