@@ -2,6 +2,7 @@ import { memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useStat
 import { useTranslation } from "react-i18next";
 import { DEFAULT_COLUMN_WIDTH, MIN_COLUMN_WIDTH, isCellSelected, useExcelTable } from "../hooks/useExcelTable";
 import { useInlineEditor } from "../hooks/useInlineEditor";
+import { decodeCellValue } from "../../../../../lib/binaryValue";
 
 /**
  * ExcelLikeTable 组件
@@ -377,7 +378,7 @@ function ExcelLikeTableInner({
                           className={`excel-table-cell ${isSelected ? "excel-table-cell-selected" : ""} ${
                             isEditing ? "excel-table-cell-editing" : ""
                           }`}
-                          title={cellValue === null ? "NULL" : String(cellValue)}
+                          title={cellValue === null ? "NULL" : decodeCellValue(cellValue)}
                           style={{ width: columnWidth }}
                           onClick={(e) => handleCellClick(e, rowIndex, columnIndex)}
                           onDoubleClick={() => handleCellDoubleClick(rowIndex, columnIndex, columnName, cellValue)}
@@ -398,7 +399,7 @@ function ExcelLikeTableInner({
                           ) : cellValue === null ? (
                             <span className="excel-table-cell-null">NULL</span>
                           ) : (
-                            String(cellValue)
+                            decodeCellValue(cellValue)
                           )}
                         </td>
                       );

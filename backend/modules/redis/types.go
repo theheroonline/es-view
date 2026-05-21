@@ -52,10 +52,12 @@ type RedisKeyDetail struct {
 	KeyType     string          `json:"keyType"`
 	TTLMS       *int64          `json:"ttlMs"`
 	Encoding    *string         `json:"encoding"`
+	ValueEncoding string        `json:"valueEncoding"` // "utf8" | "base64" | "binary"
 	Size        *uint64         `json:"size"`
 	Value       json.RawMessage `json:"value"`
 	Truncated   bool            `json:"truncated"`
 	Unsupported bool            `json:"unsupported"`
+	IsBinary    bool            `json:"isBinary"`
 }
 
 type RedisCommandResult struct {

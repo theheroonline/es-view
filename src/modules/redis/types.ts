@@ -63,10 +63,12 @@ export interface RedisKeyDetail {
   keyType: RedisKeyType | string;
   ttlMs: number | null;
   encoding?: string;
+  valueEncoding?: string; // "utf8" | "base64"
   size?: number | null;
   value: RedisKeyValue;
   truncated: boolean;
   unsupported: boolean;
+  isBinary?: boolean;
 }
 
 export interface RedisCommandResult {

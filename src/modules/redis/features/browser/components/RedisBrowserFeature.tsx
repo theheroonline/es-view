@@ -25,6 +25,8 @@ interface RedisBrowserCachedState {
   currentDatabase: number;
   databases: RedisDatabaseInfo[];
   scanCount: number;
+  nextCursor: string;
+  hasMoreKeys: boolean;
 }
 const redisBrowserCache = new Map<string, RedisBrowserCachedState>();
 
@@ -142,12 +144,10 @@ export function RedisBrowserFeature() {
   const openEditEditorRef = useRef(openEditEditor);
 
   const refreshDatabasesRef = useRef(refreshDatabases);
-  const refreshKeysRef = useRef(refreshKeys);
 
   // Track previous connection ID to distinguish real connection changes
   // from tab switches (where the ID stays the same).
   const prevConnectionIdRef = useRef<string | undefined>(undefined);
-  const skipNextScanRef = useRef(false);
 
   useEffect(() => {
     selectedKeyRef.current = selectedKey;
@@ -165,9 +165,9 @@ export function RedisBrowserFeature() {
     refreshDatabasesRef.current = refreshDatabases;
   }, [refreshDatabases]);
 
-  useEffect(() => {
-    refreshKeysRef.current = refreshKeys;
-  }, [refreshKeys]);
+  // Note: refreshKeysRef is kept for useRedisKeyEditor/useRedisKeyTtl/useRedisKeyDelete,
+  // which need it for their internal callbacks. The connection switch fix is handled
+  // inside useRedisScanKeys via connectionIdRef/currentDatabaseRef.
 
   // Save current state to cache on every change
   useEffect(() => {
@@ -179,8 +179,10 @@ export function RedisBrowserFeature() {
       currentDatabase,
       databases,
       scanCount,
+      nextCursor,
+      hasMoreKeys,
     });
-  }, [activeRedisConnectionId, keyPattern, scannedKeys, selectedKey, currentDatabase, databases, scanCount]);
+  }, [activeRedisConnectionId, keyPattern, scannedKeys, selectedKey, currentDatabase, databases, scanCount, nextCursor, hasMoreKeys]);
 
   // Connection change: restore from cache or reset
   useEffect(() => {
@@ -202,16 +204,26 @@ export function RedisBrowserFeature() {
       setKeyPattern(cached.keyPattern);
       setScannedKeys(cached.scannedKeys);
       setSelectedKey(cached.selectedKey);
+      setSelectedKeyDetail(null);
       setSelectedDatabase(cached.currentDatabase);
       setDatabases(cached.databases);
       setScanCount(cached.scanCount);
-      skipNextScanRef.current = true;
+      setNextCursor(cached.nextCursor);
+      setHasMoreKeys(cached.hasMoreKeys);
+      // Don't skip scan — connection must always fetch fresh keys.
+      // Cache restore only fills UI momentarily to avoid blank state.
       return;
     }
 
-    // No cache — full reset and fresh scan
+    // No cache — full reset
     resetBrowserState();
-  }, [activeRedisConnectionId, resetBrowserState, setSelectedDatabase]);
+
+    // Always trigger fresh scan on connection change.
+    // Cache restore fills UI momentarily to avoid blank state;
+    // the auto-scan effect below will also fire because activeRedisConnectionId
+    // changed, so we let it handle the scan instead of doing it here.
+    // This avoids double-scanning.
+  }, [activeRedisConnectionId, resetBrowserState, setSelectedDatabase, setDatabases, setNextCursor, setHasMoreKeys]);
 
   useEffect(() => {
     if (!activeRedisConnectionId) return;
@@ -220,15 +232,8 @@ export function RedisBrowserFeature() {
 
   useEffect(() => {
     if (!activeRedisConnectionId) return;
-
-    // Skip auto-scan after cache restore (state is already populated)
-    if (skipNextScanRef.current) {
-      skipNextScanRef.current = false;
-      return;
-    }
-
-    void refreshKeysRef.current(true);
-  }, [activeRedisConnectionId, currentDatabase, keyPattern, scanCount]);
+    void refreshKeys(true);
+  }, [activeRedisConnectionId, currentDatabase, keyPattern, scanCount, refreshKeys]);
 
   const handleDeleteSelectedKey = useCallback(() => {
     const detail = selectedKeyDetailRef.current;

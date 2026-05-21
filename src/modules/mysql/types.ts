@@ -38,6 +38,9 @@ export interface IndexMeta {
   indexType: string;
 }
 
+// Re-export binary value utilities from shared lib
+export { isBinaryCellValue, decodeCellValue, type BinaryCellValue } from "../../lib/binaryValue";
+
 export type MysqlFilterOperator =
   | "eq"
   | "ne"

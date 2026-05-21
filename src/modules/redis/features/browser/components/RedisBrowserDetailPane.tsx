@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { RedisKeyDetailValue } from "../../../components/RedisKeyDetailValue";
-import { isEditableKeyType, formatTtl } from "../../../utils";
+import { isEditableKeyType, formatTtl, formatMemorySize } from "../../../utils";
 import type { RedisBrowserDetailPaneProps } from "../types";
 
 function RedisBrowserDetailHeader({
@@ -69,7 +69,9 @@ const RedisBrowserDetailContent = memo(function RedisBrowserDetailContent({
 
     return (
       <>
-        {!isEditableKeyType(selectedKeyDetail.keyType) && <div className="redis-detail-warning text-warning">{t("redis.browser.editUnsupported")}</div>}
+        {!isEditableKeyType(selectedKeyDetail.keyType) && !selectedKeyDetail.isBinary && (
+          <div className="redis-detail-warning text-warning">{t("redis.browser.editUnsupported")}</div>
+        )}
         {selectedKeyDetail.truncated && <div className="redis-detail-warning text-warning">{t("redis.browser.truncated")}</div>}
         <RedisKeyDetailValue detail={selectedKeyDetail} />
       </>
@@ -91,6 +93,19 @@ export function RedisBrowserDetailPane({
   const { t } = useTranslation();
   const hasSelection = Boolean(selectedKey);
 
+  const sizeDisplay = useMemo(
+    () => formatMemorySize(selectedKeyDetail?.size),
+    [selectedKeyDetail?.size],
+  );
+
+  const keyBarMeta = useMemo(() => {
+    if (!selectedKeyDetail) return null;
+    const parts: string[] = [];
+    if (selectedKeyDetail.keyType) parts.push(selectedKeyDetail.keyType);
+    if (selectedKeyDetail.encoding) parts.push(selectedKeyDetail.encoding);
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }, [selectedKeyDetail?.keyType, selectedKeyDetail?.encoding]);
+
   return (
     <div className="card redis-browser-panel">
       <RedisBrowserDetailHeader
@@ -106,7 +121,11 @@ export function RedisBrowserDetailPane({
         }}
       />
 
-      <div className="redis-detail-key-bar muted">{selectedKey ?? t("redis.browser.noKeySelected")}</div>
+      <div className="redis-detail-key-bar">
+        <span className="redis-detail-key-name">{selectedKey ?? t("redis.browser.noKeySelected")}</span>
+        {keyBarMeta && <span className="redis-detail-key-meta muted">{keyBarMeta}</span>}
+        {sizeDisplay && <span className="redis-detail-key-size muted">{sizeDisplay}</span>}
+      </div>
 
       <div className="redis-detail-body">
         <RedisBrowserDetailContent

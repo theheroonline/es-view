@@ -44,6 +44,18 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 		return MysqlQueryResult{}, shared.NewAppError(shared.ErrQueryFailed, "failed to get columns: "+err.Error(), "mysql")
 	}
 
+	// Build a set of column indices that contain binary data (BLOB, BINARY, VARBINARY, BIT).
+	// This allows safe encoding of binary values while leaving text columns untouched.
+	binaryCols := make(map[int]bool)
+	if columnTypes, err := rows.ColumnTypes(); err == nil {
+		for i, ct := range columnTypes {
+			switch ct.DatabaseTypeName() {
+			case "BLOB", "MEDIUMBLOB", "LONGBLOB", "TINYBLOB", "BINARY", "VARBINARY", "BIT":
+				binaryCols[i] = true
+			}
+		}
+	}
+
 	result := MysqlQueryResult{Columns: columns, Rows: [][]any{}, IsResultSet: true}
 
 	for rows.Next() {
@@ -58,7 +70,7 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 		}
 
 		for i, value := range values {
-			values[i] = normalizeMysqlValue(value)
+			values[i] = normalizeMysqlValue(value, binaryCols[i])
 		}
 
 		result.Rows = append(result.Rows, values)
@@ -71,16 +83,24 @@ func (m *Module) MysqlQuery(connectionID string, query string) (MysqlQueryResult
 	return result, nil
 }
 
-func normalizeMysqlValue(value interface{}) interface{} {
+func normalizeMysqlValue(value interface{}, isBinaryCol bool) interface{} {
 	if value == nil {
 		return nil
 	}
 
 	switch typed := value.(type) {
 	case []byte:
-		return string(typed)
+		safe, enc := shared.SafeStringValue(typed)
+		if enc == "base64" || isBinaryCol {
+			return shared.BinaryValue{Value: safe, Encoding: enc}
+		}
+		return safe
 	case sql.RawBytes:
-		return string(typed)
+		safe, enc := shared.SafeStringValue([]byte(typed))
+		if enc == "base64" || isBinaryCol {
+			return shared.BinaryValue{Value: safe, Encoding: enc}
+		}
+		return safe
 	default:
 		return value
 	}

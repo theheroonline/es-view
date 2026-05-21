@@ -284,35 +284,82 @@ func (m *Module) RedisGetKeyDetail(req RedisKeyRequest) (RedisKeyDetail, error) 
 		detail.TTLMS = &ttlMS
 	}
 
+	memUsage, err := client.MemoryUsage(ctx, req.Key).Result()
+	if err == nil && memUsage >= 0 {
+		size := uint64(memUsage)
+		detail.Size = &size
+	}
+	enc, err := client.ObjectEncoding(ctx, req.Key).Result()
+	if err == nil {
+		detail.Encoding = &enc
+	}
+
 	switch keyType {
 	case "string":
-		val, err := client.Get(ctx, req.Key).Result()
+		val, err := client.Get(ctx, req.Key).Bytes()
 		if err == nil {
-			data, _ := json.Marshal(val)
+			detail.IsBinary = isBinaryData(string(val))
+			safeVal, enc := safeStringValue(val)
+			detail.ValueEncoding = enc
+			bv := shared.BinaryValue{Value: safeVal, Encoding: enc}
+			data, _ := json.Marshal(bv)
 			detail.Value = data
 		}
 	case "hash":
 		vals, err := client.HGetAll(ctx, req.Key).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			safeVals, enc := safeMapValue(vals)
+			detail.ValueEncoding = enc
+			// Wrap each hash value in a BinaryValue for frontend detection
+			wrapped := make(map[string]shared.BinaryValue, len(safeVals))
+			for k, v := range safeVals {
+				wrapped[k] = shared.BinaryValue{Value: v, Encoding: enc}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	case "list":
 		vals, err := client.LRange(ctx, req.Key, 0, -1).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			safeVals, enc := safeSliceValue(vals)
+			detail.ValueEncoding = enc
+			wrapped := make([]shared.BinaryValue, len(safeVals))
+			for i, v := range safeVals {
+				wrapped[i] = shared.BinaryValue{Value: v, Encoding: enc}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	case "set":
 		vals, err := client.SMembers(ctx, req.Key).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			safeVals, enc := safeSliceValue(vals)
+			detail.ValueEncoding = enc
+			wrapped := make([]shared.BinaryValue, len(safeVals))
+			for i, v := range safeVals {
+				wrapped[i] = shared.BinaryValue{Value: v, Encoding: enc}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	case "zset":
 		vals, err := client.ZRangeByScoreWithScores(ctx, req.Key, &goRedis.ZRangeBy{Min: "-inf", Max: "+inf"}).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			entries := make([]redisZSetEntry, len(vals))
+			for i, v := range vals {
+				member, _ := v.Member.(string)
+				entries[i] = redisZSetEntry{Member: member, Score: v.Score}
+			}
+			safeVals, enc := safeZSetValue(entries)
+			detail.ValueEncoding = enc
+			wrapped := make([]map[string]interface{}, len(safeVals))
+			for i, v := range safeVals {
+				wrapped[i] = map[string]interface{}{
+					"member": shared.BinaryValue{Value: v.Member, Encoding: enc},
+					"score":  v.Score,
+				}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	default:

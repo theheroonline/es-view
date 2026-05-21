@@ -36,6 +36,24 @@ export function formatTtl(ttlMs: number | null) {
   return `${(minutes / 60).toFixed(1)} h`;
 }
 
+export function formatMemorySize(bytes: number | null | undefined) {
+  if (bytes === null || bytes === undefined || bytes < 0) {
+    return "";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const kb = bytes / 1024;
+  if (kb < 1024) {
+    return `${kb.toFixed(1)} KB`;
+  }
+
+  const mb = kb / 1024;
+  return `${mb.toFixed(2)} MB`;
+}
+
 export function createEditorRowId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

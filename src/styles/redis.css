@@ -86,8 +86,8 @@
 
 /* --- Input Controls --- */
 .redis-db-select {
-  width: 100px;
-  max-width: 100%;
+  min-width: 120px;
+  max-width: 150px;
   padding: 7px 10px;
   font-size: 12px;
   border: 1px solid #d9e1ec;
@@ -95,7 +95,7 @@
   background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
   color: #2c3d4f;
   transition: border-color 0.2s ease, background-color 0.2s ease;
-  flex-shrink: 1;
+  flex-shrink: 0;
 }
 
 .redis-db-select:hover {
@@ -363,6 +363,104 @@
   text-align: center;
 }
 
+/* --- Encoding Switch (ARDM-style dropdown) --- */
+.redis-encoding-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.redis-encoding-select {
+  position: relative;
+  width: 110px;
+}
+
+.redis-encoding-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #32455b;
+  background: #fff;
+  border: 1px solid #d5dce6;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.redis-encoding-select-trigger:hover {
+  border-color: #bfd4e4;
+}
+
+.redis-encoding-select-arrow {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #94a3b8;
+  transition: transform 0.15s ease;
+}
+
+.redis-encoding-select-arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.redis-encoding-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #d5dce6;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.redis-encoding-option {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #32455b;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.redis-encoding-option:hover {
+  background: #f0f4ff;
+}
+
+.redis-encoding-option.is-active {
+  background: #e6f4ea;
+  color: #166534;
+  font-weight: 600;
+}
+
+.redis-encoding-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  font-size: 13px;
+  color: #8fa0b3;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.redis-encoding-copy-btn:hover {
+  color: #32455b;
+  background: rgba(248, 251, 255, 0.94);
+  border-color: #d5dce6;
+}
+
 /* --- Pagination --- */
 .redis-pagination {
   display: flex;
@@ -430,6 +528,28 @@
   border-bottom: 1px solid #e5e5ea;
   word-break: break-all;
   min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.redis-detail-key-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.redis-detail-key-meta {
+  font-size: 11px;
+  color: #888;
+}
+
+.redis-detail-key-size {
+  font-size: 11px;
+  color: #888;
+  background: #e8ecf1;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
 .redis-detail-header-actions .btn {
