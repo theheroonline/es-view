@@ -73,6 +73,12 @@ export function EsDataBrowserFeature() {
     setSelectedRowId,
     contextMenuRef,
     skipNextAutoQueryRef,
+    showCreateModal,
+    setShowCreateModal,
+    createDocId,
+    setCreateDocId,
+    createDocJson,
+    setCreateDocJson,
   } = useEsDataBrowserState();
 
   const presets = useMemo(() => [
@@ -205,7 +211,7 @@ export function EsDataBrowserFeature() {
   const rows = result?.hits?.hits ?? [];
   const selectedRows = useMemo(() => rows.filter((row: any) => selectedDocs.has(row._id)), [rows, selectedDocs]);
 
-  const { confirmDeleteDoc, deleteSelectedDocs, openEdit, requestDeleteDoc, submitEdit } = useEsDocumentActions({
+  const { confirmDeleteDoc, deleteSelectedDocs, openEdit, openCreateDoc, requestDeleteDoc, submitEdit, submitCreateDoc } = useEsDocumentActions({
     activeConnection,
     editJson,
     editingDoc,
@@ -221,6 +227,11 @@ export function EsDataBrowserFeature() {
     setResult,
     setSelectedDocs,
     setShowEditModal,
+    createDocId,
+    createDocJson,
+    setShowCreateModal,
+    setCreateDocId,
+    setCreateDocJson,
     t,
   });
 
@@ -328,6 +339,7 @@ export function EsDataBrowserFeature() {
           onExecute={execute}
           onSelectIndex={handleIndexChange}
           onShowFilters={showConditions}
+          onCreateDoc={openCreateDoc}
         />
 
         <EsQueryConditionsPanel
@@ -478,6 +490,13 @@ export function EsDataBrowserFeature() {
             void confirmDeleteDoc(docIndex, docId);
           }}
           onSubmitEdit={submitEdit}
+          showCreateModal={showCreateModal}
+          createDocId={createDocId}
+          createDocJson={createDocJson}
+          onCreateDocId={setCreateDocId}
+          onCreateDocJson={setCreateDocJson}
+          onCloseCreateModal={() => setShowCreateModal(false)}
+          onSubmitCreateDoc={submitCreateDoc}
         />
       </div>
     </ConfigProvider>

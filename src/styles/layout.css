@@ -426,6 +426,13 @@
   color: #16a34a;
 }
 
+.mdb-connection-version {
+  flex-shrink: 0;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 500;
+}
+
 .mdb-tree-count {
   flex-shrink: 0;
   font-size: 11px;

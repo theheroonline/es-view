@@ -8,6 +8,7 @@ interface EsDataBrowserToolbarProps {
   onExecute: () => void;
   onSelectIndex: (index: string) => void;
   onShowFilters: () => void;
+  onCreateDoc?: () => void;
 }
 
 export function EsDataBrowserToolbar({
@@ -18,6 +19,7 @@ export function EsDataBrowserToolbar({
   onExecute,
   onSelectIndex,
   onShowFilters,
+  onCreateDoc,
 }: EsDataBrowserToolbarProps) {
   return (
     <div className="card" style={{ flex: "0 0 auto" }}>
@@ -75,6 +77,11 @@ export function EsDataBrowserToolbar({
             <button className="btn btn-secondary btn-sm" onClick={onShowFilters} disabled={loading}>
               <span>🔎</span> {t("dataBrowser.filter")}
             </button>
+            {onCreateDoc && (
+              <button className="btn btn-secondary btn-sm" onClick={onCreateDoc} disabled={loading}>
+                <span>+</span> {t("dataBrowser.create")}
+              </button>
+            )}
           </div>
         </div>
       </div>

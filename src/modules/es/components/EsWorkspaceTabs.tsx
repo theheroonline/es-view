@@ -5,6 +5,9 @@ interface EsWorkspaceTabsProps {
   simpleQueryLabel: string;
   restConsoleLabel: string;
   indexManagerLabel: string;
+  templateManagerLabel: string;
+  ilmManagerLabel: string;
+  clusterInfoLabel: string;
 }
 
 export default function EsWorkspaceTabs({
@@ -12,6 +15,9 @@ export default function EsWorkspaceTabs({
   simpleQueryLabel,
   restConsoleLabel,
   indexManagerLabel,
+  templateManagerLabel,
+  ilmManagerLabel,
+  clusterInfoLabel,
 }: EsWorkspaceTabsProps) {
   return (
     <div className="mdb-tabs">
@@ -26,6 +32,15 @@ export default function EsWorkspaceTabs({
       </NavLink>
       <NavLink to="/indices" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
         {indexManagerLabel}
+      </NavLink>
+      <NavLink to="/templates" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
+        {templateManagerLabel}
+      </NavLink>
+      <NavLink to="/ilm" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
+        {ilmManagerLabel}
+      </NavLink>
+      <NavLink to="/cluster" className={({ isActive }) => `mdb-tab ${isActive ? "active" : ""}`}>
+        {clusterInfoLabel}
       </NavLink>
     </div>
   );

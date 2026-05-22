@@ -5,7 +5,7 @@ export type ViewMode = "table" | "json";
 
 export type BoolType = "must" | "should" | "must_not" | "sort";
 
-export type EsOperator = "term" | "match" | "range" | "time_range";
+export type EsOperator = "term" | "match" | "range" | "time_range" | "exists" | "missing" | "terms" | "wildcard";
 
 export interface ConditionItem {
   field: string;

@@ -1,16 +1,15 @@
 # Multi-Database Browsing / 多数据库浏览器（本地客户端）
 
 **简短说明（中文）**：本项目是一个本地多数据库桌面客户端，使用 Wails (Go) + React 框架。支持 Elasticsearch、MySQL 与 Redis 三类连接，提供统一的数据浏览、管理、查询界面。
+主要是为了方便自己使用(不想安装多个客户端)，所以开源出来(至于以后加啥功能,看问的工作需要吧)。
+
+**参考项目**：
+Dbeaver  
+es-client  
+AnotherRedisDesktopManager
 
 **Short description (English)**: A local multi-database desktop client built with Wails (Go) and React, supporting Elasticsearch, MySQL, and Redis with a unified UI for browsing, querying, and managing data across all three databases.
 
----
-
-## 截图 / Screenshots 📸
-
-> 📷 截图待添加。建议添加：ES 数据浏览、MySQL 表管理、Redis 键浏览 各一张。
-
----
 
 ## 技术栈 / Tech Stack 🏗️
 

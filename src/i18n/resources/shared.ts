@@ -34,6 +34,9 @@ export const sharedResources = {
       simpleQuery: "Simple Query",
       restConsole: "Advanced",
       indexManager: "Index Manager",
+      templateManager: "Templates",
+      ilmManager: "ILM",
+      clusterInfo: "Cluster",
       connections: "Connections",
       engineNames: {
         elasticsearch: "Elasticsearch",
@@ -186,6 +189,9 @@ export const sharedResources = {
       simpleQuery: "简易查询",
       restConsole: "高级操作",
       indexManager: "索引管理",
+      templateManager: "模板管理",
+      ilmManager: "ILM 策略",
+      clusterInfo: "集群监控",
       connections: "连接配置",
       engineNames: {
         elasticsearch: "Elasticsearch",

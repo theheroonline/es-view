@@ -362,9 +362,6 @@ export function useConnectionWorkspace() {
 
         if (shouldValidate) {
           await pingEsCluster(connection);
-        }
-
-        if (shouldValidate) {
           await refreshIndices(connection);
         }
 

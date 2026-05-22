@@ -38,7 +38,7 @@ const sqlQueryCacheByConnection = new Map<string, SqlQueryCacheState>();
 /** 提取 enabledConditions 逻辑，消除重复 */
 function getEnabledConditions(conds: WhereCondition[]) {
   return conds.filter((c) =>
-    c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
+    c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]) || c.operator === "IS NULL" || c.operator === "IS NOT NULL")
   );
 }
 
@@ -178,6 +178,9 @@ export default function SqlQuery() {
             case "<": return `${c.field} < '${c.value}'`;
             case "<=": return `${c.field} <= '${c.value}'`;
             case "LIKE": return `${c.field} LIKE '%${c.value}%'`;
+            case "IN": return `${c.field} IN (${c.value})`;
+            case "IS NULL": return `${c.field} IS NULL`;
+            case "IS NOT NULL": return `${c.field} IS NOT NULL`;
             default: return `${c.field} = '${c.value}'`;
           }
         });
@@ -240,6 +243,19 @@ export default function SqlQuery() {
           break;
         case "LIKE":
           boolBuckets.must.push({ match: { [c.field]: c.value } });
+          break;
+        case "IN": {
+          const terms = c.value.split(",").map((v) => v.trim()).filter(Boolean);
+          if (terms.length > 0) {
+            boolBuckets.must.push({ terms: { [c.field]: terms } });
+          }
+          break;
+        }
+        case "IS NULL":
+          boolBuckets.must.push({ bool: { must_not: { exists: { field: c.field } } } });
+          break;
+        case "IS NOT NULL":
+          boolBuckets.must.push({ exists: { field: c.field } });
           break;
         default:
           boolBuckets.must.push({ term: { [c.field]: c.value } });
@@ -505,6 +521,9 @@ export default function SqlQuery() {
                       <option value="<">&lt;</option>
                       <option value="<=">&lt;=</option>
                       <option value="LIKE">LIKE</option>
+                      <option value="IN">IN</option>
+                      <option value="IS NULL">IS NULL</option>
+                      <option value="IS NOT NULL">IS NOT NULL</option>
                       <option value="RANGE">{t('simpleQuery.timeRange')}</option>
                     </select>
                     {cond.operator === 'RANGE' ? (
@@ -520,12 +539,19 @@ export default function SqlQuery() {
                           disabled={!cond.enabled}
                         />
                       </ConfigProvider>
+                    ) : cond.operator === 'IS NULL' || cond.operator === 'IS NOT NULL' ? (
+                      <input
+                        className="form-control"
+                        value="-"
+                        disabled
+                        style={{ background: '#f8fafc', color: '#94a3b8', cursor: 'not-allowed' }}
+                      />
                     ) : (
                       <input
                         className="form-control"
                         value={cond.value}
                         onChange={(event) => handleConditionChange(idx, { value: event.target.value })}
-                        placeholder={t('simpleQuery.enterValue')}
+                        placeholder={cond.operator === 'IN' ? t('simpleQuery.inExample') : t('simpleQuery.enterValue')}
                         disabled={!cond.enabled}
                       />
                     )}

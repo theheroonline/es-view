@@ -103,6 +103,10 @@ export function EsQueryConditionsPanel({
               <option value="match">{t("dataBrowser.contain")}</option>
               <option value="range">{t("dataBrowser.range")}</option>
               <option value="time_range">{t("dataBrowser.timeRange")}</option>
+              <option value="exists">{t("dataBrowser.exists")}</option>
+              <option value="missing">{t("dataBrowser.missing")}</option>
+              <option value="terms">{t("dataBrowser.terms")}</option>
+              <option value="wildcard">{t("dataBrowser.wildcard")}</option>
             </select>
           )}
         </div>
@@ -121,12 +125,16 @@ export function EsQueryConditionsPanel({
               placeholder={[t("dataBrowser.startTime"), t("dataBrowser.endTime")]}
               disabled={!item.enabled}
             />
+          ) : item.operator === "exists" || item.operator === "missing" ? (
+            <span className="form-control" style={{ background: "#f8fafc", color: "#94a3b8", fontSize: "12px" }}>
+              {t("dataBrowser.noValueNeeded")}
+            </span>
           ) : (
             <input
               className="form-control"
               value={item.value}
               onChange={(event) => onChangeCondition(idx, { value: event.target.value })}
-              placeholder={item.operator === "range" ? t("dataBrowser.rangeExample") : t("dataBrowser.placeholder")}
+              placeholder={item.operator === "range" ? t("dataBrowser.rangeExample") : item.operator === "terms" ? t("dataBrowser.termsExample") : t("dataBrowser.placeholder")}
             />
           )}
         </div>

@@ -75,17 +75,27 @@
   gap: 8px;
 }
 
+/* --- REST Console --- */
 .rest-console {
   display: flex;
   gap: 16px;
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .rest-panel {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.rest-panel > .monaco-editor-container,
+.rest-panel > div[style*="height"] {
+  flex: 1;
+  min-height: 0;
 }
 
 .rest-panel-header {
@@ -93,6 +103,7 @@
   font-weight: 600;
   color: #1d1d1f;
   padding: 8px 0;
+  min-height: 44px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -121,22 +132,8 @@
 .rest-status.fail { background: rgba(255, 59, 48, 0.15); color: #b42318; }
 
 .rest-editor {
-  height: 420px;
-}
-
-.rest-response {
   flex: 1;
-  margin: 0;
-  height: 420px;
-  overflow: auto;
-  background: #fbfbfd;
-  border: 1px solid rgba(0,0,0,0.05);
-  border-radius: 10px;
-  padding: 12px;
-  font-size: 12px;
-  line-height: 1.6;
-  font-family: "SF Mono", Menlo, Consolas, monospace;
-  color: #1d1d1f;
+  min-height: 0;
 }
 
 .rest-batch-list {
@@ -216,4 +213,55 @@
 .es-create-index-modal .json-editor {
   height: 200px;
   resize: vertical;
+}
+
+/* --- Monaco Editor --- */
+
+/* Monaco wrapper with visible border */
+.rest-monaco-wrapper {
+  flex: 1;
+  min-height: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #c0c8d4;
+  background: #fff;
+  padding: 8px 12px;
+}
+
+/* Hide Monaco's margin area (set via lineDecorationsWidth: 0, but CSS ensures it) */
+.rest-monaco-wrapper .margin,
+.rest-monaco-wrapper .glyph-margin {
+  display: none !important;
+}
+
+.rest-monaco-wrapper > section,
+.rest-monaco-wrapper > div {
+  height: 100%;
+}
+
+/* Monaco editor overrides */
+.monaco-editor .decorationsOverviewRuler {
+  display: none !important;
+}
+
+/* Response wrapper + pre styling (matches Monaco wrapper) */
+.rest-response-wrapper {
+  flex: 1;
+  min-height: 0;
+}
+
+.rest-response {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  background: #fbfbfd;
+  border: 1px solid #c0c8d4;
+  border-radius: 10px;
+  padding: 8px 12px 8px 36px;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  color: #1d1d1f;
+  white-space: pre-wrap;
 }

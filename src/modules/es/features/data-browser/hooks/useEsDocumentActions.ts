@@ -1,7 +1,7 @@
 import { Modal } from "antd";
 import type { TFunction } from "i18next";
 import { logError } from "../../../../../lib/errorLog";
-import { deleteEsDocument, refreshEsDocumentIndex, updateEsDocument } from "../services/esDocumentService";
+import { createEsDocument, deleteEsDocument, refreshEsDocumentIndex, updateEsDocument } from "../services/esDocumentService";
 
 interface SearchRow {
   _id: string;
@@ -25,6 +25,12 @@ interface UseEsDocumentActionsParams {
   setResult: (value: any) => void;
   setSelectedDocs: (value: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
   setShowEditModal: (value: boolean) => void;
+  // Create document state
+  createDocId: string;
+  createDocJson: string;
+  setShowCreateModal: (value: boolean) => void;
+  setCreateDocId: (value: string) => void;
+  setCreateDocJson: (value: string) => void;
   t: TFunction;
 }
 
@@ -44,6 +50,11 @@ export function useEsDocumentActions({
   setResult,
   setSelectedDocs,
   setShowEditModal,
+  createDocId,
+  createDocJson,
+  setShowCreateModal,
+  setCreateDocId,
+  setCreateDocJson,
   t,
 }: UseEsDocumentActionsParams) {
   const requestDeleteDoc = (docIndex: string, docId: string) => {
@@ -105,6 +116,36 @@ export function useEsDocumentActions({
     }
   };
 
+  const openCreateDoc = () => {
+    setCreateDocId("");
+    setCreateDocJson("{}");
+    setShowCreateModal(true);
+  };
+
+  const submitCreateDoc = async () => {
+    if (!activeConnection || !selectedIndex) return;
+    try {
+      setLoading(true);
+      setError("");
+      const body = JSON.parse(createDocJson);
+      await createEsDocument(activeConnection, selectedIndex, body, createDocId || undefined);
+      await refreshEsDocumentIndex(activeConnection, selectedIndex);
+      setShowCreateModal(false);
+      setCreateDocId("");
+      setCreateDocJson("");
+      const response = await executeQuery();
+      setResult(response);
+    } catch (error) {
+      logError(error, {
+        source: "esDataBrowser.createDocument",
+        message: "Failed to create Elasticsearch document",
+      });
+      setError(t("dataBrowser.createFailed") + (error instanceof Error ? error.message : t("dataBrowser.checkJsonFormat")));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const deleteSelectedDocs = async () => {
     if (selectedRows.length === 0 || !activeConnection) return;
 
@@ -148,7 +189,9 @@ export function useEsDocumentActions({
     confirmDeleteDoc,
     deleteSelectedDocs,
     openEdit,
+    openCreateDoc,
     requestDeleteDoc,
     submitEdit,
+    submitCreateDoc,
   };
 }

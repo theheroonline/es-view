@@ -3,6 +3,9 @@ import EsDataBrowserPage from "../pages/DataBrowser";
 import EsIndexManagerPage from "../pages/IndexManager";
 import EsRestConsolePage from "../pages/RestConsole";
 import EsSimpleQueryPage from "../pages/SimpleQuery";
+import EsTemplateManagerPage from "../pages/TemplateManager";
+import EsIlmManagerPage from "../pages/IlmManager";
+import EsClusterInfoPage from "../pages/ClusterInfo";
 
 const flexVisible: React.CSSProperties = { display: "flex", flex: 1, minHeight: 0, overflow: "hidden" };
 const flexHidden: React.CSSProperties = { display: "none" };
@@ -28,6 +31,15 @@ export function EsContentArea() {
       </div>
       <div style={pathname === "/indices" ? flexVisible : flexHidden}>
         <EsIndexManagerPage />
+      </div>
+      <div style={pathname === "/templates" ? flexVisible : flexHidden}>
+        <EsTemplateManagerPage />
+      </div>
+      <div style={pathname === "/ilm" ? flexVisible : flexHidden}>
+        <EsIlmManagerPage />
+      </div>
+      <div style={pathname === "/cluster" ? flexVisible : flexHidden}>
+        <EsClusterInfoPage />
       </div>
     </div>
   );

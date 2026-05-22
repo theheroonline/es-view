@@ -37,6 +37,9 @@ export default function AppWorkspace({
           simpleQueryLabel={t("sidebar.simpleQuery")}
           restConsoleLabel={t("sidebar.restConsole")}
           indexManagerLabel={t("sidebar.indexManager")}
+          templateManagerLabel={t("sidebar.templateManager")}
+          ilmManagerLabel={t("sidebar.ilmManager")}
+          clusterInfoLabel={t("sidebar.clusterInfo")}
         />
       )}
 

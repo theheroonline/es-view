@@ -32,6 +32,11 @@ export function useEsDataBrowserState() {
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
+  // Create document
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createDocId, setCreateDocId] = useState("");
+  const [createDocJson, setCreateDocJson] = useState("{}");
+
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const skipNextAutoQueryRef = useRef(false);
 
@@ -82,5 +87,12 @@ export function useEsDataBrowserState() {
     setSelectedRowId,
     contextMenuRef,
     skipNextAutoQueryRef,
+    // Create document
+    showCreateModal,
+    setShowCreateModal,
+    createDocId,
+    setCreateDocId,
+    createDocJson,
+    setCreateDocJson,
   };
 }

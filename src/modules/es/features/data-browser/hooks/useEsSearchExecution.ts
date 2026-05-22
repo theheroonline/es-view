@@ -162,6 +162,25 @@ export function useEsSearchExecution({
         boolBuckets[item.boolType]?.push({ match: { [item.field]: item.value } });
       } else if (item.operator === "range" && parsed != null) {
         boolBuckets[item.boolType]?.push({ range: { [item.field]: parsed } });
+      } else if (item.operator === "exists") {
+        boolBuckets[item.boolType]?.push({ exists: { field: item.field } });
+      } else if (item.operator === "missing") {
+        boolBuckets[item.boolType]?.push({ bool: { must_not: { exists: { field: item.field } } } });
+      } else if (item.operator === "terms") {
+        const terms = item.value.split(",").map((v) => {
+          const trimmed = v.trim();
+          if (!trimmed) return null;
+          const num = Number(trimmed);
+          if (!isNaN(num) && String(num) === trimmed) return num;
+          if (trimmed === "true") return true;
+          if (trimmed === "false") return false;
+          return trimmed;
+        }).filter((v): v is string | number | boolean => v !== null);
+        if (terms.length > 0) {
+          boolBuckets[item.boolType]?.push({ terms: { [item.field]: terms } });
+        }
+      } else if (item.operator === "wildcard") {
+        boolBuckets[item.boolType]?.push({ wildcard: { [item.field]: { value: item.value } } });
       }
     }
 

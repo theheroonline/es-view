@@ -59,6 +59,8 @@ export interface ConnectionProfile {
   reconnectInterval?: number;
   // Connection type label
   connectionType?: "development" | "test" | "production";
+  // ES version (user-selected, default "7")
+  esVersion?: string;
 }
 
 export interface LocalState {

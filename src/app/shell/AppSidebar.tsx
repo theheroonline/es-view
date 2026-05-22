@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { useConnectionWorkspace } from "../../hooks/useConnectionWorkspace";
 import type { ConnectionProfile, EngineType } from "../../lib/types";
+import { useElasticsearchContext } from "../../state/ElasticsearchContext";
 import EsSidebarSection from "../../modules/es/components/EsSidebarSection";
 import MysqlSidebarSection from "../../modules/mysql/components/MysqlSidebarSection";
 import type { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
@@ -35,6 +36,7 @@ export function AppSidebarContent({
   onNavigateToEngineDefaultRoute,
 }: AppSidebarContentProps) {
   const { t } = useTranslation();
+  const { esVersion } = useElasticsearchContext();
 
   const isConnectionFocused = (profile: ConnectionProfile) =>
     connection.focusedConnectionIdByEngine[profile.engine ?? "elasticsearch"] === profile.id;
@@ -99,6 +101,9 @@ export function AppSidebarContent({
         <span className="mdb-connection-main">
           <span className={`mdb-status-dot status-${status}`} />
           <span className="mdb-connection-name">{profile.name}</span>
+          {esVersion && profile.engine === "elasticsearch" && (
+            <span className="mdb-connection-version">v{esVersion.number}</span>
+          )}
           {profile.connectionType === "production" && (
             <span className="mdb-connection-type mdb-connection-type-prod" title="Production">PROD</span>
           )}

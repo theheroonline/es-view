@@ -1,9 +1,14 @@
 import {
+    createEsDocument as createEsDocumentRecord,
     deleteEsDocument as deleteEsDocumentRecord,
     refreshEsDocumentIndex as refreshEsDocumentIndexRecord,
     updateEsDocument as updateEsDocumentRecord,
 } from "../../../services/documentService";
 import type { EsConnection } from "../../../types";
+
+export async function createEsDocument(connection: EsConnection, index: string, doc: unknown, id?: string) {
+  return createEsDocumentRecord(connection, index, doc, id);
+}
 
 export async function deleteEsDocument(connection: EsConnection, index: string, id: string) {
   return deleteEsDocumentRecord(connection, index, id);

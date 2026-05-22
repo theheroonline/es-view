@@ -5,6 +5,7 @@ import type { ConnectionProfile } from "../../../lib/types";
 import { useSharedConnectionState } from "../../../state/SharedConnectionState";
 import { pingEsCluster } from "../services/clusterService";
 import type { EsConnection } from "../types";
+import { ES_VERSION_OPTIONS } from "../types";
 
 const emptyForm = {
   id: "",
@@ -29,6 +30,7 @@ const emptyForm = {
   tlsClientCertPath: "",
   tlsClientKeyPath: "",
   connectionType: "" as "" | "development" | "test" | "production",
+  esVersion: "7",
 };
 
 interface EsConnectionDialogProps {
@@ -99,6 +101,7 @@ export default function EsConnectionDialog({
         tlsClientCertPath: profile.tlsClientCertPath ?? "",
         tlsClientKeyPath: profile.tlsClientKeyPath ?? "",
         connectionType: profile.connectionType ?? "",
+        esVersion: profile.esVersion ?? "7",
       });
     }
   }, [mode, profileId, profiles, getSecretById, t, onClose]);
@@ -139,6 +142,7 @@ export default function EsConnectionDialog({
       tlsClientCertPath: form.tlsClientCertPath || undefined,
       tlsClientKeyPath: form.tlsClientKeyPath || undefined,
       connectionType: form.connectionType || undefined,
+      esVersion: form.esVersion || "7",
     };
 
     try {
@@ -294,6 +298,20 @@ export default function EsConnectionDialog({
               <option value="development">{t("connections.envDevelopment")}</option>
               <option value="test">{t("connections.envTest")}</option>
               <option value="production">{t("connections.envProduction")}</option>
+            </select>
+          </div>
+
+          {/* ES version */}
+          <div>
+            <label>{t("connection.esVersion", "ES Version")}</label>
+            <select
+              className="form-control"
+              value={form.esVersion}
+              onChange={(event) => setForm({ ...form, esVersion: event.target.value })}
+            >
+              {ES_VERSION_OPTIONS.map((v) => (
+                <option key={v} value={v}>{t(`connection.esVersion${v}`)}</option>
+              ))}
             </select>
           </div>
 

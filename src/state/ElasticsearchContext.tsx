@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { logError } from "../lib/errorLog";
-import { listEsIndices } from "../modules/es/services/clusterService";
+import { listEsIndices, type EsVersionInfo } from "../modules/es/services/clusterService";
 import type { EsConnection, IndexMeta } from "../modules/es/types";
 import { useSharedConnectionState } from "./SharedConnectionState";
 
@@ -17,6 +17,7 @@ interface ElasticsearchContextValue {
   selectedIndex: string | undefined;
   setSelectedIndex: (index: string | undefined) => void;
   resetWorkspaceForConnection: (id: string) => void;
+  esVersion: EsVersionInfo | null;
 }
 
 const ElasticsearchContext = createContext<ElasticsearchContextValue | null>(null);
@@ -27,6 +28,7 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
   const [indices, setIndices] = useState<string[]>([]);
   const [indicesMeta, setIndicesMeta] = useState<IndexMeta[]>([]);
   const [indicesCacheByConnection, setIndicesCacheByConnection] = useState<Record<string, { indices: string[]; indicesMeta: IndexMeta[] }>>({});
+  const [esVersion, setEsVersion] = useState<EsVersionInfo | null>(null);
 
   const activeEsConnectionId = getFocusedConnectionIdByEngine("elasticsearch");
 
@@ -57,7 +59,8 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
       username: secret.username,
       password: secret.password,
       apiKey: secret.apiKey,
-      sshPassword: secret.sshPassword
+      sshPassword: secret.sshPassword,
+      esVersion: profile.esVersion ?? "7",
     };
   }, [getSecretById, profiles]);
 
@@ -101,6 +104,9 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
         }
       }));
 
+      // Use the user-selected ES version from connection config
+      setEsVersion(target.esVersion ? { number: target.esVersion } : { number: "7" });
+
       setSelectedIndexByConnection((prev) => {
         const current = prev[target.id];
         if (current && !nextIndices.includes(current)) {
@@ -125,6 +131,7 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     if (!activeEsConnectionId) {
       setIndices([]);
       setIndicesMeta([]);
+      setEsVersion(null);
       return;
     }
 
@@ -138,13 +145,17 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     setIndices(cached.indices);
     setIndicesMeta(cached.indicesMeta);
 
+    // Restore ES version from connection config
+    const profile = profiles.find((p) => p.id === activeEsConnectionId);
+    setEsVersion(profile?.esVersion ? { number: profile.esVersion } : { number: "7" });
+
     // Auto-select the first index when switching to a connection that has no selection yet
     setSelectedIndexByConnection((prev) => {
       if (prev[activeEsConnectionId]) return prev;
       if (cached.indices.length === 0) return prev;
       return { ...prev, [activeEsConnectionId]: cached.indices[0] };
     });
-  }, [activeEsConnectionId, indicesCacheByConnection]);
+  }, [activeEsConnectionId, indicesCacheByConnection, profiles]);
 
   useEffect(() => {
     setIndicesCacheByConnection((prev) => {
@@ -194,7 +205,8 @@ export function ElasticsearchProvider({ children }: { children: ReactNode }) {
     selectedIndex,
     setSelectedIndex,
     resetWorkspaceForConnection,
-  }), [activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex, resetWorkspaceForConnection]);
+    esVersion,
+  }), [activeConnection, getActiveConnection, getConnectionById, indices, indicesMeta, refreshIndices, selectedIndex, setSelectedIndex, resetWorkspaceForConnection, esVersion]);
 
   return <ElasticsearchContext.Provider value={value}>{children}</ElasticsearchContext.Provider>;
 }
