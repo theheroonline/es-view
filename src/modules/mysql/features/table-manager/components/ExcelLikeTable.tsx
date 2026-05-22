@@ -55,8 +55,8 @@ function ExcelLikeTableInner({
   const { t } = useTranslation();
 
   // Internal fallback selection state (used when no external selection is provided)
-  const [internalSelectedKeySet, setInternalSelectedKeySet] = useState<Set<string>>(new Set());
   const [internalSelectedRowIndex, setInternalSelectedRowIndex] = useState<number | null>(null);
+  const [internalSelectedKeySet, setInternalSelectedKeySet] = useState<Set<string>>(new Set());
 
   // 拖拽状态
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
