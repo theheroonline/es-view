@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import type { IncomingMessage, ServerResponse } from "http";
 import { createProxyMiddleware, type RequestHandler } from "http-proxy-middleware";
 import type { Plugin } from "vite";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 function normalizeProxyTarget(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -64,8 +64,49 @@ function esProxyPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), esProxyPlugin()],
-  // Tauri 要求使用相对路径
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts"
+  },
   base: "./",
+  root: "./src",
+  build: {
+    outDir: "../dist",
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom") || id.includes("node_modules/react-router")) {
+            return "react-vendor";
+          }
+
+          if (
+            id.includes("node_modules/antd") ||
+            id.includes("node_modules/@ant-design") ||
+            id.includes("node_modules/@rc-component") ||
+            id.includes("node_modules/rc-") ||
+            id.includes("node_modules/dayjs")
+          ) {
+            return "antd-vendor";
+          }
+
+          if (id.includes("node_modules/i18next") || id.includes("node_modules/react-i18next")) {
+            return "i18n-vendor";
+          }
+
+          if (id.includes("node_modules/sql-formatter")) {
+            return "sql-vendor";
+          }
+
+          return undefined;
+        }
+      }
+    }
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

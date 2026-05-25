@@ -7,9 +7,9 @@ import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import FieldFilterButton, { type FieldFilterState } from "../../../components/FieldFilterButton";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
-import { extractFieldsFromMapping, getIndexMapping, sqlQuery } from "../services/client";
-import SqlHistory from "./SqlHistory";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
+import { loadEsIndexFields } from "../services/searchService";
+import { executeEsSqlSelect } from "../services/sqlService";
 
 const { RangePicker } = DatePicker;
 
@@ -37,7 +37,7 @@ const sqlQueryCacheByConnection = new Map<string, SqlQueryCacheState>();
 
 export default function SqlQuery() {
   const { t, i18n } = useTranslation();
-  const { activeConnection, addHistory, indices } = useAppContext();
+  const { activeConnection, indices } = useElasticsearchContext();
   const [selectedIndex, setSelectedIndex] = useState<string | undefined>(undefined);
   const [operation, setOperation] = useState<SqlOperation>("select");
   const [availableFields, setAvailableFields] = useState<string[]>([]);
@@ -51,6 +51,7 @@ export default function SqlQuery() {
   const [error, setError] = useState("");
   const [totalRows, setTotalRows] = useState(0);
   const [expandedSqlRows, setExpandedSqlRows] = useState<Set<number>>(new Set());
+  const [showConditions, setShowConditions] = useState(false);
 
   // Field Filter State (shared component)
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
@@ -78,6 +79,7 @@ export default function SqlQuery() {
       setPayload("{}");
       setLimit(100);
       setFieldFilter({ enabled: false, fields: [] });
+      setShowConditions(false);
       return;
     }
 
@@ -91,6 +93,7 @@ export default function SqlQuery() {
       setPayload("{}");
       setLimit(100);
       setFieldFilter({ enabled: false, fields: [] });
+      setShowConditions(false);
       return;
     }
 
@@ -101,6 +104,7 @@ export default function SqlQuery() {
     setPayload(cached.payload);
     setLimit(cached.limit);
     setFieldFilter(cached.fieldFilter);
+    setShowConditions(cached.whereConditions.some((item) => item.field || item.value || item.operator === "RANGE"));
   }, [activeConnection?.id]);
 
   useEffect(() => {
@@ -131,11 +135,10 @@ export default function SqlQuery() {
       return;
     }
     let ignore = false;
-    getIndexMapping(activeConnection, selectedIndex)
-      .then((mapping) => {
+    loadEsIndexFields(activeConnection, selectedIndex)
+      .then((fields) => {
         if (ignore) return;
-        const extracted = extractFieldsFromMapping(mapping, selectedIndex);
-        setAvailableFields(extracted);
+        setAvailableFields(fields);
       })
       .catch(() => {
         if (ignore) return;
@@ -146,28 +149,26 @@ export default function SqlQuery() {
 
   const formatDateTime = (value: Dayjs | null) => (value ? value.format("YYYY-MM-DD HH:mm:ss") : "");
 
-  // 生成 SQL
+  // 生成 DSL 查询和显示用的 SQL 字符串
   useEffect(() => {
     const name = selectedIndex || "your_index";
-    let generated = "";
+    let displaySql = "";
     switch (operation) {
       case "select":
         const fieldsPart = !fieldFilter.enabled ? "*" : fieldFilter.fields.join(", ");
-        const enabledConditions = whereConditions.filter((c) => 
+        const enabledConditions = whereConditions.filter((c) =>
           c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
         );
-        
-        // 构建WHERE条件
+
+        // 构建 WHERE 条件文本显示
         let conditions: string[] = [];
-        
-        // 添加普通条件
         conditions = enabledConditions.map((c) => {
           if (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]) {
             const startStr = formatDateTime(c.rangeValue[0]);
             const endStr = formatDateTime(c.rangeValue[1]);
             return `${c.field} >= '${startStr}' AND ${c.field} <= '${endStr}'`;
           }
-          
+
           switch (c.operator) {
             case "=": return `${c.field} = '${c.value}'`;
             case "!=": return `${c.field} != '${c.value}'`;
@@ -179,24 +180,83 @@ export default function SqlQuery() {
             default: return `${c.field} = '${c.value}'`;
           }
         });
-        
+
         const wherePart = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
-        generated = `SELECT ${fieldsPart} FROM ${name}${wherePart} LIMIT ${limit}`;
+        displaySql = `SELECT ${fieldsPart} FROM ${name}${wherePart} LIMIT ${limit}`;
         break;
       case "insert":
-        generated = `INSERT INTO ${name} VALUES ${payload}`;
+        displaySql = `INSERT INTO ${name} VALUES ${payload}`;
         break;
       case "update":
-        generated = `UPDATE ${name} SET ${payload}`;
+        displaySql = `UPDATE ${name} SET ${payload}`;
         break;
       case "delete":
-        generated = `DELETE FROM ${name}`;
+        displaySql = `DELETE FROM ${name}`;
         break;
       default:
-        generated = "";
+        displaySql = "";
     }
-    setSql(generated);
+    setSql(displaySql);
   }, [operation, selectedIndex, whereConditions, payload, limit, fieldFilter.enabled, fieldFilter.fields]);
+
+  // 构建 Elasticsearch DSL 查询
+  const buildDslQuery = () => {
+    const enabledConditions = whereConditions.filter((c) =>
+      c.enabled && c.field && (c.value || (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]))
+    );
+
+    let query: any = { match_all: {} };
+    const boolBuckets: Record<string, any[]> = { must: [] };
+
+    for (const c of enabledConditions) {
+      if (c.operator === "RANGE" && c.rangeValue && c.rangeValue[0] && c.rangeValue[1]) {
+        const startStr = formatDateTime(c.rangeValue[0]);
+        const endStr = formatDateTime(c.rangeValue[1]);
+        boolBuckets.must.push({
+          range: { [c.field]: { gte: startStr, lte: endStr } }
+        });
+        continue;
+      }
+
+      switch (c.operator) {
+        case "=":
+          boolBuckets.must.push({ term: { [c.field]: c.value } });
+          break;
+        case "!=":
+          boolBuckets.must.push({ bool: { must_not: { term: { [c.field]: c.value } } } });
+          break;
+        case ">":
+          boolBuckets.must.push({ range: { [c.field]: { gt: c.value } } });
+          break;
+        case ">=":
+          boolBuckets.must.push({ range: { [c.field]: { gte: c.value } } });
+          break;
+        case "<":
+          boolBuckets.must.push({ range: { [c.field]: { lt: c.value } } });
+          break;
+        case "<=":
+          boolBuckets.must.push({ range: { [c.field]: { lte: c.value } } });
+          break;
+        case "LIKE":
+          boolBuckets.must.push({ match: { [c.field]: c.value } });
+          break;
+        default:
+          boolBuckets.must.push({ term: { [c.field]: c.value } });
+      }
+    }
+
+    if (boolBuckets.must.length > 0) {
+      query = { bool: { must: boolBuckets.must } };
+    }
+
+    const body: Record<string, any> = {
+      size: limit,
+      query,
+      track_total_hits: true
+    };
+
+    return body;
+  };
 
   const execute = async () => {
     setError("");
@@ -209,30 +269,28 @@ export default function SqlQuery() {
       setError(t('sqlQuery.sqlOnlySupportsQuery'));
       return;
     }
+    if (!selectedIndex) {
+      setError(t('dataBrowser.pleaseSelectIndex'));
+      return;
+    }
+
     try {
-      const response = await sqlQuery(activeConnection, sql);
-      let columns = response.columns?.map((col: { name: string }) => col.name) ?? [];
-      let rows = response.rows ?? [];
-
-      // 只显示选中的字段（启用过滤时）
-      if (fieldFilter.enabled) {
-        const fieldIndices = fieldFilter.fields.map((field) => columns.indexOf(field));
-        const validPairs = fieldIndices
-          .map((idx, i) => ({ idx, name: fieldFilter.fields[i] }))
-          .filter((p) => p.idx >= 0);
-
-        columns = validPairs.map((p) => p.name);
-        rows = rows.map((row) => validPairs.map((p) => row[p.idx]));
-      }
-
-      setResult({ columns, rows });
-      setTotalRows(rows.length);
-      await addHistory(selectedIndex ? `SQL: ${selectedIndex}` : t('sqlQuery.sqlHistory'), sql);
+      // 构建 DSL 查询
+      const body = buildDslQuery();
+      const { result: nextResult, totalRows: nextTotalRows } = await executeEsSqlSelect(
+        activeConnection,
+        selectedIndex,
+        body,
+        availableFields,
+        fieldFilter,
+      );
+      setResult(nextResult);
+      setTotalRows(nextTotalRows);
     } catch (err) {
       const message = err instanceof Error ? err.message : t('common.error');
       logError(err, {
         source: "esSqlQuery.execute",
-        message: `Elasticsearch SQL execution failed for index ${selectedIndex ?? "unknown"}`
+        message: `Elasticsearch DSL query execution failed for index ${selectedIndex ?? "unknown"}`
       });
       setError(`${t('sqlQuery.sqlError')} ${message}`);
     }
@@ -248,6 +306,11 @@ export default function SqlQuery() {
   };
 
   const addCondition = () => {
+    if (!showConditions) {
+      setShowConditions(true);
+      return;
+    }
+    setShowConditions(true);
     setWhereConditions((prev) => [...prev, { field: "", operator: "=", value: "", enabled: true }]);
   };
 
@@ -302,109 +365,110 @@ export default function SqlQuery() {
 
   return (
     <>
-      <div className="page">
-        <div className="card">
-        <div className="card-header">
-          <div>
-            <h3 className="card-title">{t('sqlQuery.sqlBuilder')}</h3>
-            <p className="muted">{t('sqlQuery.sqlBuilderDesc')}</p>
-          </div>
-          <div className="button-group">
-            <button className="btn btn-primary" onClick={execute}>
-              <span>▶</span> {t('sqlQuery.executeQuery')}
-            </button>
+      <div className="page" style={{ flex: 1, minHeight: 0, height: "100%" }}>
+      <div className="flex-gap items-center" style={{ margin: '0 0 16px 0' }}>
+        <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
+          <label>{t('sqlQuery.operationType')}</label>
+          <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)} style={{ width: '160px' }}>
+            <option value="select">{t('sqlQuery.select')}</option>
+            <option value="insert">{t('sqlQuery.insert')}</option>
+            <option value="update">{t('sqlQuery.update')}</option>
+            <option value="delete">{t('sqlQuery.delete')}</option>
+          </select>
+        </div>
+
+        <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
+          <label>{t('sqlQuery.selectIndex')}</label>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '260px' }}>
+            <select
+              className="form-control"
+              value={selectedIndex ?? ""}
+              onChange={(event) => setSelectedIndex(event.target.value || undefined)}
+              style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
+            >
+              <option value="">{t('sqlQuery.selectIndexPlaceholder')}</option>
+              {indices
+                .filter((item) => !item.startsWith('.'))
+                .sort()
+                .map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+            </select>
+            {selectedIndex && (
+              <button
+                onClick={() => setSelectedIndex(undefined)}
+                className="btn-clear"
+                style={{
+                  position: 'absolute',
+                  right: '24px',
+                  background: 'none',
+                  border: 'none',
+                  color: '#86868b',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title={t('common.clear')}
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
-        <div className="card-body">
-          <div className="form-grid">
-            <div>
-              <label>{t('sqlQuery.operationType')}</label>
-              <select className="form-control" value={operation} onChange={(event) => setOperation(event.target.value as SqlOperation)}>
-                <option value="select">{t('sqlQuery.select')}</option>
-                <option value="insert">{t('sqlQuery.insert')}</option>
-                <option value="update">{t('sqlQuery.update')}</option>
-                <option value="delete">{t('sqlQuery.delete')}</option>
-              </select>
-            </div>
-            <div>
-              <label>{t('sqlQuery.selectIndex')}</label>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <select 
-                  className="form-control" 
-                  value={selectedIndex ?? ""} 
-                  onChange={(event) => setSelectedIndex(event.target.value || undefined)}
-                  style={{ paddingRight: selectedIndex ? '30px' : '12px' }}
-                >
-                  <option value="">{t('sqlQuery.selectIndexPlaceholder')}</option>
-                  {indices
-                    .filter((item) => !item.startsWith('.'))
-                    .sort()
-                    .map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                </select>
-                {selectedIndex && (
-                  <button
-                    onClick={() => setSelectedIndex(undefined)}
-                    className="btn-clear"
-                    style={{
-                      position: 'absolute',
-                      right: '24px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#86868b',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      padding: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title={t('common.clear')}
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            </div>
+
+        {operation === "select" && (
+          <div className="module-toolbar-field" style={{ flex: '0 0 auto' }}>
+            <label>{t('sqlQuery.resultLimit')}</label>
+            <input
+              type="number"
+              className="form-control"
+              value={limit}
+              onChange={handleLimitChange}
+              min="1"
+              max="1000"
+              style={{ width: '80px', padding: '4px 8px' }}
+            />
           </div>
+        )}
 
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '20px' }}>
+          <button className="btn btn-primary btn-sm" onClick={execute}>
+            <span>▶</span> {t('sqlQuery.query')}
+          </button>
 
-
-          {/* WHERE 条件构建器 */}
           {operation === "select" && (
-            <div style={{ marginTop: '16px' }}>
-              <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ margin: 0 }}>{t('sqlQuery.resultLimit')}</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={limit}
-                    onChange={handleLimitChange}
-                    style={{ width: '120px' }}
-                    min="1"
-                    max="1000"
-                  />
-                </div>
-                <FieldFilterButton
-                  allFields={availableFields}
-                  state={fieldFilter}
-                  onChange={setFieldFilter}
-                  align="left"
-                  label={t('sqlQuery.fieldFilter')}
-                />
-              </div>
+            <button className="btn btn-secondary btn-sm" onClick={addCondition}>
+              <span>+</span> {t('sqlQuery.filter')}
+            </button>
+          )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          {operation === "select" && (
+            <FieldFilterButton
+              allFields={availableFields}
+              state={fieldFilter}
+              onChange={setFieldFilter}
+              align="left"
+              label={t('sqlQuery.fieldFilter')}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* WHERE 条件构建器 */}
+      {operation === "select" && showConditions && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '16px' }}>
                 <label style={{ fontWeight: 600, margin: 0 }}>{t('sqlQuery.whereCondition')}</label>
-                <button className="btn btn-sm btn-secondary" onClick={addCondition}>
-                  <span>+</span> {t('sqlQuery.addCondition')}
+                <button className="btn btn-sm btn-ghost" onClick={() => setShowConditions(false)}>
+                  {t('common.close')}
                 </button>
               </div>
 
-              <div style={{ 
-                background: '#fbfbfd', 
+              <div style={{
+                background: '#fbfbfd',
                 borderRadius: '12px',
                 border: '1px solid rgba(0,0,0,0.05)',
                 padding: '16px'
@@ -483,7 +547,7 @@ export default function SqlQuery() {
                   </div>
                 ))}
               </div>
-            </div>
+            </>
           )}
 
           <div className="form-grid" style={{ marginTop: '16px' }}>
@@ -494,18 +558,15 @@ export default function SqlQuery() {
               </div>
             )}
             <div className="span-2">
-              <label>{t('sqlQuery.generatedSql')}</label>
-              <textarea className="form-control json-editor" style={{ height: '100px', background: '#fbfbfd', color: '#1d1d1f' }} value={sql} onChange={(event) => setSql(event.target.value)} />
+              <label>{t('sqlQuery.queryPreview')}</label>
+              <textarea className="form-control json-editor" style={{ height: '100px', background: '#fbfbfd', color: '#1d1d1f' }} value={sql} onChange={(event) => setSql(event.target.value)} readOnly />
             </div>
           </div>
           <div className="toolbar">
-             {error && <span className="text-danger">{error}</span>}
-             {!error && <span className="muted">{t('sqlQuery.sqlNote')}</span>}
+            {error && <span className="text-danger">{error}</span>}
           </div>
-        </div>
-      </div>
 
-      <div className="card">
+      <div className="card" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="card-header">
           <h3 className="card-title">
             {t('sqlQuery.queryResult', { count: result ? totalRows : 0 })}
@@ -513,14 +574,15 @@ export default function SqlQuery() {
         </div>
 
         {!result && (
-          <div className="card-body">
+          <div className="card-body" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <p className="muted" style={{ textAlign: 'center' }}>{t('sqlQuery.noResults')}</p>
           </div>
         )}
 
-            {result && (
+        {result && (
           <div style={{
-            height: '600px',
+            flex: 1,
+            minHeight: 0,
             overflow: 'auto',
             borderTop: '1px solid #e2e8f0'
           }}>
@@ -575,7 +637,6 @@ export default function SqlQuery() {
         )}
       </div>
 
-      <SqlHistory />
       </div>
     </>
   );

@@ -1,53 +1,114 @@
-import { type ChangeEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { format as formatSql } from "sql-formatter";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
 import { useMysqlContext } from "../../../state/MysqlContext";
-import { mysqlConnect, mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery, type MysqlQueryResult } from "../services/client";
-
-interface ExecutedStatementResult {
-  id: string;
-  sql: string;
-  effectiveSql: string;
-  mode: "execute" | "explain";
-  durationMs: number;
-  connectionName: string;
-  databaseUsed?: string;
-  result?: MysqlQueryResult;
-  explainResult?: MysqlQueryResult;
-  error?: string;
-}
+import { useSharedConnectionState } from "../../../state/SharedConnectionState";
+import { mysqlConnect } from "../services/connectionClient";
+import { mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/queryClient";
+import { mysqlDescribeTable } from "../services/schemaClient";
+import QueryGeneratorModal from "../components/QueryGeneratorModal";
+import type { ExecutedStatementResult, ColumnMeta } from "../types";
 
 interface AutocompleteItem {
   label: string;
   insertText: string;
   type: "keyword" | "table" | "column" | "database";
   detail?: string;
+  weight?: number;
 }
 
 type AutocompleteContext = "mixed" | "keyword" | "table" | "column" | "database";
 
 const MYSQL_KEYWORDS = [
-  "SELECT",
-  "FROM",
-  "WHERE",
-  "ORDER BY",
-  "GROUP BY",
-  "LIMIT",
-  "INSERT INTO",
-  "UPDATE",
-  "DELETE FROM",
-  "JOIN",
-  "LEFT JOIN",
-  "RIGHT JOIN",
-  "INNER JOIN",
-  "CREATE TABLE",
-  "ALTER TABLE",
-  "DROP TABLE",
-  "SHOW TABLES",
-  "DESCRIBE",
-  "USE"
+  // 常用关键词（权重 10）
+  { keyword: "SELECT", weight: 10 },
+  { keyword: "FROM", weight: 10 },
+  { keyword: "WHERE", weight: 10 },
+  { keyword: "JOIN", weight: 10 },
+  { keyword: "LEFT JOIN", weight: 10 },
+  { keyword: "ORDER BY", weight: 9 },
+  { keyword: "GROUP BY", weight: 9 },
+  { keyword: "LIMIT", weight: 9 },
+  { keyword: "AND", weight: 9 },
+  { keyword: "OR", weight: 9 },
+  { keyword: "ON", weight: 9 },
+  { keyword: "AS", weight: 8 },
+
+  // 次常用关键词（权重 6-8）
+  { keyword: "INSERT INTO", weight: 7 },
+  { keyword: "UPDATE", weight: 7 },
+  { keyword: "DELETE FROM", weight: 7 },
+  { keyword: "CREATE TABLE", weight: 6 },
+  { keyword: "ALTER TABLE", weight: 6 },
+  { keyword: "DESCRIBE", weight: 6 },
+  { keyword: "INNER JOIN", weight: 6 },
+  { keyword: "RIGHT JOIN", weight: 6 },
+  { keyword: "CASE", weight: 6 },
+  { keyword: "WHEN", weight: 6 },
+  { keyword: "THEN", weight: 6 },
+  { keyword: "END", weight: 6 },
+  { keyword: "NULL", weight: 7 },
+  { keyword: "IN", weight: 7 },
+  { keyword: "IS", weight: 7 },
+  { keyword: "COUNT", weight: 7 },
+  { keyword: "SUM", weight: 7 },
+  { keyword: "AVG", weight: 7 },
+  { keyword: "MIN", weight: 7 },
+  { keyword: "MAX", weight: 7 },
+  { keyword: "IFNULL", weight: 7 },
+  { keyword: "LENGTH", weight: 7 },
+
+  // 不常用关键词（权重 3-5）
+  { keyword: "DROP TABLE", weight: 5 },
+  { keyword: "SHOW TABLES", weight: 5 },
+  { keyword: "USE", weight: 5 },
+  { keyword: "EXPLAIN", weight: 5 },
+  { keyword: "TRUNCATE", weight: 4 },
+  { keyword: "IF", weight: 4 },
+  { keyword: "ELSE", weight: 4 },
+  { keyword: "NOT", weight: 4 },
+  { keyword: "LIKE", weight: 4 },
+  { keyword: "BETWEEN", weight: 3 },
+  { keyword: "UNION", weight: 3 },
+  { keyword: "ALL", weight: 3 },
+  { keyword: "DISTINCT", weight: 3 },
+  { keyword: "HAVING", weight: 3 },
+  { keyword: "VALUES", weight: 3 },
+  { keyword: "SET", weight: 3 },
+  { keyword: "PRIMARY KEY", weight: 3 },
+  { keyword: "FOREIGN KEY", weight: 3 },
+  { keyword: "AUTO_INCREMENT", weight: 3 },
+  { keyword: "DEFAULT", weight: 3 },
+
+  // 函数和特殊关键词（权重 1-2）
+  { keyword: "CURRENT_TIMESTAMP", weight: 2 },
+  { keyword: "NOW()", weight: 2 },
+  { keyword: "EXISTS", weight: 2 },
+  { keyword: "ANY", weight: 2 },
+  { keyword: "SOME", weight: 2 },
+  { keyword: "ASC", weight: 2 },
+  { keyword: "DESC", weight: 2 },
+  { keyword: "COALESCE", weight: 1 },
+  { keyword: "CAST", weight: 1 },
+  { keyword: "CONVERT", weight: 1 },
+  { keyword: "DATABASE()", weight: 1 },
+  { keyword: "VERSION()", weight: 1 },
+  { keyword: "CHAR_LENGTH", weight: 1 },
+  { keyword: "SUBSTRING", weight: 1 },
+  { keyword: "CONCAT", weight: 1 },
+  { keyword: "ROUND", weight: 1 },
+  { keyword: "FLOOR", weight: 1 },
+  { keyword: "CEIL", weight: 1 },
+  { keyword: "RAND", weight: 1 },
+  { keyword: "DATE", weight: 1 },
+  { keyword: "TIME", weight: 1 },
+  { keyword: "YEAR", weight: 1 },
+  { keyword: "MONTH", weight: 1 },
+  { keyword: "DAY", weight: 1 },
+  { keyword: "HOUR", weight: 1 },
+  { keyword: "MINUTE", weight: 1 },
+  { keyword: "SECOND", weight: 1 }
 ];
 
 function splitSqlStatements(input: string) {
@@ -177,29 +238,54 @@ function getVisibleColumns(columns: string[], preferred?: string[]) {
   return nextColumns.length > 0 ? nextColumns : columns;
 }
 
+function extractMysqlErrorLine(message: string): number | null {
+  const match = message.match(/\bline\s+(\d+)\b/i);
+  if (!match) return null;
+  const line = Number(match[1]);
+  return Number.isFinite(line) && line > 0 ? line : null;
+}
+
+function getLineStartOffset(source: string, lineNumber: number): number {
+  if (lineNumber <= 1) return 0;
+
+  let currentLine = 1;
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "\n") {
+      currentLine += 1;
+      if (currentLine === lineNumber) {
+        return index + 1;
+      }
+    }
+  }
+
+  return source.length;
+}
+
 export default function MysqlSqlQuery() {
   const { t } = useTranslation();
-  const { addHistory, activeConnectionId, setActiveConnection, state } = useAppContext();
+  const { getActiveConnectionIdByEngine, setActiveConnection, profiles } = useSharedConnectionState();
   const {
-    activeMysqlConnection,
     databases,
     setDatabases,
     selectedDatabase,
     setSelectedDatabase,
     tablesByDb,
     setTablesByDb,
-    getMysqlConnectionById
+    getMysqlConnectionById,
+    updateSqlQueryState,
+    getSqlQueryState
   } = useMysqlContext();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lineNumberRef = useRef<HTMLDivElement | null>(null);
   const autocompleteListRef = useRef<HTMLDivElement | null>(null);
   const autocompleteOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [sql, setSql] = useState("");
-  const [results, setResults] = useState<ExecutedStatementResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [metaLoading, setMetaLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [columnMap, setColumnMap] = useState<Record<string, string[]>>({});
+  const [columnMetaMap, setColumnMetaMap] = useState<Record<string, ColumnMeta[]>>({});
+  const [queryGeneratorOpen, setQueryGeneratorOpen] = useState(false);
   const [autocompleteOpen, setAutocompleteOpen] = useState(false);
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [autocompleteItems, setAutocompleteItems] = useState<AutocompleteItem[]>([]);
@@ -208,12 +294,35 @@ export default function MysqlSqlQuery() {
   const [connectedDatabaseId, setConnectedDatabaseId] = useState<string | null>(null);
   const [activeResultId, setActiveResultId] = useState<string | null>(null);
   const [resultVisibleColumns, setResultVisibleColumns] = useState<Record<string, string[]>>({});
+  const [expandedRowsByResult, setExpandedRowsByResult] = useState<Record<string, Set<number>>>({});
+  const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
 
-  const connectionId = activeMysqlConnection?.id;
+  const connectionId = getActiveConnectionIdByEngine("mysql");
+  const currentActiveMysqlConnection = getMysqlConnectionById(connectionId || "");
+
+  const currentSqlState = useMemo(
+    () => getSqlQueryState(connectionId || ""),
+    [connectionId, getSqlQueryState]
+  );
+  const sql = currentSqlState.sql;
+  const results = currentSqlState.results;
+
+  const setSql = (value: string) => {
+    if (connectionId) {
+      updateSqlQueryState(connectionId, { sql: value });
+    }
+  };
+
+  const setResults = (value: ExecutedStatementResult[]) => {
+    if (connectionId) {
+      updateSqlQueryState(connectionId, { results: value });
+    }
+  };
+
   const selectedText = sql.slice(selectionRange.start, selectionRange.end).trim();
   const mysqlProfiles = useMemo(
-    () => state.profiles.filter((profile) => profile.engine === "mysql"),
-    [state.profiles]
+    () => profiles.filter((profile) => profile.engine === "mysql"),
+    [profiles]
   );
 
   const selectedDatabaseTables = useMemo(() => {
@@ -245,10 +354,11 @@ export default function MysqlSqlQuery() {
       }))
     );
 
-    const keywordItems = MYSQL_KEYWORDS.map((keyword) => ({
+    const keywordItems = MYSQL_KEYWORDS.map(({ keyword, weight }) => ({
       label: keyword,
       insertText: `${keyword} `,
-      type: "keyword" as const
+      type: "keyword" as const,
+      weight
     }));
 
     return [...keywordItems, ...databaseItems, ...tableItems, ...columnItems];
@@ -259,11 +369,64 @@ export default function MysqlSqlQuery() {
     [activeResultId, results]
   );
 
+  const lineCount = useMemo(() => Math.max(1, sql.split("\n").length), [sql]);
+  const lineNumbers = useMemo(() => Array.from({ length: lineCount }, (_, index) => index + 1), [lineCount]);
+  const editorErrorLine = useMemo(() => extractMysqlErrorLine(error), [error]);
+
   useEffect(() => {
-    if (!autocompleteOpen) return;
+    if (!editorErrorLine || !textareaRef.current) {
+      return;
+    }
+
+    const lineOffset = getLineStartOffset(sql, editorErrorLine);
+    textareaRef.current.focus();
+    textareaRef.current.setSelectionRange(lineOffset, lineOffset);
+
+    const lineHeight = 13 * 1.6;
+    const nextScrollTop = Math.max(0, (editorErrorLine - 2) * lineHeight);
+    textareaRef.current.scrollTop = nextScrollTop;
+    if (lineNumberRef.current) {
+      lineNumberRef.current.scrollTop = nextScrollTop;
+    }
+  }, [editorErrorLine, sql]);
+
+  useEffect(() => {
+    if (!autocompleteOpen || !textareaRef.current) return;
+
+    const textarea = textareaRef.current;
+    const rect = textarea.getBoundingClientRect();
+    const scrollTop = textarea.scrollTop;
+
+    // 计算光标在文本中的行列
+    const textBeforeCursor = sql.slice(0, selectionRange.start);
+    const lines = textBeforeCursor.split('\n');
+    const currentLine = lines.length;
+    const currentCol = lines[lines.length - 1].length;
+
+    // 计算实际像素位置
+    const lineHeight = 13 * 1.6;
+    const charWidth = 7.8;
+
+    // 相对于 textarea 内部的位置
+    const relativeTop = (currentLine - 1) * lineHeight + lineHeight;
+    const relativeLeft = 46 + 12 + currentCol * charWidth; // 46px 行号 + 12px padding + 列偏移
+
+    // 相对于视口的位置（考虑 textarea 滚动）
+    const absoluteTop = rect.top + relativeTop - scrollTop + 4; // 光标下方 4px
+    const absoluteLeft = rect.left + relativeLeft;
+
+    // 防止超出视口
+    const maxLeft = window.innerWidth - 300; // 预留最小宽度空间
+    const finalLeft = Math.min(absoluteLeft, maxLeft);
+
+    setAutocompletePosition({
+      top: absoluteTop,
+      left: finalLeft
+    });
+
     const activeOption = autocompleteOptionRefs.current[autocompleteIndex];
     activeOption?.scrollIntoView({ block: "nearest" });
-  }, [autocompleteIndex, autocompleteOpen]);
+  }, [autocompleteIndex, autocompleteOpen, sql, selectionRange, textareaRef]);
 
   const ensureDatabasesLoaded = async (targetConnectionId: string, preferredDatabase?: string) => {
     const dbs = await mysqlListDatabases(targetConnectionId);
@@ -324,8 +487,8 @@ export default function MysqlSqlQuery() {
     async function loadConnectionDatabases() {
       if (!connectionId || loadedConnectionId === connectionId) return;
       try {
-        await ensureConnectionDatabase(connectionId, activeMysqlConnection?.database || selectedDatabase);
-        await ensureDatabasesLoaded(connectionId, selectedDatabase ?? activeMysqlConnection?.database);
+        await ensureConnectionDatabase(connectionId, currentActiveMysqlConnection?.database || selectedDatabase);
+        await ensureDatabasesLoaded(connectionId, selectedDatabase ?? currentActiveMysqlConnection?.database);
         setLoadedConnectionId(connectionId);
         setColumnMap({});
       } catch (err) {
@@ -337,7 +500,7 @@ export default function MysqlSqlQuery() {
     }
 
     void loadConnectionDatabases();
-  }, [activeMysqlConnection?.database, connectionId, loadedConnectionId, selectedDatabase]);
+  }, [currentActiveMysqlConnection?.database, connectionId, loadedConnectionId, selectedDatabase]);
 
   useEffect(() => {
     async function loadTablesAndColumns() {
@@ -351,16 +514,27 @@ export default function MysqlSqlQuery() {
         const missingTables = tables.filter((table) => !columnMap[table]);
         if (missingTables.length === 0) return;
 
-        const entries = await Promise.all(
+        // Single query pass - fetch metadata once per table
+        const metaEntries = await Promise.all(
           missingTables.map(async (table) => {
-            const columns = await mysqlDescribeTable(connectionId, selectedDatabase, table);
-            return [table, columns.map((column) => column.field)] as const;
+            const columnMetas = await mysqlDescribeTable(connectionId, selectedDatabase, table);
+            return [table, columnMetas] as const;
           })
+        );
+
+        // Derive column names from metadata
+        const entries = metaEntries.map(([table, metas]) =>
+          [table, metas.map((meta) => meta.field)] as const
         );
 
         setColumnMap((prev) => ({
           ...prev,
           ...Object.fromEntries(entries)
+        }));
+
+        setColumnMetaMap((prev) => ({
+          ...prev,
+          ...Object.fromEntries(metaEntries)
         }));
       } catch (err) {
         logError(err, {
@@ -384,7 +558,25 @@ export default function MysqlSqlQuery() {
       return;
     }
 
-    const filtered = autocompleteSource
+    // 根据上下文智能过滤
+    let contextFiltered = autocompleteSource.filter((item) => {
+      // database 上下文：只显示数据库
+      if (context === "database") {
+        return item.type === "database";
+      }
+      // table 上下文：只显示表和关键词
+      if (context === "table") {
+        return item.type === "table" || item.type === "keyword";
+      }
+      // column 上下文：只显示列、关键词和函数
+      if (context === "column") {
+        return item.type === "column" || item.type === "keyword";
+      }
+      // mixed 上下文：全部显示
+      return true;
+    });
+
+    const filtered = contextFiltered
       .filter((item) => item.label.toLowerCase().includes(lookupToken))
       .sort((left, right) => {
         const leftStarts = left.label.toLowerCase().startsWith(lookupToken) ? 0 : 1;
@@ -392,6 +584,11 @@ export default function MysqlSqlQuery() {
         const typeDiff = getTypePriority(context, left.type) - getTypePriority(context, right.type);
         if (typeDiff !== 0) return typeDiff;
         if (leftStarts !== rightStarts) return leftStarts - rightStarts;
+        // 如果都是关键词，按权重排序（权重高的在前）
+        if (left.type === "keyword" && right.type === "keyword") {
+          const weightDiff = (right.weight ?? 0) - (left.weight ?? 0);
+          if (weightDiff !== 0) return weightDiff;
+        }
         return left.label.localeCompare(right.label);
       })
       .slice(0, 12);
@@ -414,7 +611,7 @@ export default function MysqlSqlQuery() {
     });
   };
 
-  const executeStatements = async (rawSql: string, historyLabel: string, mode: "execute" | "explain" = "execute") => {
+  const executeStatements = async (rawSql: string, mode: "execute" | "explain" = "execute") => {
     if (!connectionId || !rawSql.trim()) return;
 
     const statements = splitSqlStatements(rawSql);
@@ -455,7 +652,7 @@ export default function MysqlSqlQuery() {
             effectiveSql: `-- switch default database to ${explicitUseDatabase}`,
             mode,
             durationMs: 0,
-            connectionName: activeMysqlConnection?.name ?? connectionId,
+            connectionName: currentActiveMysqlConnection?.name ?? connectionId,
             databaseUsed: explicitUseDatabase,
             result: {
               columns: [],
@@ -484,7 +681,7 @@ export default function MysqlSqlQuery() {
           effectiveSql,
           mode,
           durationMs,
-          connectionName: activeMysqlConnection?.name ?? connectionId,
+          connectionName: currentActiveMysqlConnection?.name ?? connectionId,
           databaseUsed,
           result: res
         });
@@ -501,7 +698,7 @@ export default function MysqlSqlQuery() {
           effectiveSql,
           mode,
           durationMs: 0,
-          connectionName: activeMysqlConnection?.name ?? connectionId,
+          connectionName: currentActiveMysqlConnection?.name ?? connectionId,
           databaseUsed,
           error: message
         });
@@ -519,20 +716,18 @@ export default function MysqlSqlQuery() {
       setError(nextResults[0]?.error ?? "");
     }
 
-    await addHistory(historyLabel, rawSql.trim());
     setLoading(false);
   };
 
   const handleConnectionSwitch = async (nextConnectionId: string) => {
-    if (!nextConnectionId || nextConnectionId === activeConnectionId) return;
+    if (!nextConnectionId || nextConnectionId === connectionId) return;
     const nextConnection = getMysqlConnectionById(nextConnectionId);
     if (!nextConnection) return;
 
     setMetaLoading(true);
-    setError("");
     try {
       await ensureConnectionDatabase(nextConnectionId, nextConnection.database);
-      await setActiveConnection(nextConnectionId);
+      await setActiveConnection(nextConnectionId, "mysql");
       setTablesByDb({});
       setColumnMap({});
       await ensureDatabasesLoaded(nextConnectionId, nextConnection.database);
@@ -542,7 +737,9 @@ export default function MysqlSqlQuery() {
         source: "mysqlSqlQuery.switchConnection",
         message: `Failed to switch MySQL connection to ${nextConnectionId}`
       });
-      setError(err instanceof Error ? err.message : String(err));
+      if (connectionId) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setMetaLoading(false);
     }
@@ -590,65 +787,74 @@ export default function MysqlSqlQuery() {
   };
 
   const handleExecuteAll = async () => {
-    await executeStatements(sql, selectedDatabase ? `[${selectedDatabase}] SQL` : "MySQL SQL");
+    await executeStatements(sql);
   };
 
   const handleExecuteSelection = async () => {
     if (!selectedText) return;
-    await executeStatements(selectedText, selectedDatabase ? `[${selectedDatabase}] SQL Selection` : "MySQL SQL Selection");
+    await executeStatements(selectedText);
   };
 
   const handleExplain = async () => {
     const targetSql = selectedText || sql;
     if (!targetSql.trim()) return;
-    await executeStatements(
-      targetSql,
-      selectedDatabase ? `[${selectedDatabase}] SQL Explain` : "MySQL SQL Explain",
-      "explain"
-    );
-  };
-
-  const handleResultColumnToggle = (resultId: string, column: string, checked: boolean, allColumns: string[]) => {
-    setResultVisibleColumns((prev) => {
-      const currentColumns = getVisibleColumns(allColumns, prev[resultId]);
-      const nextColumns = checked
-        ? [...currentColumns, column]
-        : currentColumns.filter((item) => item !== column);
-      return {
-        ...prev,
-        [resultId]: nextColumns.length > 0 ? nextColumns : allColumns
-      };
-    });
-  };
-
-  const handleSelectAllResultColumns = (resultId: string, allColumns: string[]) => {
-    setResultVisibleColumns((prev) => ({
-      ...prev,
-      [resultId]: allColumns
-    }));
+    await executeStatements(targetSql, "explain");
   };
 
   const handleCloseResult = (resultId: string) => {
-    setResults((prev) => {
-      const nextResults = prev.filter((item) => item.id !== resultId);
-      const removedIndex = prev.findIndex((item) => item.id === resultId);
-      setActiveResultId((currentActiveId) => {
-        if (currentActiveId !== resultId) {
-          return currentActiveId;
-        }
-        if (nextResults.length === 0) {
-          return null;
-        }
-        const nextIndex = Math.min(removedIndex, nextResults.length - 1);
-        return nextResults[nextIndex]?.id ?? null;
-      });
-      setResultVisibleColumns((prevColumns) => {
-        const nextColumns = { ...prevColumns };
-        delete nextColumns[resultId];
-        return nextColumns;
-      });
-      return nextResults;
+    const nextResults = results.filter((item) => item.id !== resultId);
+    const removedIndex = results.findIndex((item) => item.id === resultId);
+    setResults(nextResults);
+    setActiveResultId((currentActiveId) => {
+      if (currentActiveId !== resultId) {
+        return currentActiveId;
+      }
+      if (nextResults.length === 0) {
+        return null;
+      }
+      const nextIndex = Math.min(removedIndex, nextResults.length - 1);
+      return nextResults[nextIndex]?.id ?? null;
     });
+    setResultVisibleColumns((prevColumns) => {
+      const nextColumns = { ...prevColumns };
+      delete nextColumns[resultId];
+      return nextColumns;
+    });
+    setExpandedRowsByResult((prevExpanded) => {
+      const nextExpanded = { ...prevExpanded };
+      delete nextExpanded[resultId];
+      return nextExpanded;
+    });
+  };
+
+  const toggleResultRowExpand = (resultId: string, rowIndex: number) => {
+    setExpandedRowsByResult((prev) => {
+      const next = { ...prev };
+      const expandedSet = new Set(next[resultId] ?? []);
+      if (expandedSet.has(rowIndex)) {
+        expandedSet.delete(rowIndex);
+      } else {
+        expandedSet.add(rowIndex);
+      }
+      next[resultId] = expandedSet;
+      return next;
+    });
+  };
+
+  const renderResultCellValue = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return <span className="muted">NULL</span>;
+    }
+
+    const content = typeof value === "object" ? JSON.stringify(value) : String(value);
+    const shouldTruncate = content.length > 80;
+    const preview = shouldTruncate ? `${content.slice(0, 80)}...` : content;
+
+    return (
+      <span className="truncated-cell" title={content} data-truncated={shouldTruncate ? "true" : "false"}>
+        <span className="truncated-text">{preview}</span>
+      </span>
+    );
   };
 
   const handleEditorChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -712,39 +918,16 @@ export default function MysqlSqlQuery() {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={{ position: "relative", flex: 1, minHeight: 0, height: "100%" }}>
       {/* SQL Editor */}
-      <div className="card" style={{ marginBottom: "12px" }}>
-        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 className="card-title">
-            {t("mysql.query.title")}
-            {selectedDatabase && <span className="muted" style={{ fontWeight: 400, fontSize: "13px", marginLeft: "8px" }}>[{selectedDatabase}]</span>}
-          </h3>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => void handleExplain()} disabled={loading || (!sql.trim() && !selectedText)}>
-              {loading ? t("common.loading") : t("mysql.query.explain")}
-            </button>
-            <button className="btn btn-sm btn-ghost" onClick={handleFormatSql} disabled={!sql.trim() || loading || metaLoading}>
-              {t("mysql.query.formatSql")}
-            </button>
-            <button className="btn btn-sm btn-ghost" onClick={() => setSql("")}>
-              {t("common.clear")}
-            </button>
-            <button className="btn btn-sm btn-ghost" onClick={() => void handleExecuteSelection()} disabled={loading || !selectedText}>
-              {loading ? t("common.loading") : t("mysql.query.executeSelection")}
-            </button>
-            <button className="btn btn-sm btn-primary" onClick={() => void handleExecuteAll()} disabled={loading || !sql.trim()}>
-              {loading ? t("common.loading") : t("mysql.query.execute")}
-            </button>
-          </div>
-        </div>
-        <div style={{ padding: "12px 16px", position: "relative", display: "grid", gap: "12px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 320px) minmax(200px, 260px) auto", gap: "12px", alignItems: "center" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>{t("mysql.query.connection")}</label>
+      <div className="card" style={{ flex: "0 0 auto", marginBottom: 0, display: "flex", flexDirection: "column", minHeight: "140px", overflow: "visible", position: "relative", zIndex: 1 }}>
+        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <div className="module-toolbar-grid" style={{ flex: 1 }}>
+            <div className="module-toolbar-field" style={{ display: "grid", gap: "6px" }}>
               <select
                 className="form-control"
-                value={activeConnectionId ?? ""}
+                style={{ width: "100%" }}
+                value={connectionId ?? ""}
                 disabled={metaLoading || loading}
                 onChange={(event) => void handleConnectionSwitch(event.target.value)}
               >
@@ -753,12 +936,12 @@ export default function MysqlSqlQuery() {
                 ))}
               </select>
             </div>
-            <div>
-              <label style={{ display: "block", fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>{t("mysql.query.database")}</label>
+            <div className="module-toolbar-field" style={{ display: "grid", gap: "6px" }}>
               <select
                 className="form-control"
+                style={{ width: "100%" }}
                 value={selectedDatabase ?? ""}
-                disabled={!activeMysqlConnection || metaLoading || loading || databases.length === 0}
+                disabled={!currentActiveMysqlConnection || metaLoading || loading || databases.length === 0}
                 onChange={(event) => void handleDatabaseSwitch(event.target.value)}
               >
                 {databases.length === 0 ? (
@@ -770,28 +953,84 @@ export default function MysqlSqlQuery() {
                 )}
               </select>
             </div>
-            <div className="muted" style={{ fontSize: "12px", alignSelf: "end", paddingBottom: "8px" }}>
-              {metaLoading ? t("common.loading") : t("mysql.query.selectorHint")}
-            </div>
           </div>
-
-          <div style={{ position: "relative" }}>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end", marginLeft: "auto" }}>
+            <button
+              className="btn btn-sm btn-ghost"
+              style={{ background: "transparent" }}
+              onClick={() => setQueryGeneratorOpen(true)}
+              disabled={!selectedDatabase || !selectedDatabaseTables.length}
+            >
+              {t("mysql.query.quickGenerate")}
+            </button>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={() => void handleExplain()} disabled={loading || (!sql.trim() && !selectedText)}>
+              {loading ? t("common.loading") : t("mysql.query.explain")}
+            </button>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={handleFormatSql} disabled={!sql.trim() || loading || metaLoading}>
+              {t("mysql.query.formatSql")}
+            </button>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={() => setSql("")}>
+              {t("common.clear")}
+            </button>
+            <button className="btn btn-sm btn-ghost" style={{ background: "transparent" }} onClick={() => void handleExecuteSelection()} disabled={loading || !selectedText}>
+              {loading ? t("common.loading") : t("mysql.query.executeSelection")}
+            </button>
+            <button className="btn btn-sm btn-primary" onClick={() => void handleExecuteAll()} disabled={loading || !sql.trim()}>
+              {loading ? t("common.loading") : t("mysql.query.execute")}
+            </button>
+          </div>
+        </div>
+        <div style={{ padding: "12px 16px", position: "relative", display: "grid", gap: "12px", flex: "0 0 auto" }}>
+          <div style={{ position: "relative", minHeight: "140px", height: "220px", display: "flex", flexDirection: "column", resize: "vertical", overflow: "hidden", zIndex: 0 }}>
+            <div style={{ display: "flex", height: "100%", border: "1px solid #d1d1d6", borderRadius: "8px", overflow: "hidden", background: "#fff" }}>
+              <div
+                ref={lineNumberRef}
+                aria-hidden="true"
+                style={{
+                  width: "46px",
+                  flexShrink: 0,
+                  background: "#f8fafc",
+                  borderRight: "1px solid #e5e7eb",
+                  fontFamily: "monospace",
+                  fontSize: "12px",
+                  lineHeight: 1.6,
+                  color: "#94a3b8",
+                  textAlign: "right",
+                  padding: "12px 8px",
+                  overflow: "hidden"
+                }}
+              >
+                {lineNumbers.map((lineNumber) => (
+                  <div
+                    key={lineNumber}
+                    style={{
+                      color: editorErrorLine === lineNumber ? "#dc2626" : undefined,
+                      fontWeight: editorErrorLine === lineNumber ? 700 : 400
+                    }}
+                  >
+                    {lineNumber}
+                  </div>
+                ))}
+              </div>
             <textarea
               ref={textareaRef}
-              className="json-editor"
+              className="json-editor sql-query-editor-textarea"
               style={{
                 width: "100%",
-                minHeight: "160px",
+                height: "100%",
+                minHeight: 0,
                 fontFamily: "monospace",
                 fontSize: "13px",
                 padding: "12px",
-                border: "1px solid #d1d1d6",
-                borderRadius: "8px",
-                resize: "vertical",
+                border: 0,
+                borderRadius: 0,
+                resize: "none",
+                marginBottom: 0,
+                background: "#fff",
                 lineHeight: 1.6
               }}
               value={sql}
-              disabled={!activeMysqlConnection || metaLoading}
+              disabled={!currentActiveMysqlConnection || metaLoading}
               onChange={handleEditorChange}
               onClick={(e) => {
                 const target = e.currentTarget;
@@ -814,25 +1053,29 @@ export default function MysqlSqlQuery() {
               }}
               onFocus={(e) => updateAutocomplete(e.currentTarget.value, e.currentTarget.selectionStart)}
               onKeyDown={handleKeyDown}
-              placeholder="SELECT * FROM table_name LIMIT 100;\nUPDATE table_name SET status = 'done' WHERE id = 1;\n\n-- Ctrl+Enter 执行选中内容，Ctrl+Shift+Enter 执行全部"
               spellCheck={false}
+              onScroll={(event) => {
+                if (lineNumberRef.current) {
+                  lineNumberRef.current.scrollTop = event.currentTarget.scrollTop;
+                }
+              }}
             />
+            </div>
             {autocompleteOpen && autocompleteItems.length > 0 && (
               <div
                 ref={autocompleteListRef}
                 style={{
-                  position: "absolute",
-                  left: "0",
-                  top: "calc(100% + 6px)",
-                  zIndex: 20,
+                  position: "fixed",
+                  top: `${autocompletePosition.top}px`,
+                  left: `${autocompletePosition.left}px`,
+                  zIndex: 9999,
                   background: "#fff",
                   border: "1px solid #d1d5db",
                   borderRadius: "8px",
                   boxShadow: "0 10px 28px rgba(15,23,42,0.14)",
                   overflow: "auto",
-                  width: "max-content",
                   minWidth: "260px",
-                  maxWidth: "min(440px, 100%)",
+                  maxWidth: "600px",
                   maxHeight: "200px"
                 }}
               >
@@ -890,20 +1133,6 @@ export default function MysqlSqlQuery() {
               </div>
             )}
           </div>
-          <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-            {t("mysql.query.shortcutHint")}
-          </div>
-          {selectedText && (
-            <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-              {t("mysql.query.selectionReady", { count: splitSqlStatements(selectedText).length })}
-            </div>
-          )}
-          <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-            {t("mysql.query.autocompleteHint")}
-          </div>
-          <div className="muted" style={{ fontSize: "12px", marginTop: "4px" }}>
-            {t("mysql.query.contextAutocompleteHint")}
-          </div>
         </div>
       </div>
 
@@ -911,166 +1140,191 @@ export default function MysqlSqlQuery() {
       {error && (
         <div className="text-danger" style={{ marginBottom: "12px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
           {t("mysql.query.executeFailed")} {error}
+          {editorErrorLine ? <span style={{ marginLeft: "8px" }}>({t("mysql.query.errorLineHint", { line: editorErrorLine })})</span> : null}
         </div>
       )}
 
       {/* Results */}
       {results.length > 0 && (
-        <div className="card">
-          {results.length > 1 && (
-            <div style={{ display: "flex", gap: "0", borderBottom: "1px solid #e5e7eb", overflowX: "auto", padding: "0 16px" }}>
-              {results.map((item, index) => (
-                <div
-                  key={item.id}
-                  className={`btn btn-sm ${activeResult?.id === item.id ? "btn-primary" : "btn-ghost"}`}
-                  style={{ borderRadius: "8px 8px 0 0", marginTop: "12px", marginRight: "8px", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "6px", paddingRight: "6px" }}
-                >
-                  <button
-                    type="button"
-                    style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", padding: 0 }}
-                    onClick={() => setActiveResultId(item.id)}
+        <div style={{ resize: "vertical", overflow: "auto", minHeight: "220px", height: "100%", flex: 1 }}>
+          <div className="card" style={{ height: "100%", minHeight: "220px", display: "flex", flexDirection: "column", marginBottom: 0 }}>
+            {results.length > 1 && (
+              <div style={{ display: "flex", gap: "0", borderBottom: "1px solid #e5e7eb", overflowX: "auto", padding: "0 16px" }}>
+                {results.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`btn btn-sm ${activeResult?.id === item.id ? "btn-primary" : "btn-ghost"}`}
+                    style={{ borderRadius: "8px 8px 0 0", marginTop: "12px", marginRight: "8px", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "6px", paddingRight: "6px" }}
                   >
-                    {t("mysql.query.resultStatement", { index: index + 1 })}
-                  </button>
-                  <button
-                    type="button"
-                    style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", padding: "0 4px", lineHeight: 1 }}
-                    title={t("common.close")}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleCloseResult(item.id);
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          {activeResult && (() => {
-            const resultSet = activeResult.result;
-            const visibleColumns = resultSet?.isResultSet ? getVisibleColumns(resultSet.columns, resultVisibleColumns[activeResult.id]) : [];
-            return (
-              <>
-                <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
-                  <h3 className="card-title">
-                    {t("mysql.query.resultStatement", { index: results.findIndex((item) => item.id === activeResult.id) + 1 })}
-                    <span className="muted" style={{ fontWeight: 400, fontSize: "13px", marginLeft: "8px" }}>
-                      {activeResult.error
-                        ? t("mysql.query.statementFailed")
-                        : activeResult.mode === "explain"
-                          ? t("mysql.query.explainMode")
-                          : resultSet?.isResultSet
-                            ? `(${resultSet.rows.length} rows)`
-                            : t("mysql.query.affectedRows", { count: resultSet?.affectedRows ?? 0 })}
-                    </span>
-                  </h3>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    {resultSet?.isResultSet && (
-                      <button
-                        className="btn btn-sm btn-ghost"
-                        onClick={() => void copyToClipboard(JSON.stringify(resultSet.rows.map((row) => Object.fromEntries(visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]]))), null, 2))}
-                      >
-                        {t("mysql.query.copyResult")}
-                      </button>
-                    )}
-                    <button className="btn btn-sm btn-ghost" onClick={() => void copyToClipboard(activeResult.sql)}>
-                      {t("common.copy")}
+                    <button
+                      type="button"
+                      style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", padding: 0 }}
+                      onClick={() => setActiveResultId(item.id)}
+                    >
+                      {t("mysql.query.resultStatement", { index: index + 1 })}
+                    </button>
+                    <button
+                      type="button"
+                      style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", padding: "0 4px", lineHeight: 1 }}
+                      title={t("common.close")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleCloseResult(item.id);
+                      }}
+                    >
+                      ×
                     </button>
                   </div>
-                </div>
-                <div style={{ padding: "0 16px 12px", display: "flex", gap: "8px", flexWrap: "wrap", fontSize: "12px" }}>
-                  <span className="pill">{t("mysql.query.executionTime", { ms: activeResult.durationMs.toFixed(1) })}</span>
-                  <span className="pill">{t("mysql.query.usedConnection", { name: activeResult.connectionName })}</span>
-                  {activeResult.databaseUsed && <span className="pill">{t("mysql.query.usedDatabase", { name: activeResult.databaseUsed })}</span>}
-                </div>
-
-                {activeResult.error ? (
-                  <div className="text-danger" style={{ margin: "0 16px 16px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
-                    {activeResult.error}
-                  </div>
-                ) : resultSet?.isResultSet ? (
-                  <>
-                    <div style={{ padding: "0 16px 12px", display: "grid", gap: "8px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                        <strong style={{ fontSize: "13px" }}>{t("mysql.query.displayColumns")}</strong>
-                        <button className="btn btn-sm btn-ghost" onClick={() => handleSelectAllResultColumns(activeResult.id, resultSet.columns)}>
-                          {t("common.selectAll")}
+                ))}
+              </div>
+            )}
+            {activeResult && (() => {
+              const resultSet = activeResult.result;
+              const visibleColumns = resultSet?.isResultSet ? getVisibleColumns(resultSet.columns, resultVisibleColumns[activeResult.id]) : [];
+              return (
+                <>
+                  <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+                    <h3 className="card-title">
+                      {t("mysql.query.resultStatement", { index: results.findIndex((item) => item.id === activeResult.id) + 1 })}
+                      <span className="muted" style={{ fontWeight: 400, fontSize: "13px", marginLeft: "8px" }}>
+                        {activeResult.error
+                          ? t("mysql.query.statementFailed")
+                          : activeResult.mode === "explain"
+                            ? t("mysql.query.explainMode")
+                            : resultSet?.isResultSet
+                              ? `(${resultSet.rows.length} rows)`
+                              : t("mysql.query.affectedRows", { count: resultSet?.affectedRows ?? 0 })}
+                      </span>
+                    </h3>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      {resultSet?.isResultSet && (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => void copyToClipboard(JSON.stringify(resultSet.rows.map((row) => Object.fromEntries(visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]]))), null, 2))}
+                        >
+                          {t("mysql.query.copyResult")}
                         </button>
-                      </div>
-                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                        {resultSet.columns.map((column) => {
-                          const checked = visibleColumns.includes(column);
-                          return (
-                            <label key={column} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: "999px", background: checked ? "#eff6ff" : "#fff", fontSize: "12px", cursor: "pointer" }}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(event) => handleResultColumnToggle(activeResult.id, column, event.target.checked, resultSet.columns)}
-                              />
-                              <span>{column}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div style={{ padding: "0 16px 16px" }}>
-                      <div style={{ maxHeight: "360px", overflow: "auto", display: "grid", gap: "10px" }}>
-                        {resultSet.rows.length > 0 ? resultSet.rows.map((row, rowIndex) => {
-                          const rowObject = Object.fromEntries(visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]]));
-                          return (
-                            <div key={rowIndex} style={{ border: "1px solid #e5e7eb", borderRadius: "10px", background: "#f8fafc", padding: "12px" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", gap: "8px" }}>
-                                <strong style={{ fontSize: "13px" }}># {rowIndex + 1}</strong>
-                                <button className="btn btn-sm btn-ghost" onClick={() => void copyToClipboard(JSON.stringify(rowObject, null, 2))}>
-                                  {t("dataBrowser.copyRow")}
-                                </button>
-                              </div>
-                              <div style={{ display: "grid", gap: "8px" }}>
-                                {visibleColumns.map((column) => {
-                                  const value = row[resultSet.columns.indexOf(column)];
-                                  return (
-                                    <div key={column} style={{ display: "grid", gridTemplateColumns: "minmax(140px, 220px) 1fr", gap: "12px", alignItems: "start" }}>
-                                      <div className="muted" style={{ fontSize: "12px", wordBreak: "break-word" }}>{column}</div>
-                                      <div
-                                        style={{ fontSize: "13px", whiteSpace: "pre-wrap", wordBreak: "break-word", cursor: "copy" }}
-                                        title={t("mysql.query.clickToCopy")}
-                                        onClick={() => void copyToClipboard(value === null ? "NULL" : String(value))}
-                                      >
-                                        {value === null ? <span className="muted">NULL</span> : String(value)}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        }) : (
-                          <div className="muted" style={{ textAlign: "center", padding: "32px" }}>
-                            {t("mysql.query.noRows")}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ padding: "24px", textAlign: "center" }}>
-                    <div style={{ fontSize: "14px", color: "#22c55e" }}>
-                      {t("mysql.query.statementDone")} {t("mysql.query.affectedRows", { count: resultSet?.affectedRows ?? 0 })}
+                      )}
+                      <button className="btn btn-sm btn-ghost" onClick={() => void copyToClipboard(activeResult.sql)}>
+                        {t("common.copy")}
+                      </button>
                     </div>
                   </div>
-                )}
-              </>
-            );
-          })()}
+                  <div style={{ padding: "0 16px 12px", display: "flex", gap: "8px", flexWrap: "wrap", fontSize: "12px" }}>
+                    <span className="pill">{t("mysql.query.executionTime", { ms: activeResult.durationMs.toFixed(1) })}</span>
+                    <span className="pill">{t("mysql.query.usedConnection", { name: activeResult.connectionName })}</span>
+                    {activeResult.databaseUsed && <span className="pill">{t("mysql.query.usedDatabase", { name: activeResult.databaseUsed })}</span>}
+                  </div>
+
+                  {activeResult.error ? (
+                    <div className="text-danger" style={{ margin: "0 16px 16px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
+                      {activeResult.error}
+                    </div>
+                  ) : resultSet?.isResultSet ? (
+                    <div className="table-wrapper" style={{ margin: "0 16px 16px", flex: 1, minHeight: 0 }}>
+                      <table className="table">
+                        <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 10 }}>
+                          <tr>
+                            <th style={{ width: "48px", textAlign: "center" }}> </th>
+                            {visibleColumns.map((column) => (
+                              <th key={column}>{column}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {resultSet.rows.length > 0 ? resultSet.rows.map((row, rowIndex) => {
+                            const expandedRows = expandedRowsByResult[activeResult.id] ?? new Set<number>();
+                            const isExpanded = expandedRows.has(rowIndex);
+                            const detailObject = Object.fromEntries(
+                              visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]])
+                            );
+
+                            return (
+                              <Fragment key={`${activeResult.id}-${rowIndex}`}>
+                                <tr>
+                                  <td style={{ textAlign: "center" }}>
+                                    <button
+                                      className="btn btn-ghost btn-icon"
+                                      onClick={() => toggleResultRowExpand(activeResult.id, rowIndex)}
+                                      style={{ fontSize: "10px", padding: "2px 6px" }}
+                                      title={isExpanded ? t("dataBrowser.collapseRow") : t("dataBrowser.expandRow")}
+                                    >
+                                      {isExpanded ? "▼" : "▶"}
+                                    </button>
+                                  </td>
+                                  {visibleColumns.map((column) => (
+                                    <td key={`${rowIndex}-${column}`}>
+                                      {renderResultCellValue(row[resultSet.columns.indexOf(column)])}
+                                    </td>
+                                  ))}
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="expanded-row">
+                                    <td colSpan={visibleColumns.length + 1} style={{ background: "#f8fafc", padding: "12px 16px" }}>
+                                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                                        <button
+                                          className="btn btn-sm btn-ghost"
+                                          onClick={() => void copyToClipboard(JSON.stringify(detailObject, null, 2))}
+                                        >
+                                          {t("dataBrowser.copyRow")}
+                                        </button>
+                                      </div>
+                                      <pre style={{ margin: 0, fontSize: "12px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                                        {JSON.stringify(detailObject, null, 2)}
+                                      </pre>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          }) : (
+                            <tr>
+                              <td colSpan={visibleColumns.length + 1} className="muted" style={{ textAlign: "center", padding: "32px" }}>
+                                {t("mysql.query.noRows")}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ padding: "24px", textAlign: "center" }}>
+                      <div style={{ fontSize: "14px", color: "#22c55e" }}>
+                        {t("mysql.query.statementDone")} {t("mysql.query.affectedRows", { count: resultSet?.affectedRows ?? 0 })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
 
       {results.length === 0 && !error && (
-        <div className="card" style={{ padding: "32px", textAlign: "center" }}>
+        <div className="card" style={{ padding: "32px", textAlign: "center", flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span className="muted">{t("mysql.query.empty")}</span>
         </div>
       )}
+
+      {/* Query Generator Modal */}
+      <QueryGeneratorModal
+        isOpen={queryGeneratorOpen}
+        databases={databases}
+        tablesByDb={tablesByDb}
+        columnMetaMap={columnMetaMap}
+        selectedDatabase={selectedDatabase}
+        onClose={() => setQueryGeneratorOpen(false)}
+        onConfirm={(generatedSql) => {
+          setSql(generatedSql);
+          setQueryGeneratorOpen(false);
+        }}
+        onConfirmAndExecute={(generatedSql) => {
+          setSql(generatedSql);
+          setQueryGeneratorOpen(false);
+          void executeStatements(generatedSql);
+        }}
+      />
     </div>
   );
 }

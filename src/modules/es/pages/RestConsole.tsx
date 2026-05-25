@@ -1,8 +1,9 @@
+import { Modal } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
-import { esRequestRaw } from "../services/client";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
+import { executeEsRawRequest } from "../services/restConsoleService";
 
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"] as const;
 
@@ -36,7 +37,7 @@ type ScriptTemplate = {
 
 export default function RestConsole() {
   const { t } = useTranslation();
-  const { activeConnection } = useAppContext();
+  const { activeConnection } = useElasticsearchContext();
 
   const [method, setMethod] = useState<HttpMethod>("GET");
   const [path, setPath] = useState("/_cluster/health");
@@ -242,10 +243,16 @@ export default function RestConsole() {
     if (!selectedTemplateId) return;
     const target = templates.find((t) => t.id === selectedTemplateId);
     if (!target) return;
-    if (!window.confirm(t("restConsole.deleteTemplateConfirm", { name: target.name }))) return;
-    const next = templates.filter((t) => t.id !== selectedTemplateId);
-    persistTemplates(next);
-    setSelectedTemplateId("");
+    Modal.confirm({
+      title: t("common.confirm"),
+      content: t("restConsole.deleteTemplateConfirm", { name: target.name }),
+      okType: "danger",
+      onOk: () => {
+        const next = templates.filter((t) => t.id !== selectedTemplateId);
+        persistTemplates(next);
+        setSelectedTemplateId("");
+      }
+    });
   };
 
   const copyText = async (text: string) => {
@@ -358,7 +365,7 @@ export default function RestConsole() {
           let lastError: string | null = null;
           while (attempt <= retryCount) {
             try {
-              const res = await esRequestRaw(activeConnection, cmd.path, {
+              const res = await executeEsRawRequest(activeConnection, cmd.path, {
                 method: cmd.method,
                 body
               });
@@ -452,7 +459,7 @@ export default function RestConsole() {
 
     const start = performance.now();
     try {
-      const res = await esRequestRaw(activeConnection, normalizedPath, {
+      const res = await executeEsRawRequest(activeConnection, normalizedPath, {
         method,
         body
       });

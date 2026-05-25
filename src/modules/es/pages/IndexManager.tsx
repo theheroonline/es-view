@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
-import { useAppContext } from "../../../state/AppContext";
-import { createIndex, deleteIndex, getIndexInfo, refreshIndex } from "../services/client";
+import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
+import { createEsIndex, deleteEsIndex, getEsIndexInfo, refreshEsIndex } from "../services/indexService";
 
 export default function IndexManager() {
   const { t } = useTranslation();
-  const { activeConnection, selectedIndex, setSelectedIndex, refreshIndices, indicesMeta } = useAppContext();
+  const { activeConnection, selectedIndex, setSelectedIndex, refreshIndices, indicesMeta } = useElasticsearchContext();
   
   // Creation States
   const [showCreate, setShowCreate] = useState(false);
@@ -42,7 +42,7 @@ export default function IndexManager() {
     if (!activeConnection || !detailTarget) return;
 
     setDetailLoading(true);
-    getIndexInfo(activeConnection, detailTarget)
+    getEsIndexInfo(activeConnection, detailTarget)
       .then((info) => {
         setDetailData(info);
       })
@@ -67,7 +67,7 @@ export default function IndexManager() {
     }
     try {
       const body = createBody.trim() ? JSON.parse(createBody) : {};
-      await createIndex(activeConnection, createName, body);
+      await createEsIndex(activeConnection, createName, body);
       await loadIndices();
       setCreateName("");
       setCreateBody("{}");
@@ -93,7 +93,7 @@ export default function IndexManager() {
 
     setError("");
     try {
-      await deleteIndex(activeConnection, deleteTarget);
+      await deleteEsIndex(activeConnection, deleteTarget);
       await loadIndices();
       if (selectedIndex === deleteTarget) {
         setSelectedIndex(undefined);
@@ -115,7 +115,7 @@ export default function IndexManager() {
   const handleRefresh = async (index: string) => {
     if (!activeConnection) return;
     try {
-      await refreshIndex(activeConnection, index);
+      await refreshEsIndex(activeConnection, index);
       await loadIndices(); // reload to get new counts
     } catch (error) {
       logError(error, {

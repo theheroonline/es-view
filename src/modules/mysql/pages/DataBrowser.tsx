@@ -1,8 +1,10 @@
+import { Modal } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
 import { useMysqlContext } from "../../../state/MysqlContext";
-import { mysqlDescribeTable, mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/client";
+import { mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/queryClient";
+import { mysqlDescribeTable } from "../services/schemaClient";
 import type { ColumnMeta } from "../types";
 
 interface QueryState {
@@ -13,6 +15,10 @@ interface QueryState {
   pageSize: number;
   loading: boolean;
   error: string;
+}
+
+interface HiddenColumns {
+  [key: string]: boolean;
 }
 
 const defaultQueryState: QueryState = {
@@ -42,6 +48,8 @@ export default function MysqlDataBrowser() {
   const [queryState, setQueryState] = useState<QueryState>(defaultQueryState);
   const [columnMeta, setColumnMeta] = useState<ColumnMeta[]>([]);
   const [showStructure, setShowStructure] = useState(false);
+  const [hiddenColumns, setHiddenColumns] = useState<HiddenColumns>({});
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [editingRow, setEditingRow] = useState<{ index: number; json: string } | null>(null);
   const [editError, setEditError] = useState("");
@@ -145,7 +153,7 @@ export default function MysqlDataBrowser() {
         error: err instanceof Error ? err.message : String(err)
       }));
     }
-  }, [connectionId, selectedDatabase, selectedTable, queryState.page, queryState.pageSize]);
+  }, [connectionId, selectedDatabase, selectedTable]);
 
   // Auto-query when table selected
   useEffect(() => {
@@ -274,7 +282,16 @@ export default function MysqlDataBrowser() {
 
     if (whereParts.length === 0) return;
 
-    if (!confirm(t("dataBrowser.deleteConfirm", { docId: String(row[0] ?? index) }))) return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: t("common.confirm"),
+        content: t("dataBrowser.deleteConfirm", { docId: String(row[0] ?? index) }),
+        okType: "danger",
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false)
+      });
+    });
+    if (!confirmed) return;
 
     try {
       const sql = `DELETE FROM \`${selectedDatabase}\`.\`${selectedTable}\` WHERE ${whereParts.join(" AND ")} LIMIT 1`;
@@ -303,55 +320,53 @@ export default function MysqlDataBrowser() {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={{ flex: 1, minHeight: 0, height: "100%" }}>
       {/* Controls bar */}
-      <div className="card" style={{ padding: "12px 16px", marginBottom: "12px" }}>
-        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectDatabase")}:</label>
-            <select
-              className="form-control"
-              style={{ minWidth: "160px" }}
-              value={selectedDatabase ?? ""}
-              onChange={(e) => setSelectedDatabase(e.target.value || undefined)}
-            >
-              <option value="">--</option>
-              {databases.map((db) => (
-                <option key={db} value={db}>{db}</option>
-              ))}
-            </select>
+      <div className="card" style={{ padding: "12px 16px", position: "relative", flex: 0 }}>
+        <div style={{ display: "grid", gap: "12px" }}>
+          <div className="module-toolbar-grid">
+            <div className="module-toolbar-field">
+              <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectDatabase")}</label>
+              <select
+                className="form-control"
+                style={{ minWidth: 0 }}
+                value={selectedDatabase ?? ""}
+                onChange={(e) => setSelectedDatabase(e.target.value || undefined)}
+              >
+                <option value="">--</option>
+                {databases.map((db) => (
+                  <option key={db} value={db}>{db}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="module-toolbar-field">
+              <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectTable")}</label>
+              <select
+                className="form-control"
+                style={{ minWidth: 0 }}
+                value={selectedTable ?? ""}
+                onChange={(e) => setSelectedTable(e.target.value || undefined)}
+              >
+                <option value="">--</option>
+                {tables.map((tbl) => (
+                  <option key={tbl} value={tbl}>{tbl}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <label style={{ fontWeight: 500, fontSize: "13px", whiteSpace: "nowrap" }}>{t("mysql.data.selectTable")}:</label>
-            <select
-              className="form-control"
-              style={{ minWidth: "160px" }}
-              value={selectedTable ?? ""}
-              onChange={(e) => setSelectedTable(e.target.value || undefined)}
-            >
-              <option value="">--</option>
-              {tables.map((tbl) => (
-                <option key={tbl} value={tbl}>{tbl}</option>
-              ))}
-            </select>
-          </div>
-
-          <button className="btn btn-sm btn-secondary" onClick={() => fetchData()} disabled={!selectedTable || queryState.loading}>
-            {queryState.loading ? t("common.loading") : t("common.refresh")}
-          </button>
-
-          {selectedTable && columnMeta.length > 0 && (
-            <button className="btn btn-sm btn-ghost" onClick={() => setShowStructure(!showStructure)}>
-              {showStructure ? t("mysql.data.hideStructure") : t("mysql.data.showStructure")}
+          <div className="module-toolbar-actions">
+            <button className="btn btn-sm btn-secondary" onClick={() => fetchData()} disabled={!selectedTable || queryState.loading}>
+              {queryState.loading ? t("common.loading") : t("common.refresh")}
             </button>
-          )}
+          </div>
         </div>
       </div>
 
       {/* Table structure */}
       {showStructure && columnMeta.length > 0 && (
-        <div className="card" style={{ marginBottom: "12px" }}>
+        <div className="card" style={{ flex: 0 }}>
           <div className="card-header">
             <h3 className="card-title">{t("mysql.data.columns")}</h3>
           </div>
@@ -386,29 +401,86 @@ export default function MysqlDataBrowser() {
 
       {/* Query error */}
       {queryState.error && (
-        <div className="text-danger" style={{ marginBottom: "12px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
+        <div className="text-danger" style={{ marginBottom: "8px", padding: "8px 12px", background: "#fef2f2", borderRadius: "8px" }}>
           {queryState.error}
         </div>
       )}
 
       {/* Data table */}
       {selectedTable && (
-        <div className="card">
+        <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 className="card-title">
-              {selectedDatabase}.{selectedTable}
-              <span className="muted" style={{ fontWeight: 400, fontSize: "13px", marginLeft: "8px" }}>
-                ({queryState.total} {t("mysql.data.rowCount")})
-              </span>
+            <h3 className="card-title" style={{ margin: 0 }}>
+              {selectedDatabase}.{selectedTable}({queryState.total} {t("mysql.data.rowCount")})
             </h3>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              {selectedTable && (
+                <div style={{ position: "relative" }}>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => setShowColumnMenu(!showColumnMenu)}
+                  >
+                    {t("mysql.data.hideColumns") || "隐藏列"}
+                  </button>
+
+                  {/* Column selection menu */}
+                  {showColumnMenu && queryState.columns.length > 0 && (
+                    <div style={{
+                      position: "absolute",
+                      top: "100%",
+                      right: 0,
+                      marginTop: "4px",
+                      background: "white",
+                      border: "1px solid #d1d1d6",
+                      borderRadius: "8px",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                      zIndex: 100,
+                      minWidth: "200px",
+                      maxHeight: "300px",
+                      overflow: "auto"
+                    }}>
+                      {queryState.columns.map((col) => (
+                        <label key={col} style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "8px 12px",
+                          cursor: "pointer",
+                          borderBottom: "1px solid #f0f0f0",
+                          fontSize: "13px"
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={!hiddenColumns[col]}
+                            onChange={(e) => {
+                              setHiddenColumns(prev => ({
+                                ...prev,
+                                [col]: !e.target.checked
+                              }));
+                            }}
+                            style={{ marginRight: "8px" }}
+                          />
+                          {col}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedTable && columnMeta.length > 0 && (
+                <button className="btn btn-sm btn-ghost" onClick={() => setShowStructure(!showStructure)}>
+                  {showStructure ? t("mysql.data.hideStructure") : t("mysql.data.showStructure")}
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="table-wrapper" style={{ maxHeight: "calc(100vh - 340px)", overflow: "auto" }}>
+          <div className="table-wrapper" style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
             <table className="table">
               <thead>
                 <tr>
                   <th style={{ width: "50px" }}>#</th>
-                  {queryState.columns.map((col) => (
+                  {queryState.columns.map((col) => !hiddenColumns[col] && (
                     <th key={col}>{col}</th>
                   ))}
                   <th style={{ width: "100px", textAlign: "right" }}>{t("dataBrowser.actions")}</th>
@@ -419,7 +491,7 @@ export default function MysqlDataBrowser() {
                   <>
                     <tr key={rowIndex}>
                       <td className="muted">{(queryState.page - 1) * queryState.pageSize + rowIndex + 1}</td>
-                      {row.map((cell, cellIndex) => (
+                      {row.map((cell, cellIndex) => !hiddenColumns[queryState.columns[cellIndex]] && (
                         <td
                           key={cellIndex}
                           style={{ maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
@@ -440,10 +512,13 @@ export default function MysqlDataBrowser() {
                     </tr>
                     {expandedRow === rowIndex && (
                       <tr key={`${rowIndex}-expanded`}>
-                        <td colSpan={queryState.columns.length + 2}>
+                        <td colSpan={queryState.columns.filter(col => !hiddenColumns[col]).length + 2}>
                           <pre style={{ background: "#f5f7fb", padding: "12px", borderRadius: "8px", fontSize: "12px", margin: 0, whiteSpace: "pre-wrap" }}>
                             {JSON.stringify(
-                              Object.fromEntries(queryState.columns.map((col, i) => [col, row[i]])),
+                              Object.fromEntries(queryState.columns.filter(col => !hiddenColumns[col]).map((col) => {
+                                const originalIndex = queryState.columns.indexOf(col);
+                                return [col, row[originalIndex]];
+                              })),
                               null,
                               2
                             )}
@@ -465,20 +540,20 @@ export default function MysqlDataBrowser() {
           </div>
 
           {/* Pagination */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #e5e5ea" }}>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "13px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderTop: "1px solid #e5e5ea" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px" }}>
               <span>{t("dataBrowser.pageSize")}:</span>
-              <select className="form-control" style={{ width: "80px" }} value={queryState.pageSize} onChange={(e) => handlePageSizeChange(Number(e.target.value))}>
+              <select className="form-control" style={{ width: "70px", fontSize: "12px" }} value={queryState.pageSize} onChange={(e) => handlePageSizeChange(Number(e.target.value))}>
                 {[50, 100, 200, 500].map((size) => (
                   <option key={size} value={size}>{size}</option>
                 ))}
               </select>
             </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "13px" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px" }}>
               <button className="btn btn-sm btn-ghost" disabled={queryState.page <= 1} onClick={() => handlePageChange(queryState.page - 1)}>
                 {t("dataBrowser.previousPage")}
               </button>
-              <span>{queryState.page} / {totalPages}</span>
+              <span style={{ fontSize: "12px" }}>{queryState.page} / {totalPages}</span>
               <button className="btn btn-sm btn-ghost" disabled={queryState.page >= totalPages} onClick={() => handlePageChange(queryState.page + 1)}>
                 {t("dataBrowser.nextPage")}
               </button>
@@ -487,11 +562,12 @@ export default function MysqlDataBrowser() {
         </div>
       )}
 
-      {!selectedTable && (
-        <div className="card" style={{ padding: "32px", textAlign: "center" }}>
+      {!selectedTable && !queryState.error && (
+        <div className="card" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 0 }}>
           <span className="muted">{t("mysql.data.selectTableHint")}</span>
         </div>
       )}
+
 
       {/* Edit modal */}
       {editingRow && (

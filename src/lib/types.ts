@@ -31,16 +31,8 @@ export interface ConnectionProfile {
   ssh?: SshTunnelConfig;
 }
 
-export interface QueryHistoryItem {
-  id: string;
-  title: string;
-  sql: string;
-  createdAt: string;
-}
-
 export interface LocalState {
   profiles: ConnectionProfile[];
   secrets: Record<string, SecretConfig>;
-  history: QueryHistoryItem[];
   lastConnectionId?: string;
 }

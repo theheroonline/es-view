@@ -66,7 +66,6 @@ export function RedisKeyTtlModal({ open, currentTtlMs, loading, error, onClose, 
           placeholder={t("redis.browser.ttlMs")}
           disabled={!ttlEnabled}
         />
-        <div className="muted">{t("redis.browser.ttlHelp")}</div>
       </div>
       {(localError || error) && <div className="text-danger" style={{ marginTop: "12px" }}>{localError || error}</div>}
     </Modal>

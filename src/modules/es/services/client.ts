@@ -1,14 +1,7 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
 import { logError } from "../../../lib/errorLog";
+import { selectEsTransport } from "../../../lib/transport/es/selectEsTransport";
 import type { EsConnection } from "../types";
-
-const isTauriEnv = isTauri();
-
-interface HttpResponse {
-  status: number;
-  ok: boolean;
-  body: string;
-}
+import type { EsTransportAuth, EsTransportRequest } from "./transport";
 
 function extractCredentials(baseUrl: string) {
   try {
@@ -29,15 +22,26 @@ function extractCredentials(baseUrl: string) {
   return null;
 }
 
-function buildAuthHeader(connection: EsConnection) {
+function buildTransportAuth(connection: EsConnection): EsTransportAuth | undefined {
   if (connection.authType === "basic" && connection.username && connection.password) {
-    const token = btoa(`${connection.username}:${connection.password}`);
-    return `Basic ${token}`;
+    return {
+      authType: connection.authType,
+      username: connection.username,
+      password: connection.password,
+    };
   }
   if (connection.authType === "apiKey" && connection.apiKey) {
-    return `ApiKey ${connection.apiKey}`;
+    return {
+      authType: connection.authType,
+      apiKey: connection.apiKey,
+    };
   }
-  return null;
+  if (connection.authType === "none") {
+    return {
+      authType: connection.authType,
+    };
+  }
+  return undefined;
 }
 
 function normalizeConnection(connection: EsConnection): EsConnection {
@@ -73,28 +77,47 @@ function normalizeBaseUrl(baseUrl: string): string | null {
   }
 }
 
-async function tauriHttpRequest(
-  url: string,
-  method: string,
-  headers: Record<string, string>,
-  body?: string,
-  verifyTls = true,
-  auth?: { authType: string; username?: string; password?: string; apiKey?: string }
-): Promise<{ status: number; ok: boolean; body: string }> {
-  return await invoke<HttpResponse>("http_request", {
-    request: { url, method, headers, body, verifyTls, auth }
-  });
-}
+function buildTransportRequest(
+  connection: EsConnection,
+  path: string,
+  options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+): EsTransportRequest {
+  const normalized = normalizeConnection(connection);
+  const targetBaseUrl = normalizeBaseUrl(normalized.baseUrl);
+  if (!targetBaseUrl) {
+    throw new Error("CONNECTION_FAILED");
+  }
 
-async function browserHttpRequest(
-  url: string,
-  method: string,
-  headers: Record<string, string>,
-  body?: string
-): Promise<{ status: number; ok: boolean; body: string }> {
-  const res = await fetch(url, { method, headers, body });
-  const resBody = await res.text();
-  return { status: res.status, ok: res.ok, body: resBody };
+  const headers: Record<string, string> = {
+    ...(options.headers ?? {}),
+  };
+
+  let body: string | undefined;
+  if (options.body !== undefined) {
+    if (typeof options.body === "string") {
+      body = options.body;
+      if (!headers["Content-Type"]) {
+        headers["Content-Type"] = "text/plain";
+      }
+    } else {
+      body = JSON.stringify(options.body);
+      if (!headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+    }
+  } else if (!headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  return {
+    targetBaseUrl,
+    requestPath: `/${path.replace(/^\//, "")}`,
+    method: options.method ?? "GET",
+    headers,
+    body,
+    verifyTls: normalized.verifyTls ?? true,
+    auth: buildTransportAuth(normalized),
+  };
 }
 
 export async function esRequest<T>(
@@ -103,42 +126,8 @@ export async function esRequest<T>(
   options: { method?: string; body?: unknown } = {}
 ) {
   try {
-    const normalized = normalizeConnection(connection);
-    const normalizedBase = normalizeBaseUrl(normalized.baseUrl);
-    if (!normalizedBase) {
-      throw new Error("CONNECTION_FAILED");
-    }
-    const requestPath = `/${path.replace(/^\//, "")}`;
-
-    const url = isTauriEnv
-      ? `${normalizedBase}${requestPath}`
-      : `/es${requestPath}`;
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json"
-    };
-
-    if (!isTauriEnv) {
-      headers["x-es-target"] = normalizedBase;
-    }
-
-    const auth = buildAuthHeader(normalized);
-    if (auth && !isTauriEnv) {
-      headers["Authorization"] = auth;
-    }
-
-    const tauriAuth = isTauriEnv ? {
-      authType: normalized.authType,
-      username: normalized.username,
-      password: normalized.password,
-      apiKey: normalized.apiKey
-    } : undefined;
-
-    const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
-
-    const res = isTauriEnv
-      ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, tauriAuth)
-      : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
+    const request = buildTransportRequest(connection, path, options);
+    const res = await selectEsTransport().request(request);
 
     if (!res.ok) {
       throw new Error(res.body || `请求失败: ${res.status}`);
@@ -164,58 +153,8 @@ export async function esRequestRaw(
   options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
 ): Promise<{ status: number; ok: boolean; body: string }> {
   try {
-    const normalized = normalizeConnection(connection);
-    const normalizedBase = normalizeBaseUrl(normalized.baseUrl);
-    if (!normalizedBase) {
-      throw new Error("CONNECTION_FAILED");
-    }
-    const requestPath = `/${path.replace(/^\//, "")}`;
-
-    let url: string;
-    if (isTauriEnv) {
-      url = `${normalizedBase}${requestPath}`;
-    } else {
-      url = `/es${requestPath}`;
-    }
-
-    const headers: Record<string, string> = {
-      ...(options.headers ?? {})
-    };
-
-    if (!isTauriEnv) {
-      headers["x-es-target"] = normalizedBase;
-    }
-
-    const auth = buildAuthHeader(normalized);
-    if (auth && !isTauriEnv) {
-      headers["Authorization"] = auth;
-    }
-
-    const tauriAuth = isTauriEnv ? {
-      authType: normalized.authType,
-      username: normalized.username,
-      password: normalized.password,
-      apiKey: normalized.apiKey
-    } : undefined;
-
-    let bodyStr: string | undefined;
-    if (options.body !== undefined) {
-      if (typeof options.body === "string") {
-        bodyStr = options.body;
-        if (!headers["Content-Type"]) {
-          headers["Content-Type"] = "text/plain";
-        }
-      } else {
-        bodyStr = JSON.stringify(options.body);
-        if (!headers["Content-Type"]) {
-          headers["Content-Type"] = "application/json";
-        }
-      }
-    }
-
-    return isTauriEnv
-      ? await tauriHttpRequest(url, options.method ?? "GET", headers, bodyStr, normalized.verifyTls ?? true, tauriAuth)
-      : await browserHttpRequest(url, options.method ?? "GET", headers, bodyStr);
+    const request = buildTransportRequest(connection, path, options);
+    return await selectEsTransport().request(request);
   } catch (error) {
     logError(error, {
       source: "esClient.esRequestRaw",
@@ -227,81 +166,4 @@ export async function esRequestRaw(
     });
     throw error;
   }
-}
-
-export async function pingCluster(connection: EsConnection) {
-  return esRequest(connection, "/_cluster/health");
-}
-
-export interface SqlResponse {
-  columns?: Array<{ name: string }>;
-  rows?: Array<Array<unknown>>;
-}
-
-export async function sqlQuery(connection: EsConnection, query: string) {
-  return esRequest<SqlResponse>(connection, "/_sql?format=json", {
-    method: "POST",
-    body: { query }
-  });
-}
-
-export interface CatIndexItem {
-  index: string;
-  health?: string;
-  "docs.count"?: string;
-}
-
-export async function listIndices(connection: EsConnection) {
-  return esRequest<CatIndexItem[]>(connection, "/_cat/indices?format=json");
-}
-
-export async function searchIndex(connection: EsConnection, index: string, body: unknown) {
-  return esRequest<any>(connection, `/${index}/_search`, { method: "POST", body });
-}
-
-export async function getIndexInfo(connection: EsConnection, index: string) {
-  return esRequest<any>(connection, `/${index}`);
-}
-
-export async function createIndex(connection: EsConnection, index: string, body: unknown) {
-  return esRequest<any>(connection, `/${index}`, { method: "PUT", body });
-}
-
-export async function deleteIndex(connection: EsConnection, index: string) {
-  return esRequest<any>(connection, `/${index}`, { method: "DELETE" });
-}
-
-export async function refreshIndex(connection: EsConnection, index: string) {
-  return esRequest<any>(connection, `/${index}/_refresh`, { method: "POST" });
-}
-
-export async function getIndexMapping(connection: EsConnection, index: string) {
-  return esRequest<any>(connection, `/${index}/_mapping`);
-}
-
-export function extractFieldsFromMapping(mapping: any, indexName: string): string[] {
-  const fields: string[] = [];
-  const properties = mapping?.[indexName]?.mappings?.properties;
-  if (!properties) return fields;
-
-  function traverse(props: any, prefix = "") {
-    for (const key in props) {
-      const fullPath = prefix ? `${prefix}.${key}` : key;
-      fields.push(fullPath);
-      if (props[key].properties) {
-        traverse(props[key].properties, fullPath);
-      }
-    }
-  }
-
-  traverse(properties);
-  return fields;
-}
-
-export async function deleteDocument(connection: EsConnection, index: string, id: string) {
-  return esRequest<any>(connection, `/${index}/_doc/${encodeURIComponent(id)}`, { method: "DELETE" });
-}
-
-export async function updateDocument(connection: EsConnection, index: string, id: string, doc: unknown) {
-  return esRequest<any>(connection, `/${index}/_doc/${encodeURIComponent(id)}`, { method: "PUT", body: doc });
 }

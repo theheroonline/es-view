@@ -29,3 +29,104 @@ export interface ColumnMeta {
   default: string | null;
   extra: string;
 }
+
+export interface IndexMeta {
+  name: string;
+  columns: string[];
+  unique: boolean;
+  primary: boolean;
+  indexType: string;
+}
+
+export type MysqlFilterOperator =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "between"
+  | "contains"
+  | "startsWith"
+  | "endsWith"
+  | "isNull"
+  | "isNotNull"
+  | "emptyString"
+  | "notEmptyString";
+
+export interface MysqlFilterConditionNode {
+  id: string;
+  kind: "condition";
+  column: string;
+  operator: MysqlFilterOperator;
+  value?: string;
+}
+
+export interface MysqlFilterGroupNode {
+  id: string;
+  kind: "group";
+  mode: "and" | "or";
+  children: MysqlFilterNode[];
+}
+
+export type MysqlFilterNode = MysqlFilterConditionNode | MysqlFilterGroupNode;
+
+export interface MysqlOpenedTable {
+  database: string;
+  table: string;
+  view: "data" | "structure" | "info";
+  filterTree?: MysqlFilterGroupNode;
+  sortColumn?: string;
+  sortDirection?: "asc" | "desc";
+  visibleColumns?: string[];
+}
+
+export function getMysqlOpenedTableKey(database: string, table: string) {
+  return `${database}::${table}`;
+}
+
+export interface MysqlQueryResult {
+  columns: string[];
+  rows: Array<Array<unknown>>;
+  affectedRows: number;
+  isResultSet: boolean;
+}
+
+export interface ExecutedStatementResult {
+  id: string;
+  sql: string;
+  effectiveSql: string;
+  mode: "execute" | "explain";
+  durationMs: number;
+  connectionName: string;
+  databaseUsed?: string;
+  result?: MysqlQueryResult;
+  explainResult?: MysqlQueryResult;
+  error?: string;
+}
+
+export interface SqlQueryState {
+  sql: string;
+  results: ExecutedStatementResult[];
+}
+
+// Query Generator Types
+export type FilterOperator =
+  | "=" | "!=" | ">" | "<" | ">=" | "<="
+  | "LIKE" | "NOT LIKE"
+  | "IN"
+  | "BETWEEN"
+  | "IS NULL" | "IS NOT NULL";
+
+export interface FilterCondition {
+  id: string;
+  field: string;
+  operator: FilterOperator;
+  value: string | number | boolean | null;
+  dataType?: string;
+}
+
+export interface FilterGroup {
+  conditions: FilterCondition[];
+  operator: "AND" | "OR";
+}
