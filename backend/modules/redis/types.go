@@ -3,10 +3,13 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"sync"
 	"time"
 
 	goRedis "github.com/redis/go-redis/v9"
+
+	"golang.org/x/sync/singleflight"
 
 	"multi-database-browsing/backend/infra/sshtunnel"
 )
@@ -18,11 +21,28 @@ type RedisConnectRequest struct {
 	Database     int    `json:"database"`
 	Username     string `json:"username"`
 	Password     string `json:"password"`
+	// SSH tunnel (basic)
 	SshEnabled   bool   `json:"sshEnabled"`
 	SshHost      string `json:"sshHost"`
 	SshPort      int    `json:"sshPort"`
 	SshUsername  string `json:"sshUsername"`
 	SshPassword  string `json:"sshPassword"`
+	// SSH key authentication
+	SshPrivateKeyPath string `json:"sshPrivateKeyPath"`
+	SshPrivateKeyPem  string `json:"sshPrivateKeyPem"`
+	SshPassphrase     string `json:"sshPassphrase"`
+	SshUseAgent       bool   `json:"sshUseAgent"`
+	// SSH host key verification
+	SshHostKeyMode    string `json:"sshHostKeyMode"`
+	SshKnownHostsPath string `json:"sshKnownHostsPath"`
+	// TLS
+	TlsMode           string `json:"tlsMode"` // "" | "required" | "verify_ca" | "verify_identity" | "custom"
+	TlsCaCertPath     string `json:"tlsCaCertPath"`
+	TlsCaCertPem      string `json:"tlsCaCertPem"`
+	TlsClientCertPath string `json:"tlsClientCertPath"`
+	TlsClientCertPem  string `json:"tlsClientCertPem"`
+	TlsClientKeyPath  string `json:"tlsClientKeyPath"`
+	TlsClientKeyPem   string `json:"tlsClientKeyPem"`
 }
 
 type RedisDatabaseInfo struct {
@@ -49,10 +69,12 @@ type RedisKeyDetail struct {
 	KeyType     string          `json:"keyType"`
 	TTLMS       *int64          `json:"ttlMs"`
 	Encoding    *string         `json:"encoding"`
+	ValueEncoding string        `json:"valueEncoding"` // "utf8" | "base64" | "binary"
 	Size        *uint64         `json:"size"`
 	Value       json.RawMessage `json:"value"`
 	Truncated   bool            `json:"truncated"`
 	Unsupported bool            `json:"unsupported"`
+	IsBinary    bool            `json:"isBinary"`
 }
 
 type RedisCommandResult struct {
@@ -116,6 +138,8 @@ type RedisConnectionManager struct {
 	connections map[string]map[int]*goRedis.Client
 	options     map[string]*goRedis.Options
 	sshTunnels  *sshtunnel.Manager
+	// inFlight deduplicates concurrent client creation for the same (connID, db) pair.
+	inFlight    singleflight.Group
 }
 
 func NewRedisConnectionManager() *RedisConnectionManager {
@@ -129,10 +153,12 @@ func NewRedisConnectionManager() *RedisConnectionManager {
 func (r *RedisConnectionManager) CloseAll() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, dbClients := range r.connections {
-		for _, client := range dbClients {
+	for connID, dbClients := range r.connections {
+		for db, client := range dbClients {
 			if client != nil {
-				_ = client.Close()
+				if err := client.Close(); err != nil {
+					log.Printf("[redis] error closing connection %s db %d: %v", connID, db, err)
+				}
 			}
 		}
 	}
@@ -142,9 +168,34 @@ func (r *RedisConnectionManager) CloseAll() {
 }
 
 func cloneRedisOptions(opts *goRedis.Options, database int) *goRedis.Options {
-	cloned := *opts
-	cloned.DB = database
-	return &cloned
+	cloned := &goRedis.Options{
+		Addr:            opts.Addr,
+		ClientName:      opts.ClientName,
+		Protocol:        opts.Protocol,
+		Username:        opts.Username,
+		Password:        opts.Password,
+		CredentialsProvider: opts.CredentialsProvider,
+		DB:              database,
+		MaxRetries:      opts.MaxRetries,
+		MinRetryBackoff: opts.MinRetryBackoff,
+		MaxRetryBackoff: opts.MaxRetryBackoff,
+		DialTimeout:     opts.DialTimeout,
+		ReadTimeout:     opts.ReadTimeout,
+		WriteTimeout:    opts.WriteTimeout,
+		ContextTimeoutEnabled: opts.ContextTimeoutEnabled,
+		PoolFIFO:        opts.PoolFIFO,
+		PoolSize:        opts.PoolSize,
+		PoolTimeout:     opts.PoolTimeout,
+		MinIdleConns:    opts.MinIdleConns,
+		MaxIdleConns:    opts.MaxIdleConns,
+		ConnMaxIdleTime: opts.ConnMaxIdleTime,
+		ConnMaxLifetime: opts.ConnMaxLifetime,
+		TLSConfig:       opts.TLSConfig, // Reference is fine for TLSConfig (read-only after creation)
+		Limiter:         opts.Limiter,
+		DisableIndentity: opts.DisableIndentity,
+		IdentitySuffix:   opts.IdentitySuffix,
+	}
+	return cloned
 }
 
 func getRedisTTLMilliseconds(req RedisSetKeyRequest) *int64 {

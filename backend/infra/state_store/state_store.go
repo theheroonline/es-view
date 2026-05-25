@@ -21,7 +21,7 @@ func (s *AppStateStore) getConfigDir() (string, error) {
 	}
 
 	configDir := filepath.Join(configHome, s.appName)
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return "", err
 	}
 
@@ -53,7 +53,7 @@ func (s *AppStateStore) SaveState(data string) error {
 	}
 
 	stateFile := filepath.Join(configDir, s.appName+".state.json")
-	if err := os.WriteFile(stateFile, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(stateFile, []byte(data), 0o600); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 

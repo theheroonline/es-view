@@ -61,6 +61,8 @@ describe("useTableDataActions", () => {
           setSortDraft,
           filterDraftTree,
           setError: vi.fn(),
+          saveTableDataCache: vi.fn(),
+          dataColumnMeta: [],
         }),
       };
     });
@@ -131,6 +133,8 @@ describe("useTableDataActions", () => {
           setSortDraft,
           filterDraftTree,
           setError: vi.fn(),
+          saveTableDataCache: vi.fn(),
+          dataColumnMeta: [],
         }),
       };
     });

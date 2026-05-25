@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { logError } from "../../../../../lib/errorLog";
-import type { MysqlFilterNode, MysqlOpenedTable } from "../../../types";
+import { getMysqlOpenedTableKey, getMysqlOpenedTableTabKey, type MysqlFilterNode, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
 import { fetchTablePage } from "../services/tableDataService";
 import {
     buildConditionSql as buildFilterConditionSql,
@@ -31,6 +31,8 @@ interface UseTableDataActionsProps {
   setSortDraft: Dispatch<SetStateAction<{ column: string; direction: "asc" | "desc" }>>;
   filterDraftTree: FilterGroupDraft | null;
   setError: (message: string) => void;
+  saveTableDataCache: (tableKey: string, entry: MysqlTableDataCacheEntry | null) => void;
+  dataColumnMeta: Array<{ field: string; type: string; null: string; key: string; default: string | null; extra: string }>;
 }
 
 function buildNodeSql(node: MysqlFilterNode): string | null {
@@ -62,7 +64,14 @@ export function useTableDataActions({
   setSortDraft,
   filterDraftTree,
   setError,
+  saveTableDataCache,
+  dataColumnMeta,
 }: UseTableDataActionsProps) {
+  const dataStatePageRef = useRef(dataState.page);
+  const dataStatePageSizeRef = useRef(dataState.pageSize);
+  dataStatePageRef.current = dataState.page;
+  dataStatePageSizeRef.current = dataState.pageSize;
+
   const getWhereClause = useCallback((tree?: FilterGroupDraft | null) => {
     if (!tree) return "";
     const sql = buildNodeSql(tree);
@@ -70,7 +79,17 @@ export function useTableDataActions({
   }, []);
 
   const syncFilterDraftFromOpenedTable = useCallback((table: MysqlOpenedTable | null, columns: string[]) => {
-    const firstColumn = columns[0] ?? "";
+    const firstColumn = columns[0];
+    if (!firstColumn) {
+      // Columns not loaded yet — try to restore from saved filterTree using its column names
+      if (table?.filterTree) {
+        const cond = table.filterTree.children.find((c) => c.kind === "condition");
+        if (cond && cond.kind === "condition" && cond.column) {
+          setFilterDraftTree(cloneFilterGroup(table.filterTree, cond.column));
+        }
+      }
+      return;
+    }
     const tree = table?.filterTree
       ? cloneFilterGroup(table.filterTree, firstColumn)
       : createFilterGroup("and", [createFilterCondition(firstColumn)]);
@@ -83,14 +102,14 @@ export function useTableDataActions({
       table: string,
       next: Partial<Pick<MysqlOpenedTable, "filterTree" | "sortColumn" | "sortDirection">>
     ) => {
-      const nextKey = `${db}.${table}`;
+      const nextKey = getMysqlOpenedTableTabKey(db, table, activeOpenedTable?.view ?? "data");
       setOpenedTables((prev) => prev.map((item) => (
-        `${item.database}.${item.table}` === nextKey
+        getMysqlOpenedTableTabKey(item.database, item.table, item.view) === nextKey
           ? { ...item, ...next }
           : item
       )));
     },
-    [setOpenedTables]
+    [activeOpenedTable?.view, setOpenedTables]
   );
 
   const fetchData = useCallback(async (
@@ -104,24 +123,23 @@ export function useTableDataActions({
     const targetTable = table ?? selectedTableInfo?.table;
     if (!connectionId || !targetDb || !targetTable) return;
 
-    const currentPage = page ?? dataState.page;
-    const currentSize = pageSize ?? dataState.pageSize;
+    const currentPage = page ?? dataStatePageRef.current;
+    const currentSize = pageSize ?? dataStatePageSizeRef.current;
     const requestKey = `${targetDb}.${targetTable}`;
     const requestId = latestDataRequestRef.current + 1;
     latestDataRequestRef.current = requestId;
     activeDataRequestKeyRef.current = requestKey;
 
-    const currentFilterTree = overrides?.filterTree ?? activeOpenedTable?.filterTree ?? undefined;
-    const currentSortColumn = db && table && activeOpenedTable?.database === db && activeOpenedTable?.table === table
-      ? overrides?.sortColumn ?? activeOpenedTable.sortColumn
-      : selectedTableInfo?.database === targetDb && selectedTableInfo?.table === targetTable
-        ? overrides?.sortColumn ?? activeOpenedTable?.sortColumn
-        : undefined;
-    const currentSortDirection = db && table && activeOpenedTable?.database === db && activeOpenedTable?.table === table
-      ? overrides?.sortDirection ?? activeOpenedTable.sortDirection
-      : selectedTableInfo?.database === targetDb && selectedTableInfo?.table === targetTable
-        ? overrides?.sortDirection ?? activeOpenedTable?.sortDirection
-        : undefined;
+    const isTargetActiveTable =
+      (db === undefined && table === undefined) ||
+      !!(activeOpenedTable && activeOpenedTable.database === db && activeOpenedTable.table === table);
+    const currentFilterTree = overrides?.filterTree ?? (isTargetActiveTable ? activeOpenedTable?.filterTree : undefined);
+    const currentSortColumn = isTargetActiveTable
+      ? overrides?.sortColumn ?? activeOpenedTable?.sortColumn
+      : overrides?.sortColumn;
+    const currentSortDirection = isTargetActiveTable
+      ? overrides?.sortDirection ?? activeOpenedTable?.sortDirection
+      : overrides?.sortDirection;
 
     const whereClause = getWhereClause(currentFilterTree);
     const orderClause = currentSortColumn
@@ -142,6 +160,7 @@ export function useTableDataActions({
       );
 
       if (requestId !== latestDataRequestRef.current || activeDataRequestKeyRef.current !== requestKey) {
+        setDataState((prev) => ({ ...prev, loading: false }));
         return;
       }
 
@@ -154,12 +173,28 @@ export function useTableDataActions({
         loading: false,
         error: ""
       });
+
+      const cachedTableKey = getMysqlOpenedTableKey(targetDb, targetTable);
+      saveTableDataCache(cachedTableKey, {
+        columns: dataResult.columns,
+        rows: dataResult.rows,
+        total,
+        page: currentPage,
+        pageSize: currentSize,
+        columnMeta: dataColumnMeta,
+        tableInfo: selectedTableInfo
+          ? { columns: selectedTableInfo.columns ?? [], rowCount: selectedTableInfo.rowCount ?? 0, info: selectedTableInfo.info ?? {} }
+          : null,
+        dataColumns: dataResult.columns,
+        cachedAt: Date.now(),
+      });
     } catch (err) {
       logError(err, {
         source: "useTableDataActions.fetchData",
         message: `Failed to fetch table data for ${targetDb}.${targetTable}`
       });
       if (requestId !== latestDataRequestRef.current || activeDataRequestKeyRef.current !== requestKey) {
+        setDataState((prev) => ({ ...prev, loading: false }));
         return;
       }
 
@@ -169,7 +204,7 @@ export function useTableDataActions({
         error: err instanceof Error ? err.message : String(err)
       }));
     }
-  }, [activeDataRequestKeyRef, activeOpenedTable, connectionId, getWhereClause, latestDataRequestRef, selectedTableInfo?.database, selectedTableInfo?.table, setDataState]);
+  }, [activeDataRequestKeyRef, activeOpenedTable, connectionId, getWhereClause, latestDataRequestRef, selectedTableInfo?.database, selectedTableInfo?.table, setDataState, saveTableDataCache, dataColumnMeta]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(dataState.total / dataState.pageSize)), [dataState.pageSize, dataState.total]);
 
@@ -192,30 +227,39 @@ export function useTableDataActions({
   }, [activeOpenedTable?.visibleColumns, dataState.columns]);
 
   const updateOpenedTableVisibleColumns = useCallback((db: string, table: string, visibleColumns: string[]) => {
-    const nextKey = `${db}.${table}`;
+    const nextKey = getMysqlOpenedTableTabKey(db, table, activeOpenedTable?.view ?? "data");
     setOpenedTables((prev) => prev.map((item) => (
-      `${item.database}.${item.table}` === nextKey
+      getMysqlOpenedTableTabKey(item.database, item.table, item.view) === nextKey
         ? { ...item, visibleColumns: visibleColumns.length > 0 ? visibleColumns : dataState.columns }
         : item
     )));
-  }, [dataState.columns, setOpenedTables]);
+  }, [activeOpenedTable?.view, dataState.columns, setOpenedTables]);
 
-  const handleVisibleColumnToggle = useCallback((column: string, checked: boolean) => {
+  const handleVisibleColumnToggle = useCallback(async (column: string, checked: boolean) => {
     if (!activeOpenedTable) return;
     const nextColumns = checked
       ? [...visibleDataColumns, column]
       : visibleDataColumns.filter((item) => item !== column);
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
     updateOpenedTableVisibleColumns(activeOpenedTable.database, activeOpenedTable.table, nextColumns);
-  }, [activeOpenedTable, updateOpenedTableVisibleColumns, visibleDataColumns]);
+    await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize);
+  }, [activeOpenedTable, updateOpenedTableVisibleColumns, visibleDataColumns, saveTableDataCache, fetchData, dataState.pageSize]);
 
-  const handleSelectAllVisibleColumns = useCallback(() => {
+  const handleSelectAllVisibleColumns = useCallback(async () => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
     updateOpenedTableVisibleColumns(activeOpenedTable.database, activeOpenedTable.table, dataState.columns);
-  }, [activeOpenedTable, dataState.columns, updateOpenedTableVisibleColumns]);
+    await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize);
+  }, [activeOpenedTable, dataState.columns, updateOpenedTableVisibleColumns, saveTableDataCache, fetchData, dataState.pageSize]);
 
   const applyFilter = useCallback(async (tree: FilterGroupDraft | null) => {
     if (!activeOpenedTable) return;
     const sanitizedTree = tree ? sanitizeFilterNode(tree) : null;
+
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
 
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       filterTree: sanitizedTree?.kind === "group" ? sanitizedTree : undefined
@@ -223,10 +267,13 @@ export function useTableDataActions({
     await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize, {
       filterTree: sanitizedTree?.kind === "group" ? sanitizedTree : undefined
     });
-  }, [activeOpenedTable, dataState.pageSize, fetchData, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.pageSize, fetchData, updateOpenedTableQueryState, saveTableDataCache]);
 
   const clearFilter = useCallback(async () => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
+
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       filterTree: undefined
     });
@@ -234,10 +281,13 @@ export function useTableDataActions({
     await fetchData(activeOpenedTable.database, activeOpenedTable.table, 1, dataState.pageSize, {
       filterTree: undefined
     });
-  }, [activeOpenedTable, dataState.columns, dataState.pageSize, fetchData, syncFilterDraftFromOpenedTable, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.columns, dataState.pageSize, fetchData, syncFilterDraftFromOpenedTable, updateOpenedTableQueryState, saveTableDataCache]);
 
   const applySort = useCallback(async (column: string, direction: "asc" | "desc") => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
+
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       sortColumn: column,
       sortDirection: direction
@@ -247,10 +297,13 @@ export function useTableDataActions({
       sortColumn: column,
       sortDirection: direction
     });
-  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState, saveTableDataCache]);
 
   const clearSort = useCallback(async () => {
     if (!activeOpenedTable) return;
+    const tableKey = getMysqlOpenedTableKey(activeOpenedTable.database, activeOpenedTable.table);
+    saveTableDataCache(tableKey, null);
+
     updateOpenedTableQueryState(activeOpenedTable.database, activeOpenedTable.table, {
       sortColumn: undefined,
       sortDirection: undefined
@@ -260,7 +313,7 @@ export function useTableDataActions({
       sortColumn: undefined,
       sortDirection: undefined
     });
-  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState]);
+  }, [activeOpenedTable, dataState.pageSize, fetchData, setSortModalOpen, updateOpenedTableQueryState, saveTableDataCache]);
 
   const handleToggleFilterPanel = useCallback(() => {
     const firstColumn = dataState.columns[0] ?? "";

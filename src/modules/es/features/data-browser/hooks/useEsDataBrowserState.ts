@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { FieldFilterState } from "../../../../../components/FieldFilterButton";
+import type { FieldFilterState } from "../components/FieldFilterButton";
 import type { ConditionItem, ContextMenuState, ViewMode } from "../types";
 import { createDefaultEsCondition } from "./useEsQueryConditions";
 
@@ -30,6 +30,12 @@ export function useEsDataBrowserState() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [fieldFilter, setFieldFilter] = useState<FieldFilterState>({ enabled: false, fields: [] });
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+
+  // Create document
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createDocId, setCreateDocId] = useState("");
+  const [createDocJson, setCreateDocJson] = useState("{}");
 
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const skipNextAutoQueryRef = useRef(false);
@@ -77,7 +83,16 @@ export function useEsDataBrowserState() {
     setFieldFilter,
     selectedDocs,
     setSelectedDocs,
+    selectedRowId,
+    setSelectedRowId,
     contextMenuRef,
     skipNextAutoQueryRef,
+    // Create document
+    showCreateModal,
+    setShowCreateModal,
+    createDocId,
+    setCreateDocId,
+    createDocJson,
+    setCreateDocJson,
   };
 }

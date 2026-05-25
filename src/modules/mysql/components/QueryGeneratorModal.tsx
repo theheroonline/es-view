@@ -140,7 +140,8 @@ export default function QueryGeneratorModal({
 
   const currentDatabase = selectedDatabase || (databases.length > 0 ? databases[0] : "");
   const tables = currentDatabase ? tablesByDb[currentDatabase] ?? [] : [];
-  const tableColumns = selectedTable ? columnMetaMap[selectedTable] ?? [] : [];
+  const tableKey = selectedTable && currentDatabase ? `${currentDatabase}::${selectedTable}` : selectedTable;
+  const tableColumns = tableKey ? columnMetaMap[tableKey] ?? [] : [];
 
   const generatedSQL = useMemo(() => {
     if (!selectedTable || conditions.length === 0) return "";

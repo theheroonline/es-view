@@ -5,8 +5,10 @@ go 1.25.0
 require (
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/redis/go-redis/v9 v9.5.1
+	github.com/skeema/knownhosts v1.3.2
 	github.com/wailsapp/wails/v2 v2.11.0
 	golang.org/x/crypto v0.50.0
+	golang.org/x/sync v0.20.0
 )
 
 require (

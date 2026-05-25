@@ -5,6 +5,7 @@ import { invokeMysql, requireMysqlDesktopMode } from "./runtime";
 export async function mysqlConnect(connection: MysqlConnection): Promise<void> {
   await requireMysqlDesktopMode();
   try {
+    const sshAuthMethod = connection.ssh?.authMethod ?? "password";
     await invokeMysql<void>("mysql_connect", {
       connectionId: connection.id,
       host: connection.host,
@@ -17,6 +18,28 @@ export async function mysqlConnect(connection: MysqlConnection): Promise<void> {
       sshPort: connection.ssh?.port ?? 22,
       sshUsername: connection.ssh?.username ?? "",
       sshPassword: connection.sshPassword ?? "",
+      // SSH key auth
+      sshPrivateKeyPath: (sshAuthMethod === "key" ? connection.ssh?.privateKeyPath : "") ?? "",
+      sshPrivateKeyPem: (sshAuthMethod === "key" ? connection.ssh?.privateKeyPem : "") ?? "",
+      sshPassphrase: connection.ssh?.passphrase ?? "",
+      sshUseAgent: sshAuthMethod === "agent",
+      // Host key verification
+      sshHostKeyMode: connection.ssh?.hostKeyMode ?? "accept-new",
+      sshKnownHostsPath: connection.ssh?.knownHostsPath ?? "",
+      // TLS
+      tlsMode: connection.tlsMode ?? "",
+      tlsCaCertPath: connection.tlsCaCertPath ?? "",
+      tlsClientCertPath: connection.tlsClientCertPath ?? "",
+      tlsClientKeyPath: connection.tlsClientKeyPath ?? "",
+      // Bootstrap
+      initSql: connection.initSql ?? "",
+      ignoreSqlErrors: connection.ignoreSqlErrors ?? false,
+      // Driver params
+      driverParams: connection.driverParams ?? {},
+      // Auto-reconnect
+      autoReconnect: connection.autoReconnect ?? false,
+      maxReconnectAttempts: connection.maxReconnectAttempts ?? 5,
+      reconnectInterval: connection.reconnectInterval ?? 10,
     });
   } catch (error) {
     logError(error, {

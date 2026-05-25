@@ -84,8 +84,6 @@ export function useEsDataBrowserAutoQuery({
 
     return () => {
       ignore = true;
-      setLoading(false);
-      setLoadingMessage("");
     };
   }, [activeConnectionId, page, selectedIndex, setError, setLoading, setLoadingMessage, setResult, size, skipNextAutoQueryRef]);
 }

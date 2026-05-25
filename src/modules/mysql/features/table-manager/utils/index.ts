@@ -13,7 +13,7 @@ export type {
 } from "../types";
 
 // Constants
-export { defaultDataState, getColumnTypeOption, mysqlColumnTypeOptions } from "./constants";
+export { buildFilterOperators, defaultDataState, getColumnTypeOption, mysqlColumnTypeOptions } from "./constants";
 
 // SQL builders and escapers
 export {

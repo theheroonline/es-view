@@ -1,30 +1,33 @@
 import { useTranslation } from "react-i18next";
 import type { RightPanelTab } from "../utils";
-import { TableDataPane, type TableDataPaneProps } from "./TableDataPane";
-import { TableInfoPane, type TableInfoPaneProps } from "./TableInfoPane";
+import { TableDataPane } from "./TableDataPane";
+import { TableInfoPane } from "./TableInfoPane";
 import { TableOverviewPane, type TableOverviewPaneProps } from "./TableOverviewPane";
-import { TableStructurePane, type TableStructurePaneProps } from "./TableStructurePane";
+import { TableStructurePane } from "./TableStructurePane";
+import type { TableDataPaneProps } from "./TableDataPane";
+import type { TableStructurePaneProps } from "./TableStructurePane";
+import type { TableInfoPaneProps } from "./TableInfoPane";
 
 export interface TableManagerWorkspaceProps {
   isTableWorkspace: boolean;
   activeOpenedTable: { database: string; table: string } | null;
   rightPanelTab: RightPanelTab;
-  onSelectTab: (tab: RightPanelTab) => void;
   overviewPaneProps: TableOverviewPaneProps;
   dataPaneProps: TableDataPaneProps;
   structurePaneProps: TableStructurePaneProps;
   infoPaneProps: TableInfoPaneProps;
+  toolbarActions?: React.ReactNode;
 }
 
 export function TableManagerWorkspace({
   isTableWorkspace,
   activeOpenedTable,
   rightPanelTab,
-  onSelectTab,
   overviewPaneProps,
   dataPaneProps,
   structurePaneProps,
   infoPaneProps,
+  toolbarActions,
 }: TableManagerWorkspaceProps) {
   const { t } = useTranslation();
 
@@ -42,37 +45,19 @@ export function TableManagerWorkspace({
 
   return (
     <>
-      <div className="tm-tab-strip">
-        <div className="tm-tab-buttons">
-          <button
-            className={`btn btn-sm tm-tab-button ${rightPanelTab === "data" ? "btn-primary is-active" : "btn-ghost"}`}
-            onClick={() => onSelectTab("data")}
-          >
-            {t("mysql.tableManager.data")}
-          </button>
-          <button
-            className={`btn btn-sm tm-tab-button ${rightPanelTab === "structure" ? "btn-primary is-active" : "btn-ghost"}`}
-            onClick={() => onSelectTab("structure")}
-          >
-            {t("mysql.tableManager.structure")}
-          </button>
-          <button
-            className={`btn btn-sm tm-tab-button ${rightPanelTab === "info" ? "btn-primary is-active" : "btn-ghost"}`}
-            onClick={() => onSelectTab("info")}
-          >
-            {t("mysql.tableManager.info")}
-          </button>
-        </div>
-      </div>
-
       <div className="tm-tab-panel">
-        {rightPanelTab === "data" ? (
-          <TableDataPane {...dataPaneProps} />
-        ) : rightPanelTab === "info" ? (
-          <TableInfoPane {...infoPaneProps} />
-        ) : (
-          <TableStructurePane {...structurePaneProps} />
-        )}
+        <div className="mysql-tab-content-wrap">
+          <div className="mysql-tab-pane" data-active={rightPanelTab === "data"}>
+            {toolbarActions}
+            <TableDataPane {...dataPaneProps} />
+          </div>
+          <div className="mysql-tab-pane" data-active={rightPanelTab === "structure"}>
+            <TableStructurePane {...structurePaneProps} />
+          </div>
+          <div className="mysql-tab-pane" data-active={rightPanelTab === "info"}>
+            <TableInfoPane {...infoPaneProps} />
+          </div>
+        </div>
       </div>
     </>
   );

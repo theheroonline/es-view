@@ -1,6 +1,12 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { format as formatSql } from "sql-formatter";
+import {
+  CodeOutlined,
+  DatabaseOutlined,
+  TableOutlined,
+  FieldStringOutlined,
+} from "@ant-design/icons";
 import { logError } from "../../../lib/errorLog";
 import { useMysqlContext } from "../../../state/MysqlContext";
 import { useSharedConnectionState } from "../../../state/SharedConnectionState";
@@ -8,6 +14,11 @@ import { mysqlConnect } from "../services/connectionClient";
 import { mysqlListDatabases, mysqlListTables, mysqlQuery } from "../services/queryClient";
 import { mysqlDescribeTable } from "../services/schemaClient";
 import QueryGeneratorModal from "../components/QueryGeneratorModal";
+import { getDbTypeCategory } from "../lib/detectValueType";
+import { ExcelLikeTable } from "../features/table-manager/components/ExcelLikeTable";
+import { SqlResultContextMenu } from "./sql-query/SqlResultContextMenu";
+import { SqlResultColumnMenu } from "./sql-query/SqlResultColumnMenu";
+import { message } from "antd";
 import type { ExecutedStatementResult, ColumnMeta } from "../types";
 
 interface AutocompleteItem {
@@ -16,12 +27,19 @@ interface AutocompleteItem {
   type: "keyword" | "table" | "column" | "database";
   detail?: string;
   weight?: number;
+  /** Fuzzy match score (higher = better). 0 = no match. */
+  score?: number;
 }
 
 type AutocompleteContext = "mixed" | "keyword" | "table" | "column" | "database";
 
+interface TableAliasEntry {
+  table: string;
+  alias: string;
+}
+
 const MYSQL_KEYWORDS = [
-  // 常用关键词（权重 10）
+  // 最高频：DML 语句起点和核心子句（权重 10）
   { keyword: "SELECT", weight: 10 },
   { keyword: "FROM", weight: 10 },
   { keyword: "WHERE", weight: 10 },
@@ -33,62 +51,64 @@ const MYSQL_KEYWORDS = [
   { keyword: "AND", weight: 9 },
   { keyword: "OR", weight: 9 },
   { keyword: "ON", weight: 9 },
-  { keyword: "AS", weight: 8 },
 
-  // 次常用关键词（权重 6-8）
+  // 高频：DML 语句 + INNER JOIN（权重 7-8）
+  { keyword: "INNER JOIN", weight: 8 },
   { keyword: "INSERT INTO", weight: 7 },
   { keyword: "UPDATE", weight: 7 },
   { keyword: "DELETE FROM", weight: 7 },
-  { keyword: "CREATE TABLE", weight: 6 },
-  { keyword: "ALTER TABLE", weight: 6 },
-  { keyword: "DESCRIBE", weight: 6 },
-  { keyword: "INNER JOIN", weight: 6 },
-  { keyword: "RIGHT JOIN", weight: 6 },
-  { keyword: "CASE", weight: 6 },
-  { keyword: "WHEN", weight: 6 },
-  { keyword: "THEN", weight: 6 },
-  { keyword: "END", weight: 6 },
   { keyword: "NULL", weight: 7 },
   { keyword: "IN", weight: 7 },
   { keyword: "IS", weight: 7 },
-  { keyword: "COUNT", weight: 7 },
-  { keyword: "SUM", weight: 7 },
-  { keyword: "AVG", weight: 7 },
-  { keyword: "MIN", weight: 7 },
-  { keyword: "MAX", weight: 7 },
-  { keyword: "IFNULL", weight: 7 },
-  { keyword: "LENGTH", weight: 7 },
+  { keyword: "SET", weight: 7 },
 
-  // 不常用关键词（权重 3-5）
+  // 中高频：子句连接词 + 聚合函数（权重 5-6）
+  { keyword: "CREATE TABLE", weight: 6 },
+  { keyword: "ALTER TABLE", weight: 6 },
+  { keyword: "DESCRIBE", weight: 6 },
+  { keyword: "LIKE", weight: 6 },
+  { keyword: "VALUES", weight: 6 },
+  { keyword: "COUNT", weight: 6 },
+  { keyword: "SUM", weight: 6 },
+  { keyword: "AVG", weight: 6 },
+  { keyword: "MIN", weight: 6 },
+  { keyword: "MAX", weight: 6 },
+  { keyword: "RIGHT JOIN", weight: 5 },
+  { keyword: "NOT", weight: 5 },
+  { keyword: "HAVING", weight: 5 },
+  { keyword: "ASC", weight: 5 },
+  { keyword: "DESC", weight: 5 },
+  { keyword: "AS", weight: 5 },
   { keyword: "DROP TABLE", weight: 5 },
   { keyword: "SHOW TABLES", weight: 5 },
   { keyword: "USE", weight: 5 },
   { keyword: "EXPLAIN", weight: 5 },
-  { keyword: "TRUNCATE", weight: 4 },
+
+  // 中频：控制流 + 特定函数 + 右连接（权重 3-4）
+  { keyword: "CASE", weight: 4 },
+  { keyword: "WHEN", weight: 4 },
+  { keyword: "THEN", weight: 4 },
+  { keyword: "END", weight: 4 },
+  { keyword: "IFNULL", weight: 4 },
+  { keyword: "LENGTH", weight: 4 },
   { keyword: "IF", weight: 4 },
   { keyword: "ELSE", weight: 4 },
-  { keyword: "NOT", weight: 4 },
-  { keyword: "LIKE", weight: 4 },
+  { keyword: "TRUNCATE", weight: 4 },
   { keyword: "BETWEEN", weight: 3 },
   { keyword: "UNION", weight: 3 },
   { keyword: "ALL", weight: 3 },
   { keyword: "DISTINCT", weight: 3 },
-  { keyword: "HAVING", weight: 3 },
-  { keyword: "VALUES", weight: 3 },
-  { keyword: "SET", weight: 3 },
   { keyword: "PRIMARY KEY", weight: 3 },
   { keyword: "FOREIGN KEY", weight: 3 },
   { keyword: "AUTO_INCREMENT", weight: 3 },
   { keyword: "DEFAULT", weight: 3 },
 
-  // 函数和特殊关键词（权重 1-2）
+  // 低频：特殊函数（权重 1-2）
   { keyword: "CURRENT_TIMESTAMP", weight: 2 },
   { keyword: "NOW()", weight: 2 },
   { keyword: "EXISTS", weight: 2 },
   { keyword: "ANY", weight: 2 },
   { keyword: "SOME", weight: 2 },
-  { keyword: "ASC", weight: 2 },
-  { keyword: "DESC", weight: 2 },
   { keyword: "COALESCE", weight: 1 },
   { keyword: "CAST", weight: 1 },
   { keyword: "CONVERT", weight: 1 },
@@ -96,7 +116,7 @@ const MYSQL_KEYWORDS = [
   { keyword: "VERSION()", weight: 1 },
   { keyword: "CHAR_LENGTH", weight: 1 },
   { keyword: "SUBSTRING", weight: 1 },
-  { keyword: "CONCAT", weight: 1 },
+  { keyword: "CONCAT", weight: 3 },
   { keyword: "ROUND", weight: 1 },
   { keyword: "FLOOR", weight: 1 },
   { keyword: "CEIL", weight: 1 },
@@ -238,6 +258,61 @@ function getVisibleColumns(columns: string[], preferred?: string[]) {
   return nextColumns.length > 0 ? nextColumns : columns;
 }
 
+/** Fuzzy match: returns a score > 0 if query chars appear in order in target.
+ *  Score heavily favors full match → prefix match → contiguous → short words. */
+function fuzzyMatch(target: string, query: string): number {
+  if (!query) return 1;
+  const t = target.toLowerCase();
+  const q = query.toLowerCase();
+  let qi = 0;
+  let ti = 0;
+  let lastMatch = -1;
+  let score = 0;
+  const startsWith = t.startsWith(q[0]);
+  const isFullMatch = t === q;
+
+  while (qi < q.length && ti < t.length) {
+    if (t[ti] === q[qi]) {
+      const contiguous = lastMatch >= 0 && ti === lastMatch + 1;
+      score += contiguous ? 3 : (ti === 0 ? 2 : 1);
+      lastMatch = ti;
+      qi += 1;
+    }
+    ti += 1;
+  }
+
+  if (qi < q.length) return 0; // not all chars matched
+  if (isFullMatch) score += 100;
+  if (startsWith) score += 10;
+  // Bonus: shorter targets rank higher for same query ("from" > "floor" for "f")
+  score += Math.max(0, 20 - t.length);
+  return score;
+}
+
+/** Extract table aliases from a SQL statement. */
+function extractTableAliases(statement: string): TableAliasEntry[] {
+  const aliases: TableAliasEntry[] = [];
+  const regex = /\b(?:FROM|JOIN|UPDATE|INTO)\s+`?([\w$]+)`?(?:\s+(?:AS\s+)`?([\w$]+)`?)?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(statement)) !== null) {
+    const table = match[1];
+    const alias = match[2];
+    if (alias && alias.toUpperCase() !== "ON" && alias.toUpperCase() !== "WHERE" &&
+        alias.toUpperCase() !== "SET" && alias.toUpperCase() !== "LEFT" &&
+        alias.toUpperCase() !== "RIGHT" && alias.toUpperCase() !== "INNER" &&
+        alias.toUpperCase() !== "CROSS" && alias.toUpperCase() !== "OUTER") {
+      aliases.push({ table, alias });
+    }
+  }
+  return aliases;
+}
+
+/** Resolve a table alias to its actual table name. */
+function resolveAliasToTable(alias: string, aliases: TableAliasEntry[]): string | null {
+  const found = aliases.find((a) => a.alias.toLowerCase() === alias.toLowerCase());
+  return found?.table ?? null;
+}
+
 function extractMysqlErrorLine(message: string): number | null {
   const match = message.match(/\bline\s+(\d+)\b/i);
   if (!match) return null;
@@ -278,7 +353,9 @@ export default function MysqlSqlQuery() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lineNumberRef = useRef<HTMLDivElement | null>(null);
   const autocompleteListRef = useRef<HTMLDivElement | null>(null);
-  const autocompleteOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const autocompleteOptionRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const autocompleteDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorMeasurerRef = useRef<HTMLPreElement | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -290,12 +367,19 @@ export default function MysqlSqlQuery() {
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [autocompleteItems, setAutocompleteItems] = useState<AutocompleteItem[]>([]);
   const [autocompleteRange, setAutocompleteRange] = useState({ start: 0, end: 0 });
+  const [autocompleteLoading, setAutocompleteLoading] = useState(false);
   const [loadedConnectionId, setLoadedConnectionId] = useState<string | null>(null);
   const [connectedDatabaseId, setConnectedDatabaseId] = useState<string | null>(null);
   const [activeResultId, setActiveResultId] = useState<string | null>(null);
   const [resultVisibleColumns, setResultVisibleColumns] = useState<Record<string, string[]>>({});
-  const [expandedRowsByResult, setExpandedRowsByResult] = useState<Record<string, Set<number>>>({});
   const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
+
+  // SQL result table selection state
+  const [sqlResultSelectedCells, setSqlResultSelectedCells] = useState<Array<{ key: string; rowIndex: number; columnIndex: number; column: string }>>([]);
+  const [sqlResultSelectionAnchor, setSqlResultSelectionAnchor] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
+  const [sqlResultSelectedRowIndex, setSqlResultSelectedRowIndex] = useState<number | null>(null);
+  const [sqlResultRowContextMenu, setSqlResultRowContextMenu] = useState<{ x: number; y: number; rowIndex: number; columnIndex: number; column: string; value: unknown } | null>(null);
+  const [sqlResultColumnMenu, setSqlResultColumnMenu] = useState<{ x: number; y: number } | null>(null);
 
   const connectionId = getActiveConnectionIdByEngine("mysql");
   const currentActiveMysqlConnection = getMysqlConnectionById(connectionId || "");
@@ -345,14 +429,19 @@ export default function MysqlSqlQuery() {
       detail: t("mysql.query.databaseOption")
     }));
 
-    const columnItems = Object.entries(columnMap).flatMap(([table, columns]) =>
-      columns.map((column) => ({
-        label: column,
-        insertText: column,
-        type: "column" as const,
-        detail: table
-      }))
-    );
+    // Only columns from the current database
+    const dbPrefix = selectedDatabase ? `${selectedDatabase}::` : "";
+    const columnItems = Object.entries(columnMap)
+      .filter(([key]) => !selectedDatabase || key.startsWith(dbPrefix))
+      .flatMap(([key, columns]) => {
+        const table = key.replace(dbPrefix, "");
+        return columns.map((column) => ({
+          label: column,
+          insertText: column,
+          type: "column" as const,
+          detail: table
+        }));
+      });
 
     const keywordItems = MYSQL_KEYWORDS.map(({ keyword, weight }) => ({
       label: keyword,
@@ -372,6 +461,18 @@ export default function MysqlSqlQuery() {
   const lineCount = useMemo(() => Math.max(1, sql.split("\n").length), [sql]);
   const lineNumbers = useMemo(() => Array.from({ length: lineCount }, (_, index) => index + 1), [lineCount]);
   const editorErrorLine = useMemo(() => extractMysqlErrorLine(error), [error]);
+
+  // Close context menus on outside click
+  useEffect(() => {
+    if (!sqlResultRowContextMenu && !sqlResultColumnMenu) return;
+
+    const handler = () => {
+      setSqlResultRowContextMenu(null);
+      setSqlResultColumnMenu(null);
+    };
+    window.addEventListener("mousedown", handler);
+    return () => window.removeEventListener("mousedown", handler);
+  }, [sqlResultRowContextMenu, sqlResultColumnMenu]);
 
   useEffect(() => {
     if (!editorErrorLine || !textareaRef.current) {
@@ -395,34 +496,39 @@ export default function MysqlSqlQuery() {
 
     const textarea = textareaRef.current;
     const rect = textarea.getBoundingClientRect();
-    const scrollTop = textarea.scrollTop;
+    const scrollLeft = textarea.scrollLeft;
 
-    // 计算光标在文本中的行列
-    const textBeforeCursor = sql.slice(0, selectionRange.start);
-    const lines = textBeforeCursor.split('\n');
-    const currentLine = lines.length;
-    const currentCol = lines[lines.length - 1].length;
+    // Use a hidden pre element to measure exact cursor position
+    if (cursorMeasurerRef.current) {
+      const measurer = cursorMeasurerRef.current;
+      const textBeforeCursor = sql.slice(0, selectionRange.start);
+      const lines = textBeforeCursor.split('\n');
+      const currentLine = lines.length;
+      const currentLineText = lines[lines.length - 1];
 
-    // 计算实际像素位置
-    const lineHeight = 13 * 1.6;
-    const charWidth = 7.8;
+      // Measure line height from actual element
+      const lineHeight = measurer.offsetHeight > 0 ? measurer.offsetHeight : 20.8;
 
-    // 相对于 textarea 内部的位置
-    const relativeTop = (currentLine - 1) * lineHeight + lineHeight;
-    const relativeLeft = 46 + 12 + currentCol * charWidth; // 46px 行号 + 12px padding + 列偏移
+      // Measure character width using the measurer
+      measurer.textContent = 'M';
+      const charWidth = measurer.offsetWidth || 7.8;
 
-    // 相对于视口的位置（考虑 textarea 滚动）
-    const absoluteTop = rect.top + relativeTop - scrollTop + 4; // 光标下方 4px
-    const absoluteLeft = rect.left + relativeLeft;
+      // Calculate position
+      const relativeTop = (currentLine - 1) * lineHeight + lineHeight;
+      const relativeLeft = 46 + 12 + currentLineText.length * charWidth - scrollLeft;
 
-    // 防止超出视口
-    const maxLeft = window.innerWidth - 300; // 预留最小宽度空间
-    const finalLeft = Math.min(absoluteLeft, maxLeft);
+      const absoluteTop = rect.top + relativeTop + 4;
+      const absoluteLeft = rect.left + relativeLeft;
 
-    setAutocompletePosition({
-      top: absoluteTop,
-      left: finalLeft
-    });
+      // Prevent viewport overflow
+      const maxLeft = window.innerWidth - 300;
+      const finalLeft = Math.max(rect.left + 46 + 12, Math.min(absoluteLeft, maxLeft));
+
+      setAutocompletePosition({
+        top: absoluteTop,
+        left: finalLeft
+      });
+    }
 
     const activeOption = autocompleteOptionRefs.current[autocompleteIndex];
     activeOption?.scrollIntoView({ block: "nearest" });
@@ -511,8 +617,10 @@ export default function MysqlSqlQuery() {
           setTablesByDb((prev) => ({ ...prev, [selectedDatabase]: tables }));
         }
 
-        const missingTables = tables.filter((table) => !columnMap[table]);
+        const missingTables = tables.filter((table) => !columnMap[`${selectedDatabase}::${table}`]);
         if (missingTables.length === 0) return;
+
+        setAutocompleteLoading(true);
 
         // Single query pass - fetch metadata once per table
         const metaEntries = await Promise.all(
@@ -522,9 +630,9 @@ export default function MysqlSqlQuery() {
           })
         );
 
-        // Derive column names from metadata
+        // Derive column names from metadata, keyed by `database::table`
         const entries = metaEntries.map(([table, metas]) =>
-          [table, metas.map((meta) => meta.field)] as const
+          [`${selectedDatabase}::${table}`, metas.map((meta) => meta.field)] as const
         );
 
         setColumnMap((prev) => ({
@@ -541,6 +649,8 @@ export default function MysqlSqlQuery() {
           source: "mysqlSqlQuery.autocompleteMeta",
           message: `Failed to load autocomplete metadata for ${selectedDatabase}`
         });
+      } finally {
+        setAutocompleteLoading(false);
       }
     }
 
@@ -548,43 +658,100 @@ export default function MysqlSqlQuery() {
   }, [columnMap, connectionId, selectedDatabase, setTablesByDb, tablesByDb]);
 
   const updateAutocomplete = (nextSql: string, caretPosition: number) => {
+    if (autocompleteDebounceRef.current) {
+      clearTimeout(autocompleteDebounceRef.current);
+    }
+    autocompleteDebounceRef.current = setTimeout(() => {
+      doUpdateAutocomplete(nextSql, caretPosition);
+    }, 150);
+  };
+
+  const doUpdateAutocomplete = (nextSql: string, caretPosition: number) => {
     const { start, end, token } = getTokenRange(nextSql, caretPosition);
     const normalized = token.trim().toLowerCase();
-    const lookupToken = normalized.split(".").pop() ?? normalized;
     const context = detectAutocompleteContext(nextSql, caretPosition);
-    if (!normalized) {
+
+    // Check if we have a dot-triggered alias resolution (e.g. "u." or "users.")
+    const hasDotPrefix = token.includes(".");
+    const dotParts = normalized.split(".");
+    const aliasPrefix = dotParts.length >= 2 ? dotParts[dotParts.length - 2] : "";
+    const lookupToken = dotParts[dotParts.length - 1] ?? "";
+
+    // For dot-trigger: resolve alias to table name and extract aliases from full SQL
+    let aliasColumns: string[] | null = null;
+    let aliasDetail = "";
+    if (hasDotPrefix && aliasPrefix) {
+      const allStatements = splitSqlStatements(nextSql);
+      const aliases = allStatements.flatMap(extractTableAliases);
+      const resolvedTable = resolveAliasToTable(aliasPrefix, aliases);
+      const dbPrefix = selectedDatabase ? `${selectedDatabase}::` : "";
+      const targetKey = resolvedTable ? `${dbPrefix}${resolvedTable}` : `${dbPrefix}${aliasPrefix}`;
+      if (columnMap[targetKey]) {
+        aliasColumns = columnMap[targetKey];
+        aliasDetail = resolvedTable || aliasPrefix;
+      }
+    }
+
+    // If empty token but dot-triggered, show all alias columns
+    if (!normalized && hasDotPrefix && aliasColumns) {
+      const items = aliasColumns.map((col) => ({
+        label: col,
+        insertText: col,
+        type: "column" as const,
+        detail: aliasDetail
+      }));
+      setAutocompleteRange({ start: caretPosition, end: caretPosition });
+      setAutocompleteItems(items.slice(0, 12));
+      setAutocompleteIndex(0);
+      setAutocompleteOpen(items.length > 0);
+      return;
+    }
+
+    if (!normalized && !hasDotPrefix) {
       setAutocompleteOpen(false);
       setAutocompleteItems([]);
       return;
     }
 
-    // 根据上下文智能过滤
-    let contextFiltered = autocompleteSource.filter((item) => {
-      // database 上下文：只显示数据库
-      if (context === "database") {
-        return item.type === "database";
-      }
-      // table 上下文：只显示表和关键词
-      if (context === "table") {
-        return item.type === "table" || item.type === "keyword";
-      }
-      // column 上下文：只显示列、关键词和函数
-      if (context === "column") {
-        return item.type === "column" || item.type === "keyword";
-      }
-      // mixed 上下文：全部显示
-      return true;
-    });
+    // Build filtered items with fuzzy matching
+    const filteredItems: AutocompleteItem[] = [];
 
-    const filtered = contextFiltered
-      .filter((item) => item.label.toLowerCase().includes(lookupToken))
+    for (const item of autocompleteSource) {
+      // Context filtering
+      if (context === "database" && item.type !== "database") continue;
+      if (context === "table" && item.type !== "table" && item.type !== "keyword") continue;
+      if (context === "column" && item.type !== "column" && item.type !== "keyword") continue;
+
+      // For dot-triggered column context, prioritize alias columns
+      if (hasDotPrefix && item.type === "column") {
+        const score = fuzzyMatch(item.label, lookupToken);
+        if (score > 0) {
+          const isAliasColumn = aliasColumns?.includes(item.label);
+          filteredItems.push({
+            ...item,
+            detail: isAliasColumn ? aliasDetail : item.detail,
+            score: score + (isAliasColumn ? 100 : 0)
+          });
+        }
+        continue;
+      }
+
+      const score = fuzzyMatch(item.label, lookupToken);
+      if (score > 0) {
+        // Keywords: fold weight into score so common keywords outrank obscure ones
+        const finalScore = item.type === "keyword" ? score + (item.weight ?? 0) * 100 : score;
+        filteredItems.push({ ...item, score: finalScore });
+      }
+    }
+
+    const sorted = filteredItems
       .sort((left, right) => {
-        const leftStarts = left.label.toLowerCase().startsWith(lookupToken) ? 0 : 1;
-        const rightStarts = right.label.toLowerCase().startsWith(lookupToken) ? 0 : 1;
         const typeDiff = getTypePriority(context, left.type) - getTypePriority(context, right.type);
         if (typeDiff !== 0) return typeDiff;
-        if (leftStarts !== rightStarts) return leftStarts - rightStarts;
-        // 如果都是关键词，按权重排序（权重高的在前）
+        // Fuzzy score (higher = better)
+        const scoreDiff = (right.score ?? 0) - (left.score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        // Keywords: higher weight wins
         if (left.type === "keyword" && right.type === "keyword") {
           const weightDiff = (right.weight ?? 0) - (left.weight ?? 0);
           if (weightDiff !== 0) return weightDiff;
@@ -594,9 +761,9 @@ export default function MysqlSqlQuery() {
       .slice(0, 12);
 
     setAutocompleteRange({ start, end });
-    setAutocompleteItems(filtered);
+    setAutocompleteItems(sorted);
     setAutocompleteIndex(0);
-    setAutocompleteOpen(filtered.length > 0);
+    setAutocompleteOpen(sorted.length > 0);
   };
 
   const applyAutocomplete = (item: AutocompleteItem) => {
@@ -801,6 +968,299 @@ export default function MysqlSqlQuery() {
     await executeStatements(targetSql, "explain");
   };
 
+  // ─── SQL result table selection ───
+
+  const sqlResultSelectedCellKeySet = useMemo(() => {
+    return new Set(sqlResultSelectedCells.map((c) => c.key));
+  }, [sqlResultSelectedCells]);
+
+  const sqlResultSelectedRowsCount = useMemo(() => {
+    return new Set(sqlResultSelectedCells.map((c) => c.rowIndex)).size;
+  }, [sqlResultSelectedCells]);
+
+  const handleSqlResultCellClick = useCallback(
+    (e: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number, columns: string[]) => {
+      const currentKey = `${rowIndex}:${columnIndex}`;
+      const currentCell = { key: currentKey, rowIndex, columnIndex, column: columns[columnIndex] ?? "" };
+      if (!currentCell.column) return;
+
+      const isSameSingleSelection =
+        sqlResultSelectedCells.length === 1 &&
+        sqlResultSelectedCells[0]?.key === currentKey &&
+        !e.shiftKey &&
+        !(e.ctrlKey || e.metaKey);
+
+      if (isSameSingleSelection) {
+        setSqlResultSelectedRowIndex((prev) => (prev === rowIndex ? prev : rowIndex));
+        return;
+      }
+
+      if (e.shiftKey && sqlResultSelectionAnchor) {
+        const rowStart = Math.min(sqlResultSelectionAnchor.rowIndex, rowIndex);
+        const rowEnd = Math.max(sqlResultSelectionAnchor.rowIndex, rowIndex);
+        const colStart = Math.min(sqlResultSelectionAnchor.columnIndex, columnIndex);
+        const colEnd = Math.max(sqlResultSelectionAnchor.columnIndex, columnIndex);
+        const cells: typeof sqlResultSelectedCells = [];
+        for (let r = rowStart; r <= rowEnd; r++) {
+          for (let c = colStart; c <= colEnd; c++) {
+            cells.push({ key: `${r}:${c}`, rowIndex: r, columnIndex: c, column: columns[c] ?? "" });
+          }
+        }
+        setSqlResultSelectedCells(cells);
+        setSqlResultSelectedRowIndex(null);
+      } else if (e.ctrlKey || e.metaKey) {
+        setSqlResultSelectedCells((prev) =>
+          prev.some((cell) => cell.key === currentKey)
+            ? prev.filter((cell) => cell.key !== currentKey)
+            : [...prev, currentCell]
+        );
+        setSqlResultSelectionAnchor({ rowIndex, columnIndex });
+        setSqlResultSelectedRowIndex(null);
+      } else {
+        setSqlResultSelectedCells([currentCell]);
+        setSqlResultSelectionAnchor({ rowIndex, columnIndex });
+        setSqlResultSelectedRowIndex((prev) => (prev === rowIndex ? prev : rowIndex));
+      }
+    },
+    [sqlResultSelectedCells, sqlResultSelectionAnchor]
+  );
+
+  const handleSqlResultContextMenu = useCallback((e: MouseEvent<HTMLTableCellElement>, rowIndex: number, column: string, value: unknown, columns: string[]) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const columnIndex = columns.indexOf(column);
+    const currentKey = `${rowIndex}:${columnIndex}`;
+    const currentCell = { key: currentKey, rowIndex, columnIndex, column };
+    if (currentCell.column && !sqlResultSelectedCellKeySet.has(currentKey)) {
+      setSqlResultSelectedCells([currentCell]);
+      setSqlResultSelectionAnchor({ rowIndex, columnIndex });
+    }
+    const x = Math.max(8, Math.min(e.clientX, window.innerWidth - 260));
+    const y = Math.max(8, Math.min(e.clientY, window.innerHeight - 420));
+    setSqlResultRowContextMenu({ x, y, rowIndex, columnIndex, column, value });
+  }, [sqlResultSelectedCellKeySet]);
+
+  // ─── SQL result cell saving ───
+
+  const [sqlResultData, setSqlResultData] = useState<Record<string, any[][]>>({});
+
+  /**
+   * Try to extract table name from SELECT statement.
+   * Handles: SELECT ... FROM table, SELECT ... FROM db.table
+   */
+  const parseSqlResultTableName = useCallback((sql: string): string | null => {
+    const match = sql.match(/\bFROM\s+`?([\w.`]+)`?/i);
+    if (!match) return null;
+    const raw = match[1];
+    const parts = raw.split(".");
+    if (parts.length === 2) return parts[1].replace(/`/g, "");
+    if (parts.length === 1) return parts[0].replace(/`/g, "");
+    return null;
+  }, []);
+
+  /**
+   * Try to find primary key columns from result set by matching column names to DESCRIBE output.
+   */
+  const findResultPkColumns = useCallback(async (
+    connectionId: string,
+    database: string,
+    tableName: string,
+    resultSetColumns: string[]
+  ): Promise<string[]> => {
+    try {
+      const columns = await mysqlDescribeTable(connectionId, database, tableName);
+      const pkCols = columns.filter((c) => c.key === "PRI").map((c) => c.field);
+      // Only return if ALL pk columns are present in the result set
+      if (pkCols.length > 0 && pkCols.every((pk) => resultSetColumns.includes(pk))) {
+        return pkCols;
+      }
+    } catch {
+      // DESCRIBE failed — no PK info available
+    }
+    return [];
+  }, []);
+
+  const handleSqlResultSaveCell = useCallback(async (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => {
+    if (!activeResult || !connectionId) return;
+    const resultSet = activeResult.result;
+    if (!resultSet?.isResultSet) return;
+
+    const currentRows = sqlResultData[activeResult.id] ?? resultSet.rows;
+    const row = currentRows[rowIndex];
+    if (!row) return;
+
+    const oldValue = row[columnIndex];
+    const normalizedOldValue = oldValue === null ? "" : String(oldValue);
+    const normalizedNewValue = newValue === "" ? null : newValue;
+
+    if (normalizedOldValue === (newValue === "" ? "" : newValue)) {
+      return;
+    }
+
+    // Build SET clause
+    let setClause: string;
+    if (normalizedNewValue === null) {
+      setClause = `\`${columnName}\` = NULL`;
+    } else if (typeof normalizedNewValue === "number") {
+      setClause = `\`${columnName}\` = ${normalizedNewValue}`;
+    } else if (typeof normalizedNewValue === "boolean") {
+      setClause = `\`${columnName}\` = ${normalizedNewValue ? 1 : 0}`;
+    } else {
+      setClause = `\`${columnName}\` = '${String(normalizedNewValue).replace(/'/g, "''")}'`;
+    }
+
+    // Try to execute UPDATE against the database
+    let saveFailed = false;
+    let saveFailedReason = "";
+
+    if (activeResult.databaseUsed) {
+      const tableName = parseSqlResultTableName(activeResult.sql);
+      if (tableName) {
+        const pkCols = await findResultPkColumns(connectionId, activeResult.databaseUsed, tableName, resultSet.columns);
+        if (pkCols.length > 0) {
+          // Build WHERE from primary key columns
+          const whereParts: string[] = [];
+          for (const pkCol of pkCols) {
+            const pkIdx = resultSet.columns.indexOf(pkCol);
+            const pkVal = pkIdx >= 0 ? row[pkIdx] : null;
+            if (pkVal === null) {
+              whereParts.push(`\`${pkCol}\` IS NULL`);
+            } else {
+              whereParts.push(`\`${pkCol}\` = '${String(pkVal).replace(/'/g, "''")}'`);
+            }
+          }
+          const updateSql = `UPDATE \`${activeResult.databaseUsed}\`.\`${tableName}\` SET ${setClause} WHERE ${whereParts.join(" AND ")} LIMIT 1`;
+          try {
+            await mysqlQuery(connectionId, updateSql);
+          } catch {
+            saveFailed = true;
+            saveFailedReason = "UPDATE 执行失败，请检查表结构";
+          }
+        } else {
+          saveFailed = true;
+          saveFailedReason = "无法找到主键列，联表查询或无主键表无法保存";
+        }
+      } else {
+        saveFailed = true;
+        saveFailedReason = "联表查询无法识别目标表，无法保存数据";
+      }
+    }
+
+    if (saveFailed) {
+      message.warning(saveFailedReason, 3);
+    }
+
+    // Always update local display
+    const updatedRow = [...row];
+    updatedRow[columnIndex] = normalizedNewValue;
+    const nextRows = currentRows.map((r, i) => i === rowIndex ? updatedRow : r);
+    setSqlResultData((prev) => ({ ...prev, [activeResult.id]: nextRows }));
+  }, [activeResult, connectionId, sqlResultData, parseSqlResultTableName, findResultPkColumns]);
+
+  // ─── SQL result context menu actions ───
+
+  const handleSqlResultCopyRows = useCallback(() => {
+    if (!activeResult || sqlResultSelectedCells.length === 0) return;
+    const resultSet = activeResult.result;
+    if (!resultSet?.isResultSet) return;
+    const currentRows = sqlResultData[activeResult.id] ?? resultSet.rows;
+    const selectedRows = new Set(sqlResultSelectedCells.map((c) => c.rowIndex));
+    const rows = currentRows.filter((_, i) => selectedRows.has(i));
+    const data = rows.map((row) =>
+      resultSet.columns.map((col) => {
+        const idx = resultSet.columns.indexOf(col);
+        const val = row[idx];
+        return val === null ? "NULL" : typeof val === "object" ? JSON.stringify(val) : String(val);
+      })
+    );
+    const tsv = data.map((r) => r.join("\t")).join("\n");
+    void copyToClipboard(tsv);
+    setSqlResultRowContextMenu(null);
+  }, [activeResult, sqlResultSelectedCells, sqlResultData, copyToClipboard]);
+
+  const handleSqlResultCopyInsert = useCallback(() => {
+    if (!activeResult || sqlResultSelectedCells.length === 0) return;
+    const resultSet = activeResult.result;
+    if (!resultSet?.isResultSet) return;
+    const currentRows = sqlResultData[activeResult.id] ?? resultSet.rows;
+    const cols = resultSet.columns.join(", ");
+    const rows = currentRows.map((row) =>
+      `(${resultSet.columns.map((col) => {
+        const idx = resultSet.columns.indexOf(col);
+        const val = row[idx];
+        return val === null ? "NULL" : typeof val === "string" ? `'${val.replace(/'/g, "''")}'` : String(val);
+      }).join(", ")})`
+    );
+    const sql = `INSERT INTO table_name (${cols}) VALUES\n${rows.join(",\n")};`;
+    void copyToClipboard(sql);
+    setSqlResultRowContextMenu(null);
+  }, [activeResult, sqlResultSelectedCells, sqlResultData, copyToClipboard]);
+
+  const handleSqlResultCopyUpdate = useCallback(() => {
+    if (!activeResult || sqlResultSelectedCells.length === 0) return;
+    const resultSet = activeResult.result;
+    if (!resultSet?.isResultSet) return;
+    const currentRows = sqlResultData[activeResult.id] ?? resultSet.rows;
+    const pkCol = resultSet.columns.find((col) => col.toLowerCase().includes("id"));
+    const lines: string[] = [];
+    currentRows.forEach((row) => {
+      const updates = resultSet.columns
+        .map((col) => {
+          const idx = resultSet.columns.indexOf(col);
+          const val = row[idx];
+          return val === null ? `${col} = NULL` : `${col} = '${typeof val === "string" ? val.replace(/'/g, "''") : val}'`;
+        })
+        .join(", ");
+      const where = pkCol ? ` WHERE ${pkCol} = '${row[resultSet.columns.indexOf(pkCol)]}'` : "";
+      lines.push(`UPDATE table_name SET ${updates}${where};`);
+    });
+    void copyToClipboard(lines.join("\n"));
+    setSqlResultRowContextMenu(null);
+  }, [activeResult, sqlResultSelectedCells, sqlResultData, copyToClipboard]);
+
+  const handleSqlResultFilterByValue = useCallback(() => {
+    if (!sqlResultRowContextMenu || !activeResult) return;
+    const { column, value } = sqlResultRowContextMenu;
+    const escaped = value === null ? "NULL" : typeof value === "string" ? `'${value.replace(/'/g, "''")}'` : String(value);
+    const filterSql = `WHERE ${column} = ${escaped}`;
+    setSql(sql + "\n" + filterSql);
+    setSqlResultRowContextMenu(null);
+  }, [sqlResultRowContextMenu, activeResult]);
+
+  const handleSqlResultSortAsc = useCallback(() => {
+    if (!sqlResultRowContextMenu) return;
+    const { column } = sqlResultRowContextMenu;
+    setSql(sql + "\nORDER BY " + column + " ASC");
+    setSqlResultRowContextMenu(null);
+  }, [sqlResultRowContextMenu]);
+
+  const handleSqlResultSortDesc = useCallback(() => {
+    if (!sqlResultRowContextMenu) return;
+    const { column } = sqlResultRowContextMenu;
+    setSql(sql + "\nORDER BY " + column + " DESC");
+    setSqlResultRowContextMenu(null);
+  }, [sqlResultRowContextMenu]);
+
+  // ─── SQL result column visibility ───
+
+  const getSqlResultVisibleColumns = useCallback((resultSetColumns: string[]) => {
+    return resultVisibleColumns[activeResultId ?? ""] ?? resultSetColumns;
+  }, [resultVisibleColumns, activeResultId]);
+
+  const toggleSqlResultColumn = useCallback((column: string) => {
+    setResultVisibleColumns((prev) => {
+      const current = prev[activeResultId ?? ""] ?? [];
+      const next = current.includes(column) ? current.filter((c) => c !== column) : [...current, column];
+      return { ...prev, [activeResultId ?? ""]: next };
+    });
+  }, [activeResultId]);
+
+  const selectAllSqlResultColumns = useCallback(() => {
+    if (!activeResult?.result?.isResultSet) return;
+    setResultVisibleColumns((prev) => ({ ...prev, [activeResultId ?? ""]: activeResult.result!.columns }));
+    setSqlResultColumnMenu(null);
+  }, [activeResult, activeResultId]);
+
   const handleCloseResult = (resultId: string) => {
     const nextResults = results.filter((item) => item.id !== resultId);
     const removedIndex = results.findIndex((item) => item.id === resultId);
@@ -820,41 +1280,6 @@ export default function MysqlSqlQuery() {
       delete nextColumns[resultId];
       return nextColumns;
     });
-    setExpandedRowsByResult((prevExpanded) => {
-      const nextExpanded = { ...prevExpanded };
-      delete nextExpanded[resultId];
-      return nextExpanded;
-    });
-  };
-
-  const toggleResultRowExpand = (resultId: string, rowIndex: number) => {
-    setExpandedRowsByResult((prev) => {
-      const next = { ...prev };
-      const expandedSet = new Set(next[resultId] ?? []);
-      if (expandedSet.has(rowIndex)) {
-        expandedSet.delete(rowIndex);
-      } else {
-        expandedSet.add(rowIndex);
-      }
-      next[resultId] = expandedSet;
-      return next;
-    });
-  };
-
-  const renderResultCellValue = (value: unknown) => {
-    if (value === null || value === undefined) {
-      return <span className="muted">NULL</span>;
-    }
-
-    const content = typeof value === "object" ? JSON.stringify(value) : String(value);
-    const shouldTruncate = content.length > 80;
-    const preview = shouldTruncate ? `${content.slice(0, 80)}...` : content;
-
-    return (
-      <span className="truncated-cell" title={content} data-truncated={shouldTruncate ? "true" : "false"}>
-        <span className="truncated-text">{preview}</span>
-      </span>
-    );
   };
 
   const handleEditorChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -865,6 +1290,14 @@ export default function MysqlSqlQuery() {
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ctrl+Space / Cmd+Space: manual trigger for autocomplete
+    if ((e.ctrlKey || e.metaKey) && e.key === " ") {
+      e.preventDefault();
+      const target = e.currentTarget;
+      doUpdateAutocomplete(target.value, target.selectionStart);
+      return;
+    }
+
     if (autocompleteOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       e.preventDefault();
       setAutocompleteIndex((prev) => {
@@ -1060,6 +1493,21 @@ export default function MysqlSqlQuery() {
                 }
               }}
             />
+            {/* Hidden element for measuring cursor position */}
+            <pre
+              ref={cursorMeasurerRef}
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                visibility: "hidden",
+                height: "auto",
+                fontFamily: "monospace",
+                fontSize: "13px",
+                lineHeight: 1.6,
+                whiteSpace: "pre",
+                pointerEvents: "none"
+              }}
+            />
             </div>
             {autocompleteOpen && autocompleteItems.length > 0 && (
               <div
@@ -1070,66 +1518,152 @@ export default function MysqlSqlQuery() {
                   left: `${autocompletePosition.left}px`,
                   zIndex: 9999,
                   background: "#fff",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "8px",
-                  boxShadow: "0 10px 28px rgba(15,23,42,0.14)",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  boxShadow: "0 12px 32px rgba(15,23,42,0.16), 0 0 0 1px rgba(0,0,0,0.03)",
                   overflow: "auto",
-                  minWidth: "260px",
-                  maxWidth: "600px",
-                  maxHeight: "200px"
+                  minWidth: "320px",
+                  maxWidth: "640px",
+                  maxHeight: "350px"
                 }}
               >
-              {autocompleteItems.map((item, index) => (
-                <button
-                  key={`${item.type}-${item.label}-${index}`}
-                  type="button"
-                  ref={(element) => {
-                    autocompleteOptionRefs.current[index] = element;
-                  }}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "10px",
-                    padding: "3px 8px",
-                    border: 0,
-                    background: index === autocompleteIndex ? "#dbeafe" : "#fff",
-                    boxShadow: index === autocompleteIndex ? "inset 0 0 0 1px #60a5fa" : "none",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: "11px",
-                    lineHeight: 1.3,
-                    color: index === autocompleteIndex ? "#0f172a" : "#1f2937",
-                    transition: "background-color 120ms ease, box-shadow 120ms ease, color 120ms ease"
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    applyAutocomplete(item);
-                  }}
-                  onMouseEnter={() => setAutocompleteIndex(index)}
-                >
-                  <span style={{ display: "flex", gap: "8px", alignItems: "center", minWidth: 0, paddingRight: "8px" }}>
-                    <span
+              {autocompleteLoading && (
+                <div style={{ padding: "6px 12px", fontSize: "11px", color: "#6b7280", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ width: "12px", height: "12px", border: "2px solid #e5e7eb", borderTopColor: "#3b82f6", borderRadius: "50%", display: "inline-block", animation: "sql-spinner 0.6s linear infinite" }} />
+                  Loading schema...
+                </div>
+              )}
+              {(() => {
+                // Render in sorted order, inserting group headers when type changes
+                const typeLabels: Record<string, string> = {
+                  keyword: "Keywords",
+                  table: "Tables",
+                  column: "Columns",
+                  database: "Databases",
+                };
+
+                let lastType = "";
+                return autocompleteItems.map((item, index) => {
+                  const isActive = index === autocompleteIndex;
+                  const typeIcon = item.type === "keyword"
+                    ? <CodeOutlined style={{ fontSize: "11px" }} />
+                    : item.type === "table"
+                      ? <TableOutlined style={{ fontSize: "11px" }} />
+                      : item.type === "column"
+                        ? <FieldStringOutlined style={{ fontSize: "11px" }} />
+                        : <DatabaseOutlined style={{ fontSize: "11px" }} />;
+
+                  const typeColor = item.type === "keyword"
+                    ? "#1d4ed8"
+                    : item.type === "table"
+                      ? "#047857"
+                      : item.type === "column"
+                        ? "#c2410c"
+                        : "#4b5563";
+
+                  const groupHeader = item.type !== lastType ? (
+                    <div
+                      key={`group-${item.type}-${index}`}
                       style={{
-                        fontSize: "9px",
-                        lineHeight: 1,
-                        padding: "2px 3px",
-                        borderRadius: "4px",
-                        background: item.type === "keyword" ? "#eff6ff" : item.type === "table" ? "#ecfdf5" : item.type === "column" ? "#fff7ed" : "#f3f4f6",
-                        color: item.type === "keyword" ? "#1d4ed8" : item.type === "table" ? "#047857" : item.type === "column" ? "#c2410c" : "#4b5563",
+                        padding: "4px 12px",
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#94a3b8",
                         textTransform: "uppercase",
-                        flexShrink: 0
+                        letterSpacing: "0.05em",
+                        borderBottom: "1px solid #f1f5f9",
+                        background: "#fafbfc",
                       }}
                     >
-                      {item.type === "keyword" ? "K" : item.type === "table" ? "T" : item.type === "column" ? "C" : "DB"}
-                    </span>
-                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontWeight: index === autocompleteIndex ? 600 : 500 }}>{item.label}</span>
-                  </span>
-                  <span className="muted" style={{ fontSize: "10px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "140px", flexShrink: 0, color: index === autocompleteIndex ? "#1d4ed8" : "#6b7280" }}>
-                    {item.detail}
-                  </span>
-                </button>
-              ))}
+                      {typeLabels[item.type]}
+                    </div>
+                  ) : null;
+
+                  lastType = item.type;
+
+                  return (
+                    <Fragment key={`${item.type}-${item.label}-${index}`}>
+                      {groupHeader}
+                      <div
+                        ref={(element) => {
+                          autocompleteOptionRefs.current[index] = element;
+                        }}
+                        role="option"
+                        aria-selected={isActive}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "10px",
+                          padding: "4px 12px",
+                          border: 0,
+                          background: isActive ? "#f0f7ff" : "#fff",
+                          boxShadow: isActive ? "inset 0 0 0 1px #93c5fd" : "none",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          fontSize: "12px",
+                          lineHeight: 1.5,
+                          color: isActive ? "#0f172a" : "#1e293b",
+                          transition: "background-color 100ms ease, box-shadow 100ms ease, color 100ms ease",
+                        }}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          applyAutocomplete(item);
+                        }}
+                        onClick={() => applyAutocomplete(item)}
+                        onMouseEnter={() => setAutocompleteIndex(index)}
+                      >
+                        <span style={{ display: "flex", gap: "8px", alignItems: "center", minWidth: 0, paddingRight: "8px" }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: "22px",
+                              height: "22px",
+                              borderRadius: "5px",
+                              background: item.type === "keyword" ? "#eff6ff"
+                                : item.type === "table" ? "#ecfdf5"
+                                  : item.type === "column" ? "#fff7ed" : "#f3f4f6",
+                              color: typeColor,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {typeIcon}
+                          </span>
+                          <span
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              fontWeight: isActive ? 600 : 400,
+                              color: typeColor,
+                            }}
+                          >
+                            {item.label}
+                          </span>
+                        </span>
+                        {item.detail && (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              maxWidth: "160px",
+                              flexShrink: 0,
+                              color: isActive ? "#3b82f6" : "#94a3b8",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            {item.detail}
+                          </span>
+                        )}
+                      </div>
+                    </Fragment>
+                  );
+                });
+              })()}
               </div>
             )}
           </div>
@@ -1198,12 +1732,26 @@ export default function MysqlSqlQuery() {
                     </h3>
                     <div style={{ display: "flex", gap: "8px" }}>
                       {resultSet?.isResultSet && (
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          onClick={() => void copyToClipboard(JSON.stringify(resultSet.rows.map((row) => Object.fromEntries(visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]]))), null, 2))}
-                        >
-                          {t("mysql.query.copyResult")}
-                        </button>
+                        <>
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            onClick={(e) => setSqlResultColumnMenu({ x: e.clientX, y: e.clientY })}
+                          >
+                            {t("mysql.tableManager.displayColumns")}
+                          </button>
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            onClick={() => {
+                              if (sqlResultSelectedCells.length > 0) {
+                                handleSqlResultCopyRows();
+                              } else {
+                                copyToClipboard(JSON.stringify(resultSet.rows.map((row) => Object.fromEntries(visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]]))), null, 2));
+                              }
+                            }}
+                          >
+                            {sqlResultSelectedCells.length > 0 ? t("mysql.tableManager.copySelectedRows") : t("mysql.query.copyResult")}
+                          </button>
+                        </>
                       )}
                       <button className="btn btn-sm btn-ghost" onClick={() => void copyToClipboard(activeResult.sql)}>
                         {t("common.copy")}
@@ -1221,71 +1769,20 @@ export default function MysqlSqlQuery() {
                       {activeResult.error}
                     </div>
                   ) : resultSet?.isResultSet ? (
-                    <div className="table-wrapper" style={{ margin: "0 16px 16px", flex: 1, minHeight: 0 }}>
-                      <table className="table">
-                        <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 10 }}>
-                          <tr>
-                            <th style={{ width: "48px", textAlign: "center" }}> </th>
-                            {visibleColumns.map((column) => (
-                              <th key={column}>{column}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {resultSet.rows.length > 0 ? resultSet.rows.map((row, rowIndex) => {
-                            const expandedRows = expandedRowsByResult[activeResult.id] ?? new Set<number>();
-                            const isExpanded = expandedRows.has(rowIndex);
-                            const detailObject = Object.fromEntries(
-                              visibleColumns.map((column) => [column, row[resultSet.columns.indexOf(column)]])
-                            );
-
-                            return (
-                              <Fragment key={`${activeResult.id}-${rowIndex}`}>
-                                <tr>
-                                  <td style={{ textAlign: "center" }}>
-                                    <button
-                                      className="btn btn-ghost btn-icon"
-                                      onClick={() => toggleResultRowExpand(activeResult.id, rowIndex)}
-                                      style={{ fontSize: "10px", padding: "2px 6px" }}
-                                      title={isExpanded ? t("dataBrowser.collapseRow") : t("dataBrowser.expandRow")}
-                                    >
-                                      {isExpanded ? "▼" : "▶"}
-                                    </button>
-                                  </td>
-                                  {visibleColumns.map((column) => (
-                                    <td key={`${rowIndex}-${column}`}>
-                                      {renderResultCellValue(row[resultSet.columns.indexOf(column)])}
-                                    </td>
-                                  ))}
-                                </tr>
-                                {isExpanded && (
-                                  <tr className="expanded-row">
-                                    <td colSpan={visibleColumns.length + 1} style={{ background: "#f8fafc", padding: "12px 16px" }}>
-                                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
-                                        <button
-                                          className="btn btn-sm btn-ghost"
-                                          onClick={() => void copyToClipboard(JSON.stringify(detailObject, null, 2))}
-                                        >
-                                          {t("dataBrowser.copyRow")}
-                                        </button>
-                                      </div>
-                                      <pre style={{ margin: 0, fontSize: "12px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                                        {JSON.stringify(detailObject, null, 2)}
-                                      </pre>
-                                    </td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            );
-                          }) : (
-                            <tr>
-                              <td colSpan={visibleColumns.length + 1} className="muted" style={{ textAlign: "center", padding: "32px" }}>
-                                {t("mysql.query.noRows")}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div style={{ margin: "0 16px 16px", flex: 1, minHeight: 0 }}>
+                      <ExcelLikeTable
+                        key={activeResult.id}
+                        columns={visibleColumns}
+                        data={sqlResultData[activeResult.id] ?? resultSet.rows}
+                        selectedCellKeySet={sqlResultSelectedCellKeySet}
+                        selectedRowIndex={sqlResultSelectedRowIndex}
+                        onCellClick={(e, ri, ci) => handleSqlResultCellClick(e, ri, ci, visibleColumns)}
+                        onRowContextMenu={(e, ri, col, val) => handleSqlResultContextMenu(e, ri, col, val, visibleColumns)}
+                        onSaveCell={handleSqlResultSaveCell}
+                        columnTypes={(resultSet.columnTypes ?? []).map((t) => getDbTypeCategory(t))}
+                        columnTypeLabels={resultSet.columnTypes ?? []}
+                        tableKey={`sql-query:${activeResult.id}`}
+                      />
                     </div>
                   ) : (
                     <div style={{ padding: "24px", textAlign: "center" }}>
@@ -1297,6 +1794,26 @@ export default function MysqlSqlQuery() {
                 </>
               );
             })()}
+
+            {/* Context menus */}
+            <SqlResultContextMenu
+              menu={sqlResultRowContextMenu}
+              selectedCellsCount={sqlResultSelectedCells.length}
+              selectedRowsCount={sqlResultSelectedRowsCount}
+              onCopyRows={handleSqlResultCopyRows}
+              onCopyInsert={handleSqlResultCopyInsert}
+              onCopyUpdate={handleSqlResultCopyUpdate}
+              onFilterByValue={handleSqlResultFilterByValue}
+              onSortAsc={handleSqlResultSortAsc}
+              onSortDesc={handleSqlResultSortDesc}
+            />
+            <SqlResultColumnMenu
+              menu={sqlResultColumnMenu}
+              columns={activeResult?.result?.isResultSet ? activeResult.result.columns : []}
+              visibleColumns={activeResult?.result?.isResultSet ? getSqlResultVisibleColumns(activeResult.result.columns) : []}
+              onToggleColumn={toggleSqlResultColumn}
+              onSelectAll={selectAllSqlResultColumns}
+            />
           </div>
         </div>
       )}

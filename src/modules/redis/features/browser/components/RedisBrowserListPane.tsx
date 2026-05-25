@@ -1,4 +1,5 @@
 import type { RedisBrowserListPaneProps } from "../types";
+import { RedisKeyTree } from "./RedisKeyTree";
 
 export function RedisBrowserListPane({
   currentDatabase,
@@ -18,6 +19,8 @@ export function RedisBrowserListPane({
   onLoadKeys,
   onSelectKey,
 }: RedisBrowserListPaneProps) {
+  const totalKeys = scannedKeys.length;
+
   return (
     <div className="card redis-browser-panel">
       <div className="redis-browser-toolbar">
@@ -63,28 +66,19 @@ export function RedisBrowserListPane({
 
       {error && <div className="redis-error-banner">{error}</div>}
 
-      <div className="table-wrapper redis-key-table-wrapper">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>{t("redis.browser.key")}</th>
-              <th style={{ textAlign: "center" }}>{t("redis.browser.type")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {scannedKeys.map((item) => (
-              <tr
-                key={item.name}
-                className={selectedKey === item.name ? "redis-row-active" : undefined}
-                onClick={() => onSelectKey(item.name)}
-                style={{ cursor: "pointer" }}
-              >
-                <td style={{ wordBreak: "break-all" }}>{item.name}</td>
-                <td style={{ textAlign: "center" }}><span className="pill">{item.keyType}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="redis-key-tree-container">
+        {totalKeys === 0 && !loadingKeys && (
+          <div className="redis-tree-empty-state">
+            <div>{t("redis.browser.noKeys")}</div>
+          </div>
+        )}
+        {totalKeys > 0 && (
+          <RedisKeyTree
+            keys={scannedKeys}
+            selectedKey={selectedKey}
+            onSelectKey={(key) => onSelectKey(key)}
+          />
+        )}
       </div>
 
       <div className="redis-pagination">

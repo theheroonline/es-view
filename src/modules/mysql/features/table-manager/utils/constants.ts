@@ -3,6 +3,7 @@
  */
 
 import type { DataState, MysqlColumnTypeOption } from "./typeHelpers";
+import type { MysqlFilterOperator } from "../../../types";
 
 export const defaultDataState: DataState = {
   columns: [],
@@ -36,3 +37,28 @@ export const mysqlColumnTypeOptions: MysqlColumnTypeOption[] = [
 ];
 
 export const getColumnTypeOption = (value: string) => mysqlColumnTypeOptions.find((option) => option.value === value);
+
+/**
+ * Filter operator definitions with their i18n keys.
+ * Use `buildFilterOperators(t)` to get localized labels.
+ */
+export const FILTER_OPERATORS: Array<{ value: MysqlFilterOperator; i18nKey: string }> = [
+  { value: "eq", i18nKey: "mysql.tableManager.operatorEq" },
+  { value: "ne", i18nKey: "mysql.tableManager.operatorNe" },
+  { value: "gt", i18nKey: "mysql.tableManager.operatorGt" },
+  { value: "gte", i18nKey: "mysql.tableManager.operatorGte" },
+  { value: "lt", i18nKey: "mysql.tableManager.operatorLt" },
+  { value: "lte", i18nKey: "mysql.tableManager.operatorLte" },
+  { value: "between", i18nKey: "mysql.tableManager.operatorBetween" },
+  { value: "contains", i18nKey: "mysql.tableManager.operatorContains" },
+  { value: "startsWith", i18nKey: "mysql.tableManager.operatorStartsWith" },
+  { value: "endsWith", i18nKey: "mysql.tableManager.operatorEndsWith" },
+  { value: "isNull", i18nKey: "mysql.tableManager.operatorIsNull" },
+  { value: "isNotNull", i18nKey: "mysql.tableManager.operatorIsNotNull" },
+  { value: "emptyString", i18nKey: "mysql.tableManager.operatorEmptyString" },
+  { value: "notEmptyString", i18nKey: "mysql.tableManager.operatorNotEmptyString" },
+];
+
+export function buildFilterOperators(t: (key: string) => string): Array<{ value: MysqlFilterOperator; label: string }> {
+  return FILTER_OPERATORS.map(({ value, i18nKey }) => ({ value, label: t(i18nKey) }));
+}

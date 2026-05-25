@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+
+	"multi-database-browsing/backend/shared"
 )
 
 type Module struct{}
@@ -16,7 +18,7 @@ func NewModule() *Module {
 }
 
 func (m *Module) HttpRequest(params HttpRequestParams) (string, error) {
-	client := &http.Client{}
+	client := buildEsHTTPClient(&params)
 
 	var bodyReader io.Reader
 	if params.Body != "" {
@@ -25,7 +27,7 @@ func (m *Module) HttpRequest(params HttpRequestParams) (string, error) {
 
 	req, err := http.NewRequest(params.Method, params.URL, bodyReader)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", shared.NewAppError(shared.ErrConnectionFailed, "failed to create request: "+err.Error(), "elasticsearch")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -49,13 +51,17 @@ func (m *Module) HttpRequest(params HttpRequestParams) (string, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		shared.Logger.Error("elasticsearch HTTP request failed",
+			slog.String("method", params.Method),
+			slog.String("url", params.URL),
+			slog.Any("error", err))
+		return "", shared.NewAppError(shared.ErrConnectionFailed, "failed to send request: "+err.Error(), "elasticsearch")
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return "", shared.NewAppError(shared.ErrConnectionFailed, "failed to read response: "+err.Error(), "elasticsearch")
 	}
 
 	resultJSON, err := json.Marshal(map[string]interface{}{
@@ -64,7 +70,7 @@ func (m *Module) HttpRequest(params HttpRequestParams) (string, error) {
 		"body":   string(respBody),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal response: %w", err)
+		return "", shared.NewAppError(shared.ErrConnectionFailed, "failed to marshal response: "+err.Error(), "elasticsearch")
 	}
 
 	return string(resultJSON), nil

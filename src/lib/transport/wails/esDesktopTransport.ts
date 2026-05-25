@@ -10,6 +10,14 @@ export const esDesktopTransport: EsTransport = {
       body: request.body,
       verifyTls: request.verifyTls,
       auth: request.auth,
+      // TLS
+      tlsMode: request.tlsMode,
+      tlsCaCertPath: request.tlsCaCertPath,
+      tlsCaCertPem: request.tlsCaCertPem,
+      tlsClientCertPath: request.tlsClientCertPath,
+      tlsClientCertPem: request.tlsClientCertPem,
+      tlsClientKeyPath: request.tlsClientKeyPath,
+      tlsClientKeyPem: request.tlsClientKeyPem,
     }, {
       featureName: "Elasticsearch desktop transport",
       errorMessage: "Elasticsearch desktop request failed",

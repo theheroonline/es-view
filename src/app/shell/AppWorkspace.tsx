@@ -1,6 +1,10 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
-import { type EngineType } from "../../hooks/useConnectionWorkspace";
+import { getEngineFromPath } from "../../lib/routeEngine";
+import { EsContentArea } from "../../modules/es/routes/EsContentArea";
+import { MysqlContentArea } from "../../modules/mysql/routes/MysqlContentArea";
+import { RedisContentArea } from "../../modules/redis/routes/RedisContentArea";
 import EsWorkspaceTabs from "../../modules/es/components/EsWorkspaceTabs";
 import MysqlWorkspaceTabs from "../../modules/mysql/components/MysqlWorkspaceTabs";
 import type { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
@@ -10,65 +14,71 @@ import AppRoutes from "../routes/AppRoutes";
 type MysqlSidebarWorkspaceState = ReturnType<typeof useMysqlSidebarWorkspace>;
 
 interface AppWorkspaceProps {
-  activeEngine: EngineType | null;
   mysql: MysqlSidebarWorkspaceState;
 }
 
+/** Flex-aware wrapper for ContentArea sections that need to fill remaining space */
+const flexVisible: React.CSSProperties = { display: "flex", flex: 1, minHeight: 0 };
+const flexHidden: React.CSSProperties = { display: "none" };
+
 export default function AppWorkspace({
-  activeEngine,
   mysql,
 }: AppWorkspaceProps) {
   const { t } = useTranslation();
   const location = useLocation();
 
-  const isEsWorkspace = activeEngine === "elasticsearch";
-  const isMysqlWorkspace = activeEngine === "mysql";
-  const isRedisWorkspace = activeEngine === "redis";
+  const currentEngine = useMemo(() => getEngineFromPath(location.pathname), [location.pathname]);
 
   return (
     <>
-      <EsWorkspaceTabs
-        visible={isEsWorkspace}
-        dataBrowserLabel={t("sidebar.dataBrowser")}
-        sqlQueryLabel={t("sidebar.sqlQuery")}
-        restConsoleLabel={t("sidebar.restConsole")}
-        indexManagerLabel={t("sidebar.indexManager")}
-      />
+      {currentEngine === "elasticsearch" && (
+        <EsWorkspaceTabs
+          dataBrowserLabel={t("sidebar.dataBrowser")}
+          simpleQueryLabel={t("sidebar.simpleQuery")}
+          restConsoleLabel={t("sidebar.restConsole")}
+          indexManagerLabel={t("sidebar.indexManager")}
+          templateManagerLabel={t("sidebar.templateManager")}
+          ilmManagerLabel={t("sidebar.ilmManager")}
+          clusterInfoLabel={t("sidebar.clusterInfo")}
+        />
+      )}
 
-      <MysqlWorkspaceTabs
-        visible={isMysqlWorkspace}
-        openedTables={mysql.openedTables}
-        activeOpenedTableKey={mysql.activeOpenedTableKey}
-        locationPathname={location.pathname}
-        tableManagerLabel={t("mysql.sidebar.tableManager")}
-        sqlQueryLabel={t("mysql.sidebar.sqlQuery")}
-        onActivateTable={(database, table) => {
-          void mysql.handleActivateMysqlOpenedTable(database, table);
-        }}
-        onCloseTable={(database, table) => {
-          void mysql.handleCloseMysqlOpenedTable(database, table);
-        }}
-        onTableContextMenu={mysql.handleMysqlTabContextMenu}
-      />
+      {currentEngine === "mysql" && (
+        <MysqlWorkspaceTabs
+          openedTables={mysql.openedTables}
+          activeOpenedTableKey={mysql.activeOpenedTableKey}
+          locationPathname={location.pathname}
+          tableManagerLabel={t("mysql.sidebar.tableManager")}
+          sqlQueryLabel={t("mysql.sidebar.sqlQuery")}
+          onActivateTable={(item) => {
+            void mysql.handleActivateMysqlOpenedTable(item.database, item.table, item.view);
+          }}
+          onCloseTable={(database, table, view) => {
+            void mysql.handleCloseMysqlOpenedTable(database, table, view);
+          }}
+          onTableContextMenu={mysql.handleMysqlTabContextMenu}
+        />
+      )}
 
-      <RedisWorkspaceTabs
-        visible={isRedisWorkspace}
-        browserLabel={t("redis.sidebar.browser")}
-        consoleLabel={t("redis.sidebar.console")}
-      />
+      {currentEngine === "redis" && (
+        <RedisWorkspaceTabs
+          browserLabel={t("redis.sidebar.browser")}
+          consoleLabel={t("redis.sidebar.console")}
+        />
+      )}
 
       <section className="mdb-content">
         <AppRoutes />
+        <div style={currentEngine === "elasticsearch" ? flexVisible : flexHidden}>
+          <EsContentArea />
+        </div>
+        <div style={currentEngine === "mysql" ? flexVisible : flexHidden}>
+          <MysqlContentArea />
+        </div>
+        <div style={currentEngine === "redis" ? flexVisible : flexHidden}>
+          <RedisContentArea />
+        </div>
       </section>
     </>
   );
-}
-
-export function canShowWorkspace(
-  activeConnectionIdByEngine: Partial<Record<"elasticsearch" | "mysql" | "redis", string>>,
-  isWorkspaceSuspended: boolean,
-  _pathname: string
-) {
-  const hasAnyConnected = Object.values(activeConnectionIdByEngine).some(Boolean);
-  return hasAnyConnected && !isWorkspaceSuspended;
 }

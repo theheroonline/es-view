@@ -1,19 +1,18 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect } from "react";
-import type { BoolType, ContextMenuState, SortDirection } from "../types";
+import type { BoolType, ContextMenuState, SearchRow, SortDirection } from "../types";
 
-interface UseEsContextMenuParams<Row> {
+interface UseEsContextMenuParams {
   contextMenu: ContextMenuState;
-  contextMenuRef: RefObject<HTMLDivElement | null>;
-  setContextMenu: Dispatch<SetStateAction<ContextMenuState>>;
-  setExpandedRows: Dispatch<SetStateAction<Set<string>>>;
+  contextMenuRef: React.RefObject<HTMLDivElement | null>;
+  setContextMenu: React.Dispatch<React.SetStateAction<ContextMenuState>>;
+  setExpandedRows: React.Dispatch<React.SetStateAction<Set<string>>>;
   onAddConditionFromContext: (boolType: BoolType) => void;
   onAddSortFromContext: (direction: SortDirection) => void;
   onDeleteDoc: (docIndex: string, docId: string) => void;
-  onEditDoc: (row: Row) => void;
+  onEditDoc: (row: SearchRow) => void;
 }
 
-export function useEsContextMenu<Row>({
+export function useEsContextMenu({
   contextMenu,
   contextMenuRef,
   setContextMenu,
@@ -22,7 +21,7 @@ export function useEsContextMenu<Row>({
   onAddSortFromContext,
   onDeleteDoc,
   onEditDoc,
-}: UseEsContextMenuParams<Row>) {
+}: UseEsContextMenuParams) {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
@@ -37,7 +36,7 @@ export function useEsContextMenu<Row>({
     setContextMenu((prev) => ({ ...prev, visible: false }));
   }, [setContextMenu]);
 
-  const handleContextMenu = useCallback((event: React.MouseEvent, row: Row, field?: string, value?: unknown) => {
+  const handleContextMenu = useCallback((event: React.MouseEvent, row: SearchRow, field?: string, value?: unknown) => {
     event.preventDefault();
     setContextMenu({
       visible: true,
@@ -63,10 +62,8 @@ export function useEsContextMenu<Row>({
   }, [contextMenu.value, copyToClipboard]);
 
   const copyRow = useCallback(() => {
-    if (!contextMenu.row) {
-      return;
-    }
-    copyToClipboard(JSON.stringify((contextMenu.row as { _source?: unknown })._source, null, 2));
+    if (!contextMenu.row) return;
+    copyToClipboard(JSON.stringify(contextMenu.row._source, null, 2));
   }, [contextMenu.row, copyToClipboard]);
 
   const toggleRowExpand = useCallback((docId: string) => {
@@ -83,19 +80,15 @@ export function useEsContextMenu<Row>({
   }, [closeContextMenu, setExpandedRows]);
 
   const handleDeleteRow = useCallback(() => {
-    const row = contextMenu.row as { _index: string; _id: string } | null;
-    if (!row) {
-      return;
-    }
+    const row = contextMenu.row;
+    if (!row) return;
     onDeleteDoc(row._index, row._id);
     closeContextMenu();
   }, [closeContextMenu, contextMenu.row, onDeleteDoc]);
 
   const handleEditRow = useCallback(() => {
-    if (!contextMenu.row) {
-      return;
-    }
-    onEditDoc(contextMenu.row as Row);
+    if (!contextMenu.row) return;
+    onEditDoc(contextMenu.row);
     closeContextMenu();
   }, [closeContextMenu, contextMenu.row, onEditDoc]);
 

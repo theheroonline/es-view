@@ -1,5 +1,5 @@
 import { useCallback, type DragEvent, type MouseEvent } from "react";
-import { getMysqlOpenedTableKey, type MysqlOpenedTable } from "../../../types";
+import { getMysqlOpenedTableTabKey, type MysqlOpenedTable } from "../../../types";
 import type { RightPanelTab } from "../utils";
 
 interface UseTableOverviewActionsProps {
@@ -82,14 +82,12 @@ export function useTableOverviewActions({
   }, [getOrderedSelectedTables, selectedOverviewTables]);
 
   const openTableWorkspace = useCallback(async (db: string, table: string, targetTab: RightPanelTab) => {
-    const nextKey = getMysqlOpenedTableKey(db, table);
+    const nextKey = getMysqlOpenedTableTabKey(db, table, targetTab);
     setSelectedDatabase(db);
     setSelectedTable(table);
     setOpenedTables((prev) => {
-      const existing = prev.find((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey);
-      if (existing) {
-        return prev.map((item) => getMysqlOpenedTableKey(item.database, item.table) === nextKey ? { ...item, view: targetTab } : item);
-      }
+      const existing = prev.find((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === nextKey);
+      if (existing) return prev;
       return [...prev, { database: db, table, view: targetTab }];
     });
     setActiveOpenedTableKey(nextKey);

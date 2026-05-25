@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	goRedis "github.com/redis/go-redis/v9"
 
 	"multi-database-browsing/backend/infra/sshtunnel"
+	"multi-database-browsing/backend/shared"
 )
 
 type Module struct {
@@ -30,7 +32,7 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 	dbClients, exists := m.connManager.connections[connectionID]
 	if !exists {
 		m.connManager.mu.RUnlock()
-		return nil, fmt.Errorf("connection not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("redis", "connection not found: "+connectionID)
 	}
 
 	if client, ok := dbClients[database]; ok {
@@ -41,16 +43,38 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 	baseOpts, hasOptions := m.connManager.options[connectionID]
 	m.connManager.mu.RUnlock()
 	if !hasOptions || baseOpts == nil {
-		return nil, fmt.Errorf("connection options not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("redis", "connection options not found: "+connectionID)
 	}
 
-	newClient := goRedis.NewClient(cloneRedisOptions(baseOpts, database))
+	key := fmt.Sprintf("%s:%d", connectionID, database)
+	result, err, _ := m.connManager.inFlight.Do(key, func() (interface{}, error) {
+		return m.createRedisClient(connectionID, database, baseOpts)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*goRedis.Client), nil
+}
 
+func (m *Module) createRedisClient(connectionID string, database int, baseOpts *goRedis.Options) (*goRedis.Client, error) {
+	// Double-check after singleflight gate — another caller may have created it.
+	m.connManager.mu.RLock()
+	dbClients, exists := m.connManager.connections[connectionID]
+	if exists {
+		if client, ok := dbClients[database]; ok {
+			m.connManager.mu.RUnlock()
+			return client, nil
+		}
+	}
+	m.connManager.mu.RUnlock()
+
+	newClient := goRedis.NewClient(cloneRedisOptions(baseOpts, database))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := newClient.Ping(ctx).Err(); err != nil {
+	err := newClient.Ping(ctx).Err()
+	cancel()
+	if err != nil {
 		newClient.Close()
-		return nil, fmt.Errorf("failed to connect to database %d: %w", database, err)
+		return nil, shared.NewConnectionFailed("redis", fmt.Sprintf("failed to connect to database %d: %s", database, err))
 	}
 
 	m.connManager.mu.Lock()
@@ -59,14 +83,12 @@ func (m *Module) getRedisClient(connectionID string, database int) (*goRedis.Cli
 	dbClients, exists = m.connManager.connections[connectionID]
 	if !exists {
 		newClient.Close()
-		return nil, fmt.Errorf("connection not found: %s", connectionID)
+		return nil, shared.NewConnectionFailed("redis", "connection not found: "+connectionID)
 	}
-
 	if existingClient, ok := dbClients[database]; ok {
 		newClient.Close()
 		return existingClient, nil
 	}
-
 	dbClients[database] = newClient
 	return newClient, nil
 }
@@ -75,20 +97,32 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 	var addr string
 	if req.SshEnabled {
 		sshCfg := sshtunnel.Config{
-			Host:     req.SshHost,
-			Port:     req.SshPort,
-			Username: req.SshUsername,
-			Password: req.SshPassword,
+			Host:           req.SshHost,
+			Port:           req.SshPort,
+			Username:       req.SshUsername,
+			Password:       req.SshPassword,
+			PrivateKeyPath: req.SshPrivateKeyPath,
+			PrivateKeyPem:  req.SshPrivateKeyPem,
+			Passphrase:     req.SshPassphrase,
+			UseAgent:       req.SshUseAgent,
+			HostKeyMode:    req.SshHostKeyMode,
+			KnownHostsPath: req.SshKnownHostsPath,
 		}
 		tunnel := m.connManager.sshTunnels.GetOrCreate(req.ConnectionID, sshCfg)
 		targetAddr := fmt.Sprintf("%s:%d", req.Host, req.Port)
 		localPort, err := tunnel.ConnectAndForward(targetAddr)
 		if err != nil {
-			return "", fmt.Errorf("failed to establish SSH tunnel: %w", err)
+			return "", shared.NewConnectionFailed("redis", "failed to establish SSH tunnel: "+err.Error())
 		}
 		addr = fmt.Sprintf("127.0.0.1:%d", localPort)
 	} else {
 		addr = fmt.Sprintf("%s:%d", req.Host, req.Port)
+	}
+
+	// Configure TLS
+	tlsConfig, err := setupRedisTLS(&req)
+	if err != nil {
+		return "", shared.NewConnectionFailed("redis", "TLS configuration error: "+err.Error())
 	}
 
 	baseOpts := &goRedis.Options{
@@ -97,10 +131,11 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 		DB:           req.Database,
 		Username:     req.Username,
 		DialTimeout:  3 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		PoolSize:     5,
-		MinIdleConns: 1,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		PoolSize:     25,
+		MinIdleConns: 5,
+		TLSConfig:    tlsConfig,
 	}
 	client := goRedis.NewClient(baseOpts)
 
@@ -109,16 +144,21 @@ func (m *Module) RedisConnect(req RedisConnectRequest) (string, error) {
 
 	if err := client.Ping(ctx).Err(); err != nil {
 		client.Close()
-		return "", fmt.Errorf("failed to connect: %w", err)
+		return "", shared.NewConnectionFailed("redis", "failed to connect: "+err.Error())
 	}
 
 	m.connManager.mu.Lock()
 	defer m.connManager.mu.Unlock()
 
 	if existingClients, exists := m.connManager.connections[req.ConnectionID]; exists {
-		for _, existingClient := range existingClients {
+		for db, existingClient := range existingClients {
 			if existingClient != nil {
-				_ = existingClient.Close()
+				if err := existingClient.Close(); err != nil {
+					shared.Logger.Error("error closing existing redis client",
+						slog.String("connection_id", req.ConnectionID),
+						slog.Int("db", db),
+						slog.Any("error", err))
+				}
 			}
 		}
 	}
@@ -135,12 +175,17 @@ func (m *Module) RedisDisconnect(connectionID string) (string, error) {
 
 	dbClients, exists := m.connManager.connections[connectionID]
 	if !exists {
-		return "", fmt.Errorf("connection not found: %s", connectionID)
+		return "", shared.NewConnectionFailed("redis", "connection not found: "+connectionID)
 	}
 
-	for _, client := range dbClients {
+	for db, client := range dbClients {
 		if client != nil {
-			_ = client.Close()
+			if err := client.Close(); err != nil {
+				shared.Logger.Error("error closing redis client",
+					slog.String("connection_id", connectionID),
+					slog.Int("db", db),
+					slog.Any("error", err))
+			}
 		}
 	}
 
@@ -225,7 +270,7 @@ func (m *Module) RedisScanKeys(req RedisScanRequest) (RedisScanResult, error) {
 	cmd := client.Scan(ctx, cursor, pattern, count)
 	keys, nextCursor, err := cmd.Result()
 	if err != nil {
-		return RedisScanResult{}, fmt.Errorf("scan failed: %w", err)
+		return RedisScanResult{}, shared.NewAppError(shared.ErrQueryFailed, "scan failed: "+err.Error(), "redis")
 	}
 
 	items, err := m.getKeysTypeAndTTLBatch(client, ctx, keys)
@@ -252,35 +297,82 @@ func (m *Module) RedisGetKeyDetail(req RedisKeyRequest) (RedisKeyDetail, error) 
 		detail.TTLMS = &ttlMS
 	}
 
+	memUsage, err := client.MemoryUsage(ctx, req.Key).Result()
+	if err == nil && memUsage >= 0 {
+		size := uint64(memUsage)
+		detail.Size = &size
+	}
+	enc, err := client.ObjectEncoding(ctx, req.Key).Result()
+	if err == nil {
+		detail.Encoding = &enc
+	}
+
 	switch keyType {
 	case "string":
-		val, err := client.Get(ctx, req.Key).Result()
+		val, err := client.Get(ctx, req.Key).Bytes()
 		if err == nil {
-			data, _ := json.Marshal(val)
+			detail.IsBinary = isBinaryData(string(val))
+			safeVal, enc := safeStringValue(val)
+			detail.ValueEncoding = enc
+			bv := shared.BinaryValue{Value: safeVal, Encoding: enc}
+			data, _ := json.Marshal(bv)
 			detail.Value = data
 		}
 	case "hash":
 		vals, err := client.HGetAll(ctx, req.Key).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			safeVals, enc := safeMapValue(vals)
+			detail.ValueEncoding = enc
+			// Wrap each hash value in a BinaryValue for frontend detection
+			wrapped := make(map[string]shared.BinaryValue, len(safeVals))
+			for k, v := range safeVals {
+				wrapped[k] = shared.BinaryValue{Value: v, Encoding: enc}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	case "list":
 		vals, err := client.LRange(ctx, req.Key, 0, -1).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			safeVals, enc := safeSliceValue(vals)
+			detail.ValueEncoding = enc
+			wrapped := make([]shared.BinaryValue, len(safeVals))
+			for i, v := range safeVals {
+				wrapped[i] = shared.BinaryValue{Value: v, Encoding: enc}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	case "set":
 		vals, err := client.SMembers(ctx, req.Key).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			safeVals, enc := safeSliceValue(vals)
+			detail.ValueEncoding = enc
+			wrapped := make([]shared.BinaryValue, len(safeVals))
+			for i, v := range safeVals {
+				wrapped[i] = shared.BinaryValue{Value: v, Encoding: enc}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	case "zset":
 		vals, err := client.ZRangeByScoreWithScores(ctx, req.Key, &goRedis.ZRangeBy{Min: "-inf", Max: "+inf"}).Result()
 		if err == nil {
-			data, _ := json.Marshal(vals)
+			entries := make([]redisZSetEntry, len(vals))
+			for i, v := range vals {
+				member, _ := v.Member.(string)
+				entries[i] = redisZSetEntry{Member: member, Score: v.Score}
+			}
+			safeVals, enc := safeZSetValue(entries)
+			detail.ValueEncoding = enc
+			wrapped := make([]map[string]interface{}, len(safeVals))
+			for i, v := range safeVals {
+				wrapped[i] = map[string]interface{}{
+					"member": shared.BinaryValue{Value: v.Member, Encoding: enc},
+					"score":  v.Score,
+				}
+			}
+			data, _ := json.Marshal(wrapped)
 			detail.Value = data
 		}
 	default:
@@ -506,7 +598,7 @@ func (m *Module) getKeysTypeAndTTLBatch(client *goRedis.Client, ctx context.Cont
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		return nil, fmt.Errorf("pipeline exec failed: %w", err)
+		return nil, shared.NewAppError(shared.ErrQueryFailed, "pipeline exec failed: "+err.Error(), "redis")
 	}
 
 	items := make([]RedisKeySummary, len(keys))

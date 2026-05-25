@@ -1,41 +1,24 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-
-const EsDataBrowserPage = lazy(() => import("../../modules/es/pages/DataBrowser"));
-const EsIndexManagerPage = lazy(() => import("../../modules/es/pages/IndexManager"));
-const EsRestConsolePage = lazy(() => import("../../modules/es/pages/RestConsole"));
-const EsSqlQueryPage = lazy(() => import("../../modules/es/pages/SqlQuery"));
-const MysqlSqlQueryPage = lazy(() => import("../../modules/mysql/pages/SqlQuery"));
-const MysqlTableManagerPage = lazy(() => import("../../modules/mysql/pages/TableManager"));
-const RedisBrowserPage = lazy(() => import("../../modules/redis/pages/Browser"));
-const RedisConsolePage = lazy(() => import("../../modules/redis/pages/Console"));
-
-function WorkspaceLoadingFallback() {
-  return (
-    <div className="card mdb-empty-state-card">
-      <span className="muted">Loading...</span>
-    </div>
-  );
-}
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 export default function AppRoutes() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Redirect bare engine paths to their default pages
+  useEffect(() => {
+    if (location.pathname === "/mysql") {
+      navigate("/mysql/tables", { replace: true });
+    } else if (location.pathname === "/redis") {
+      navigate("/redis/browser", { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   return (
-    <Suspense fallback={<WorkspaceLoadingFallback />}>
-      <Routes>
-        <Route path="/" element={null} />
-        <Route path="/data" element={<EsDataBrowserPage />} />
-        <Route path="/sql" element={<EsSqlQueryPage />} />
-        <Route path="/rest" element={<EsRestConsolePage />} />
-        <Route path="/indices" element={<EsIndexManagerPage />} />
-        <Route path="/mysql" element={<Navigate to="/mysql/tables" replace />} />
-        <Route path="/mysql/sql" element={<MysqlSqlQueryPage />} />
-        <Route path="/mysql/tables" element={<MysqlTableManagerPage />} />
-        <Route path="/mysql/table" element={<MysqlTableManagerPage />} />
-        <Route path="/redis" element={<Navigate to="/redis/browser" replace />} />
-        <Route path="/redis/browser" element={<RedisBrowserPage />} />
-        <Route path="/redis/console" element={<RedisConsolePage />} />
-        <Route path="*" element={null} />
-      </Routes>
-    </Suspense>
+    <Routes>
+      <Route path="/mysql" element={<Navigate to="/mysql/tables" replace />} />
+      <Route path="/redis" element={<Navigate to="/redis/browser" replace />} />
+      <Route path="*" element={null} />
+    </Routes>
   );
 }

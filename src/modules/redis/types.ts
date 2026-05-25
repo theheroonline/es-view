@@ -13,6 +13,13 @@ export interface RedisConnection {
   password?: string;
   ssh?: SshTunnelConfig;
   sshPassword?: string;
+  // TLS
+  tlsMode?: string;
+  tlsCaCertPath?: string;
+  tlsClientCertPath?: string;
+  tlsClientKeyPath?: string;
+  // Environment type
+  connectionType?: "development" | "test" | "production";
 }
 
 export interface RedisDatabaseInfo {
@@ -63,10 +70,12 @@ export interface RedisKeyDetail {
   keyType: RedisKeyType | string;
   ttlMs: number | null;
   encoding?: string;
+  valueEncoding?: string; // "utf8" | "base64"
   size?: number | null;
   value: RedisKeyValue;
   truncated: boolean;
   unsupported: boolean;
+  isBinary?: boolean;
 }
 
 export interface RedisCommandResult {

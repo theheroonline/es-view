@@ -5,7 +5,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
 import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import FieldFilterButton from "../../../../../components/FieldFilterButton";
+import FieldFilterButton from "./FieldFilterButton";
 import { logError } from "../../../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../../../state/ElasticsearchContext";
 import { useEsContextMenu } from "../hooks/useEsContextMenu";
@@ -69,17 +69,25 @@ export function EsDataBrowserFeature() {
     setFieldFilter,
     selectedDocs,
     setSelectedDocs,
+    selectedRowId,
+    setSelectedRowId,
     contextMenuRef,
     skipNextAutoQueryRef,
+    showCreateModal,
+    setShowCreateModal,
+    createDocId,
+    setCreateDocId,
+    createDocJson,
+    setCreateDocJson,
   } = useEsDataBrowserState();
 
-  const presets = [
+  const presets = useMemo(() => [
     { label: t("presets.lastHour"), value: [dayjs().subtract(1, "hour"), dayjs()] as [Dayjs, Dayjs] },
     { label: t("presets.last24Hours"), value: [dayjs().subtract(24, "hour"), dayjs()] as [Dayjs, Dayjs] },
     { label: t("presets.last7Days"), value: [dayjs().subtract(7, "day"), dayjs()] as [Dayjs, Dayjs] },
     { label: t("presets.today"), value: [dayjs().startOf("day"), dayjs().endOf("day")] as [Dayjs, Dayjs] },
     { label: t("presets.yesterday"), value: [dayjs().subtract(1, "day").startOf("day"), dayjs().subtract(1, "day").endOf("day")] as [Dayjs, Dayjs] },
-  ];
+  ], [t]);
 
   useEffect(() => {
     dayjs.locale(i18n.language === "zh" ? "zh-cn" : "en");
@@ -201,9 +209,9 @@ export function EsDataBrowserFeature() {
   const total = totalInfo?.value ?? totalInfo ?? 0;
   const totalRelation = totalInfo?.relation;
   const rows = result?.hits?.hits ?? [];
-  const selectedRows = rows.filter((row: any) => selectedDocs.has(row._id));
+  const selectedRows = useMemo(() => rows.filter((row: any) => selectedDocs.has(row._id)), [rows, selectedDocs]);
 
-  const { confirmDeleteDoc, deleteSelectedDocs, openEdit, requestDeleteDoc, submitEdit } = useEsDocumentActions({
+  const { confirmDeleteDoc, deleteSelectedDocs, openEdit, openCreateDoc, requestDeleteDoc, submitEdit, submitCreateDoc } = useEsDocumentActions({
     activeConnection,
     editJson,
     editingDoc,
@@ -219,6 +227,11 @@ export function EsDataBrowserFeature() {
     setResult,
     setSelectedDocs,
     setShowEditModal,
+    createDocId,
+    createDocJson,
+    setShowCreateModal,
+    setCreateDocId,
+    setCreateDocJson,
     t,
   });
 
@@ -269,15 +282,15 @@ export function EsDataBrowserFeature() {
     return fieldFilter.fields.filter((fieldName: string) => filterCandidateFields.includes(fieldName));
   }, [fieldFilter.enabled, fieldFilter.fields, filterCandidateFields]);
 
-  const toggleSelectAllRows = (checked: boolean) => {
+  const toggleSelectAllRows = useCallback((checked: boolean) => {
     if (checked) {
       setSelectedDocs(new Set(rows.map((row: any) => row._id)));
       return;
     }
     setSelectedDocs(new Set());
-  };
+  }, [rows, setSelectedDocs]);
 
-  const toggleSelectRow = (id: string) => {
+  const toggleSelectRow = useCallback((id: string) => {
     setSelectedDocs((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -287,9 +300,9 @@ export function EsDataBrowserFeature() {
       }
       return next;
     });
-  };
+  }, [setSelectedDocs]);
 
-  const copySelectedDocs = () => {
+  const copySelectedDocs = useCallback(() => {
     if (selectedRows.length === 0) return;
     const payload = selectedRows.map((row: any) => ({
       _id: row._id,
@@ -297,21 +310,23 @@ export function EsDataBrowserFeature() {
       ...row._source,
     }));
     navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-  };
+  }, [selectedRows]);
 
-  const renderCellValue = (value: unknown, truncate = true) => {
-    if (value === null || value === undefined) return <span className="muted">-</span>;
+  const renderCellValue = useMemo(() => {
+    return (value: unknown, truncate = true) => {
+      if (value === null || value === undefined) return <span className="muted">-</span>;
 
-    const stringValue = typeof value === "object" ? JSON.stringify(value) : String(value);
-    const shouldTruncate = truncate && stringValue.length > 80;
-    const preview = shouldTruncate ? `${stringValue.substring(0, 80)}...` : stringValue;
+      const stringValue = typeof value === "object" ? JSON.stringify(value) : String(value);
+      const shouldTruncate = truncate && stringValue.length > 80;
+      const preview = shouldTruncate ? `${stringValue.substring(0, 80)}...` : stringValue;
 
-    return (
-      <span className="truncated-cell" title={stringValue} data-truncated={shouldTruncate ? "true" : "false"}>
-        <span className="truncated-text">{preview}</span>
-      </span>
-    );
-  };
+      return (
+        <span className="truncated-cell" title={stringValue} data-truncated={shouldTruncate ? "true" : "false"}>
+          <span className="truncated-text">{preview}</span>
+        </span>
+      );
+    };
+  }, []);
 
   return (
     <ConfigProvider locale={i18n.language === "zh" ? zhCN : enUS}>
@@ -324,6 +339,7 @@ export function EsDataBrowserFeature() {
           onExecute={execute}
           onSelectIndex={handleIndexChange}
           onShowFilters={showConditions}
+          onCreateDoc={openCreateDoc}
         />
 
         <EsQueryConditionsPanel
@@ -340,16 +356,12 @@ export function EsDataBrowserFeature() {
           onToggleCondition={toggleCondition}
         />
 
-        <div className="toolbar" style={{ margin: "0 0 16px 0", border: "none", background: "transparent", padding: 0, position: "relative" }}>
+        <div className="toolbar" style={{ margin: "0 0 8px 0", border: "none", background: "transparent", padding: 0, position: "relative" }}>
           <div className="flex-gap items-center">
             <div className="flex-gap items-center" style={{ background: "white", padding: "6px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
               <button
                 className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  if (page > 1) {
-                    setPage((prev) => Math.max(1, prev - 1));
-                  }
-                }}
+                onClick={() => setPage((prev) => prev - 1)}
                 disabled={loading || page <= 1}
                 style={{ padding: "4px 12px" }}
               >
@@ -380,7 +392,7 @@ export function EsDataBrowserFeature() {
                 onClick={() => {
                   setPage((prev) => prev + 1);
                 }}
-                disabled={loading}
+                disabled={loading || (total > 0 && page >= Math.ceil(total / size))}
                 style={{ padding: "4px 12px" }}
               >
                 {t("dataBrowser.nextPage")}
@@ -434,6 +446,7 @@ export function EsDataBrowserFeature() {
           renderCellValue={renderCellValue}
           rows={rows}
           selectedDocs={selectedDocs}
+          selectedRowId={selectedRowId}
           selectedRows={selectedRows}
           t={t}
           viewMode={viewMode}
@@ -443,6 +456,7 @@ export function EsDataBrowserFeature() {
           onEditDoc={openEdit}
           onSelectAllRows={toggleSelectAllRows}
           onSelectRow={toggleSelectRow}
+          onSelectRowHighlight={setSelectedRowId}
           onSetViewMode={setViewMode}
           onToggleRowExpand={toggleRowExpand}
           onRowContextMenu={handleContextMenu}
@@ -459,7 +473,7 @@ export function EsDataBrowserFeature() {
           onCopyValue={copyValue}
           onDeleteRow={handleDeleteRow}
           onEditRow={handleEditRow}
-          onToggleRowExpand={() => toggleRowExpand(contextMenu.row._id)}
+          onToggleRowExpand={() => { if (contextMenu.row?._id) toggleRowExpand(contextMenu.row._id); }}
         />
 
         <EsDataBrowserDialogs
@@ -476,6 +490,13 @@ export function EsDataBrowserFeature() {
             void confirmDeleteDoc(docIndex, docId);
           }}
           onSubmitEdit={submitEdit}
+          showCreateModal={showCreateModal}
+          createDocId={createDocId}
+          createDocJson={createDocJson}
+          onCreateDocId={setCreateDocId}
+          onCreateDocJson={setCreateDocJson}
+          onCloseCreateModal={() => setShowCreateModal(false)}
+          onSubmitCreateDoc={submitCreateDoc}
         />
       </div>
     </ConfigProvider>

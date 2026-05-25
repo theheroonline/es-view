@@ -23,6 +23,14 @@ interface EsDataBrowserDialogsProps {
   onCloseEditModal: () => void;
   onConfirmDelete: (docIndex: string, docId: string) => void;
   onSubmitEdit: () => void;
+  // Create document props
+  showCreateModal?: boolean;
+  createDocId?: string;
+  createDocJson?: string;
+  onCreateDocId?: (v: string) => void;
+  onCreateDocJson?: (v: string) => void;
+  onCloseCreateModal?: () => void;
+  onSubmitCreateDoc?: () => void;
 }
 
 export function EsDataBrowserDialogs({
@@ -37,6 +45,13 @@ export function EsDataBrowserDialogs({
   onCloseEditModal,
   onConfirmDelete,
   onSubmitEdit,
+  showCreateModal,
+  createDocId,
+  createDocJson,
+  onCreateDocId,
+  onCreateDocJson,
+  onCloseCreateModal,
+  onSubmitCreateDoc,
 }: EsDataBrowserDialogsProps) {
   return (
     <>
@@ -54,8 +69,9 @@ export function EsDataBrowserDialogs({
             alignItems: "center",
             justifyContent: "center",
           }}
+          onClick={onCloseEditModal}
         >
-          <div className="card anim-fade-in" style={{ width: "600px", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }}>
+          <div className="card anim-fade-in" style={{ width: "600px", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }} onClick={(event) => event.stopPropagation()}>
             <div className="card-header">
               <h3 className="card-title">{t("dataBrowser.editDocument", { id: editingDoc._id })}</h3>
             </div>
@@ -103,6 +119,55 @@ export function EsDataBrowserDialogs({
               >
                 {t("common.delete")}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          onClick={onCloseCreateModal}
+        >
+          <div className="card anim-fade-in" style={{ width: "600px", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }} onClick={(event) => event.stopPropagation()}>
+            <div className="card-header">
+              <h3 className="card-title">{t("dataBrowser.createDocument")}</h3>
+            </div>
+            <div className="card-body" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <div style={{ marginBottom: "8px" }}>
+                <label style={{ fontSize: "12px", color: "#64748b" }}>Document ID {t("common.optional")}</label>
+                <input
+                  className="form-control"
+                  value={createDocId ?? ""}
+                  onChange={(event) => onCreateDocId?.(event.target.value)}
+                  placeholder={t("dataBrowser.autoGenerateId")}
+                />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ fontSize: "12px", color: "#64748b" }}>Document Source (JSON)</label>
+                <textarea
+                  className="json-editor"
+                  style={{ flex: 1, minHeight: "300px" }}
+                  value={createDocJson ?? ""}
+                  onChange={(event) => onCreateDocJson?.(event.target.value)}
+                />
+              </div>
+              {error && <p className="text-danger" style={{ marginTop: "8px" }}>{error}</p>}
+              <div className="flex-gap justify-end" style={{ marginTop: "16px" }}>
+                <button className="btn btn-secondary" onClick={onCloseCreateModal}>{t("common.cancel")}</button>
+                <button className="btn btn-primary" onClick={onSubmitCreateDoc}>{t("dataBrowser.create")}</button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"sync"
 
@@ -9,22 +10,51 @@ import (
 
 // MysqlConnectRequest represents MySQL connection parameters.
 type MysqlConnectRequest struct {
-	ConnectionID string `json:"connectionId"`
-	Host         string `json:"host"`
-	Port         uint16 `json:"port"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	Database     string `json:"database"`
-	SshEnabled   bool   `json:"sshEnabled"`
-	SshHost      string `json:"sshHost"`
-	SshPort      int    `json:"sshPort"`
-	SshUsername  string `json:"sshUsername"`
-	SshPassword  string `json:"sshPassword"`
+	ConnectionID   string `json:"connectionId"`
+	Host           string `json:"host"`
+	Port           uint16 `json:"port"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	Database       string `json:"database"`
+	SshEnabled     bool   `json:"sshEnabled"`
+	SshHost        string `json:"sshHost"`
+	SshPort        int    `json:"sshPort"`
+	SshUsername    string `json:"sshUsername"`
+	SshPassword    string `json:"sshPassword"`
+	// SSH key authentication
+	SshPrivateKeyPath string `json:"sshPrivateKeyPath"`
+	SshPrivateKeyPem  string `json:"sshPrivateKeyPem"`
+	SshPassphrase     string `json:"sshPassphrase"`
+	SshUseAgent       bool   `json:"sshUseAgent"`
+	// SSH host key verification
+	SshHostKeyMode    string `json:"sshHostKeyMode"`
+	SshKnownHostsPath string `json:"sshKnownHostsPath"`
+	// MySQL TLS
+	TlsMode           string `json:"tlsMode"` // "" | "required" | "verify_ca" | "verify_identity" | "custom"
+	TlsCaCertPath     string `json:"tlsCaCertPath"`
+	TlsCaCertPem      string `json:"tlsCaCertPem"`
+	TlsClientCertPath string `json:"tlsClientCertPath"`
+	TlsClientCertPem  string `json:"tlsClientCertPem"`
+	TlsClientKeyPath  string `json:"tlsClientKeyPath"`
+	TlsClientKeyPem   string `json:"tlsClientKeyPem"`
+	// Connection bootstrap
+	InitSql         string            `json:"initSql"`
+	IgnoreSqlErrors bool              `json:"ignoreSqlErrors"`
+	DriverParams    map[string]string `json:"driverParams"` // custom DSN params
+	// Pool settings
+	MaxOpenConns   int `json:"maxOpenConns"`   // 0 = default 50
+	MaxIdleConns   int `json:"maxIdleConns"`   // 0 = default 10
+	ConnMaxLifetime int `json:"connMaxLifetime"` // seconds, 0 = default 300
+	// Auto-reconnect
+	AutoReconnect        bool `json:"autoReconnect"`
+	MaxReconnectAttempts int  `json:"maxReconnectAttempts"`
+	ReconnectInterval    int  `json:"reconnectInterval"` // seconds between reconnect attempts
 }
 
 // MysqlQueryResult represents the result of a query.
 type MysqlQueryResult struct {
 	Columns      []string        `json:"columns"`
+	ColumnTypes  []string        `json:"columnTypes"`
 	Rows         [][]interface{} `json:"rows"`
 	AffectedRows int64           `json:"affectedRows"`
 	IsResultSet  bool            `json:"isResultSet"`
@@ -93,15 +123,19 @@ type MysqlImportSqlRequest struct {
 
 // MysqlConnectionManager manages MySQL connections.
 type MysqlConnectionManager struct {
-	mu          sync.RWMutex
-	connections map[string]*sql.DB
-	sshTunnels  *sshtunnel.Manager
+	mu             sync.RWMutex
+	connections    map[string]*sql.DB
+	heartbeats     map[string]context.CancelFunc // stop funcs for heartbeat goroutines
+	connectReqs    map[string]MysqlConnectRequest // original connect requests for auto-reconnect
+	sshTunnels     *sshtunnel.Manager
 }
 
 // NewMysqlConnectionManager creates a new manager.
 func NewMysqlConnectionManager() *MysqlConnectionManager {
 	return &MysqlConnectionManager{
 		connections: make(map[string]*sql.DB),
+		heartbeats:  make(map[string]context.CancelFunc),
+		connectReqs: make(map[string]MysqlConnectRequest),
 		sshTunnels:  sshtunnel.NewManager(),
 	}
 }
@@ -109,11 +143,17 @@ func NewMysqlConnectionManager() *MysqlConnectionManager {
 func (m *MysqlConnectionManager) CloseAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, cancel := range m.heartbeats {
+		if cancel != nil {
+			cancel()
+		}
+	}
 	for _, db := range m.connections {
 		if db != nil {
 			_ = db.Close()
 		}
 	}
 	m.connections = make(map[string]*sql.DB)
+	m.heartbeats = make(map[string]context.CancelFunc)
 	m.sshTunnels.CloseAll()
 }

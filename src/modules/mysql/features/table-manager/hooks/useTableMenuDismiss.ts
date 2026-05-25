@@ -39,6 +39,6 @@ export function useTableMenuDismiss({
   useFloatingMenuDismiss(
     columnMenuOpen,
     closeColumnMenu,
-    { rootSelector: ".tm-data-actions-wrap, .tm-column-menu" }
+    { rootSelector: ".tm-toolbar-actions, .tm-column-menu-dropdown, .tm-column-menu-body" }
   );
 }

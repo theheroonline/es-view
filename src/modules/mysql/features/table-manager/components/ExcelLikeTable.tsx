@@ -1,7 +1,10 @@
 import { memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { DEFAULT_COLUMN_WIDTH, isCellSelected, useExcelTable } from "../hooks/useExcelTable";
+import { DEFAULT_COLUMN_WIDTH, MIN_COLUMN_WIDTH, isCellSelected, useExcelTable } from "../hooks/useExcelTable";
 import { useInlineEditor } from "../hooks/useInlineEditor";
+import { decodeCellValue } from "../../../../../lib/binaryValue";
+import { detectValueType, getTypeColor, formatTypeLabel } from "../../../lib/detectValueType";
+import type { ColumnType } from "../../../types/columnTypes";
 
 /**
  * ExcelLikeTable 组件
@@ -23,15 +26,17 @@ import { useInlineEditor } from "../hooks/useInlineEditor";
 interface ExcelLikeTableProps {
   columns: string[];
   data: any[][];
-  selectedCellKeySet: Set<string>;
-  selectedRowIndex: number | null;
+  selectedCellKeySet?: Set<string>;
+  selectedRowIndex?: number | null;
   loading?: boolean;
   tableKey?: string; // 用于持久化列配置
+  columnTypes?: ColumnType[]; // 列类型信息，与 columns 一一对应
+  columnTypeLabels?: string[]; // 列类型显示名称（如 "INT", "VARCHAR(255)"）
 
-  // Event handlers
-  onCellClick: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
-  onRowContextMenu: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, column: string, cell: unknown) => void;
-  onSaveCell: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>;
+  // Event handlers (all optional — no-op defaults provided)
+  onCellClick?: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
+  onRowContextMenu?: (event: MouseEvent<HTMLTableCellElement>, rowIndex: number, column: string, cell: unknown) => void;
+  onSaveCell?: (rowIndex: number, columnIndex: number, columnName: string, newValue: string) => Promise<void>;
 }
 
 function ExcelLikeTableInner({
@@ -41,15 +46,33 @@ function ExcelLikeTableInner({
   selectedRowIndex,
   loading = false,
   tableKey,
+  columnTypes,
+  columnTypeLabels,
   onCellClick,
   onRowContextMenu,
   onSaveCell,
 }: ExcelLikeTableProps) {
   const { t } = useTranslation();
 
+  // Internal fallback selection state (used when no external selection is provided)
+  const [internalSelectedRowIndex, setInternalSelectedRowIndex] = useState<number | null>(null);
+  const [internalSelectedKeySet, setInternalSelectedKeySet] = useState<Set<string>>(new Set());
+
   // 拖拽状态
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-  const [resizeStartX, setResizeStartX] = useState<number>(0);
+  const activeResizeHandlersRef = useRef<{ mouseMove: ((e: globalThis.MouseEvent) => void) | null; mouseUp: (() => void) | null }>({
+    mouseMove: null,
+    mouseUp: null,
+  });
+
+  // 清理拖拽监听器（组件卸载时）
+  useEffect(() => {
+    return () => {
+      const { mouseMove, mouseUp } = activeResizeHandlersRef.current;
+      if (mouseMove) document.removeEventListener("mousemove", mouseMove);
+      if (mouseUp) document.removeEventListener("mouseup", mouseUp);
+    };
+  }, []);
 
   // 行内编辑状态
   const { editingCell, startEditing, cancelEdit } = useInlineEditor();
@@ -67,22 +90,29 @@ function ExcelLikeTableInner({
   const handleCellClick = useCallback(
     (e: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => {
       e.stopPropagation();
-      onCellClick(e, rowIndex, columnIndex);
+      if (onCellClick) {
+        onCellClick(e, rowIndex, columnIndex);
+      } else {
+        setInternalSelectedKeySet(new Set([`${rowIndex}:${columnIndex}`]));
+        setInternalSelectedRowIndex(rowIndex);
+      }
     },
     [onCellClick]
   );
 
   const handleCellDoubleClick = useCallback(
     (rowIndex: number, columnIndex: number, columnName: string, cellValue: unknown) => {
-      startEditing(rowIndex, columnIndex, columnName, cellValue);
+      if (onSaveCell) {
+        startEditing(rowIndex, columnIndex, columnName, cellValue);
+      }
     },
-    [startEditing]
+    [onSaveCell, startEditing]
   );
 
   const handleCellContextMenu = useCallback(
     (e: MouseEvent<HTMLTableCellElement>, rowIndex: number, columnName: string, cellValue: unknown) => {
       e.stopPropagation();
-      onRowContextMenu(e, rowIndex, columnName, cellValue);
+      onRowContextMenu?.(e, rowIndex, columnName, cellValue);
     },
     [onRowContextMenu]
   );
@@ -90,7 +120,7 @@ function ExcelLikeTableInner({
   const handleInputKeyDown = useCallback(
     async (e: React.KeyboardEvent<HTMLInputElement>) => {
       const inputEl = editInputRef.current as HTMLInputElement;
-      if (!inputEl || !editingCell) return;
+      if (!inputEl || !editingCell || !onSaveCell) return;
 
       if (e.key === "Escape") {
         e.preventDefault();
@@ -133,7 +163,7 @@ function ExcelLikeTableInner({
 
   const handleInputBlur = useCallback(() => {
     const inputEl = editInputRef.current as HTMLInputElement;
-    if (!inputEl || !editingCell) return;
+    if (!inputEl || !editingCell || !onSaveCell) return;
 
     const newValue = inputEl.value;
     const originalValue = editingCell.originalValue === null ? "" : String(editingCell.originalValue);
@@ -155,6 +185,7 @@ function ExcelLikeTableInner({
     virtualRows,
     rows,
     tableContainerRef,
+    theadRef,
     columnOrder,
     columnWidths,
     setColumnOrder,
@@ -177,9 +208,36 @@ function ExcelLikeTableInner({
     [columnOrder, columns]
   );
 
+  // 预计算列名到索引的映射，避免渲染循环中重复 indexOf
+  const columnIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < columns.length; i++) {
+      map.set(columns[i], i);
+    }
+    return map;
+  }, [columns]);
+
+  // 列类型映射：列名 -> ColumnType
+  const columnTypeMap = useMemo(() => {
+    const map = new Map<string, { category: ColumnType; label: string }>();
+    for (let i = 0; i < columns.length; i++) {
+      const category = columnTypes?.[i] ?? "string";
+      const label = columnTypeLabels?.[i] ?? columns[i];
+      map.set(columns[i], { category, label });
+    }
+    return map;
+  }, [columns, columnTypes, columnTypeLabels]);
+
   // ==================== 列拖拽处理 ====================
 
   const handleHeaderDragStart = (e: React.DragEvent<HTMLTableCellElement>, columnName: string) => {
+    // Check if drag originated from the resizer area (use elementUnderPoint since e.target is always <th>)
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el?.closest(".excel-table-column-resizer")) {
+      e.preventDefault();
+      return;
+    }
+
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", columnName);
     setDraggedColumn(columnName);
@@ -217,21 +275,28 @@ function ExcelLikeTableInner({
 
   const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>, columnName: string) => {
     e.preventDefault();
-    setResizeStartX(e.clientX);
+    e.stopPropagation();
+
+    const currentWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
+    const startX = e.clientX;
+    let lastWidth = currentWidth;
 
     const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
-      const delta = moveEvent.clientX - resizeStartX;
-      const currentWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
-      const newWidth = Math.max(50, currentWidth + delta);
-      setColumnWidth(columnName, newWidth);
-      setResizeStartX(moveEvent.clientX);
+      const delta = moveEvent.clientX - startX;
+      lastWidth = Math.max(MIN_COLUMN_WIDTH, currentWidth + delta);
+      setColumnWidth(columnName, lastWidth);
     };
 
     const handleMouseUp = () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      activeResizeHandlersRef.current.mouseMove = null;
+      activeResizeHandlersRef.current.mouseUp = null;
+      setColumnWidth(columnName, lastWidth, true);
     };
 
+    activeResizeHandlersRef.current.mouseMove = handleMouseMove;
+    activeResizeHandlersRef.current.mouseUp = handleMouseUp;
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
@@ -251,18 +316,22 @@ function ExcelLikeTableInner({
       <div ref={tableContainerRef} className="excel-table-scroller">
         <table className="excel-table">
           {/* 表头 - 始终固定显示 */}
-          <thead className="excel-table-head" style={{ position: "sticky", top: 0, zIndex: 10 }}>
+          <thead ref={theadRef} className="excel-table-head" style={{ position: "sticky", top: 0, zIndex: 10 }}>
             {headerGroups.map((headerGroup) => (
               <tr key={headerGroup.id} className="excel-table-header-row">
+                {/* 行号列 */}
+                <th className="excel-table-header-cell-rownum">#</th>
                 {/* 数据列 */}
                 {headerGroup.headers.map((header) => {
                   const columnName = header.column.columnDef.header?.toString() || "";
                   const columnWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
                   const isDragging = draggedColumn === columnName;
+                  const typeInfo = columnTypeMap.get(columnName);
 
                   return (
                     <th
                       key={header.id}
+                      data-column={columnName}
                       className={`excel-table-header-cell ${isDragging ? "excel-table-header-cell-dragging" : ""}`}
                       draggable
                       onDragStart={(e) => handleHeaderDragStart(e, columnName)}
@@ -273,6 +342,9 @@ function ExcelLikeTableInner({
                     >
                       <div className="excel-table-header-content">
                         <span>{columnName}</span>
+                        {typeInfo && (
+                          <span className="excel-table-header-type">{formatTypeLabel(typeInfo.label)}</span>
+                        )}
                         {/* 列宽调整分隔符 */}
                         <div
                           className="excel-table-column-resizer"
@@ -292,7 +364,7 @@ function ExcelLikeTableInner({
             {virtualPaddingTop > 0 && (
               <tr aria-hidden="true">
                 <td
-                  colSpan={Math.max(visibleOrderedColumns.length, 1)}
+                  colSpan={Math.max(visibleOrderedColumns.length + 1, 1)}
                   style={{
                     height: `${virtualPaddingTop}px`,
                     padding: 0,
@@ -310,11 +382,8 @@ function ExcelLikeTableInner({
                 if (!row) return null;
 
                 const rowIndex = row.original._rowIndex;
-                const isRowSelected =
-                  selectedRowIndex !== null &&
-                  selectedRowIndex === rowIndex &&
-                  columns.length > 0 &&
-                  columns.every((_, index) => selectedCellKeySet.has(`${rowIndex}:${index}`));
+                const effectiveSelectedRowIndex = selectedRowIndex ?? internalSelectedRowIndex;
+                const isRowSelected = effectiveSelectedRowIndex !== null && effectiveSelectedRowIndex === rowIndex;
 
                 return (
                   <tr
@@ -327,24 +396,36 @@ function ExcelLikeTableInner({
                     }}
                     className={`excel-table-row ${isRowSelected ? "excel-table-row-selected" : ""}`}
                   >
+                    {/* 行号列 */}
+                    <td className="excel-table-cell-rownum">{rowIndex + 1}</td>
                     {/* 数据单元格 */}
                     {visibleOrderedColumns.map((columnName) => {
-                      const columnIndex = columns.indexOf(columnName);
+                      const columnIndex = columnIndexMap.get(columnName) ?? 0;
                       const cellValue = data[rowIndex]?.[columnIndex];
-                      const isSelected = isCellSelected(rowIndex, columnIndex, selectedCellKeySet);
+                      const isSelected = isCellSelected(rowIndex, columnIndex, selectedCellKeySet ?? internalSelectedKeySet);
                       const columnWidth = columnWidths[columnName] || DEFAULT_COLUMN_WIDTH;
                       const isEditing =
                         editingCell?.rowIndex === rowIndex &&
                         editingCell?.columnIndex === columnIndex;
 
+                      const typeInfo = columnTypeMap.get(columnName);
+                      const { category, align } = detectValueType(cellValue, typeInfo?.category);
+                      const cellColor = getTypeColor(category, cellValue === null);
+
+                      const cellClass = [
+                        "excel-table-cell",
+                        isSelected && "excel-table-cell-selected",
+                        isEditing && "excel-table-cell-editing",
+                        `excel-table-cell-${category}`,
+                      ].filter(Boolean).join(" ");
+
                       return (
                         <td
                           key={`cell-${rowIndex}-${columnName}`}
-                          className={`excel-table-cell ${isSelected ? "excel-table-cell-selected" : ""} ${
-                            isEditing ? "excel-table-cell-editing" : ""
-                          }`}
-                          title={cellValue === null ? "NULL" : String(cellValue)}
-                          style={{ width: columnWidth }}
+                          data-column={columnName}
+                          className={cellClass}
+                          title={cellValue === null ? "NULL" : decodeCellValue(cellValue)}
+                          style={{ width: columnWidth, color: cellColor, textAlign: align }}
                           onClick={(e) => handleCellClick(e, rowIndex, columnIndex)}
                           onDoubleClick={() => handleCellDoubleClick(rowIndex, columnIndex, columnName, cellValue)}
                           onContextMenu={(e) => handleCellContextMenu(e, rowIndex, columnName, cellValue)}
@@ -364,7 +445,7 @@ function ExcelLikeTableInner({
                           ) : cellValue === null ? (
                             <span className="excel-table-cell-null">NULL</span>
                           ) : (
-                            String(cellValue)
+                            decodeCellValue(cellValue)
                           )}
                         </td>
                       );
@@ -374,7 +455,7 @@ function ExcelLikeTableInner({
               })
             ) : (
               <tr>
-                <td colSpan={columns.length} className="excel-table-cell" style={{ textAlign: "center", padding: "20px" }}>
+                <td colSpan={columns.length + 1} className="excel-table-cell" style={{ textAlign: "center", padding: "20px" }}>
                   {loading ? t("common.loading") : t("common.noData")}
                 </td>
               </tr>
@@ -383,7 +464,7 @@ function ExcelLikeTableInner({
             {virtualPaddingBottom > 0 && (
               <tr aria-hidden="true">
                 <td
-                  colSpan={Math.max(visibleOrderedColumns.length, 1)}
+                  colSpan={Math.max(visibleOrderedColumns.length + 1, 1)}
                   style={{
                     height: `${virtualPaddingBottom}px`,
                     padding: 0,

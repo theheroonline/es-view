@@ -8,6 +8,7 @@ interface EsDataBrowserToolbarProps {
   onExecute: () => void;
   onSelectIndex: (index: string) => void;
   onShowFilters: () => void;
+  onCreateDoc?: () => void;
 }
 
 export function EsDataBrowserToolbar({
@@ -18,11 +19,12 @@ export function EsDataBrowserToolbar({
   onExecute,
   onSelectIndex,
   onShowFilters,
+  onCreateDoc,
 }: EsDataBrowserToolbarProps) {
   return (
     <div className="card" style={{ flex: "0 0 auto" }}>
-      <div className="card-body" style={{ display: "grid", gap: "12px" }}>
-        <div className="module-toolbar-grid" style={{ display: "flex", gap: "12px", alignItems: "flex-end" }}>
+      <div className="card-body" style={{ display: "grid", gap: "8px" }}>
+        <div className="module-toolbar-grid" style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
           <div className="module-toolbar-field" style={{ flex: "0 0 auto" }}>
             <label>{t("dataBrowser.selectIndex")}</label>
             <div style={{ position: "relative", display: "flex", alignItems: "center", width: "200px" }}>
@@ -75,6 +77,11 @@ export function EsDataBrowserToolbar({
             <button className="btn btn-secondary btn-sm" onClick={onShowFilters} disabled={loading}>
               <span>🔎</span> {t("dataBrowser.filter")}
             </button>
+            {onCreateDoc && (
+              <button className="btn btn-secondary btn-sm" onClick={onCreateDoc} disabled={loading}>
+                <span>+</span> {t("dataBrowser.create")}
+              </button>
+            )}
           </div>
         </div>
       </div>

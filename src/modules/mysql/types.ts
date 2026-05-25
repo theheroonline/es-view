@@ -11,6 +11,20 @@ export interface MysqlConnection {
   password?: string;
   ssh?: SshTunnelConfig;
   sshPassword?: string;
+  // TLS
+  tlsMode?: string;
+  tlsCaCertPath?: string;
+  tlsClientCertPath?: string;
+  tlsClientKeyPath?: string;
+  // Bootstrap
+  initSql?: string;
+  ignoreSqlErrors?: boolean;
+  // Driver params
+  driverParams?: Record<string, string>;
+  // Auto-reconnect
+  autoReconnect?: boolean;
+  maxReconnectAttempts?: number;
+  reconnectInterval?: number;
 }
 
 export interface DatabaseMeta {
@@ -37,6 +51,9 @@ export interface IndexMeta {
   primary: boolean;
   indexType: string;
 }
+
+// Re-export binary value utilities from shared lib
+export { isBinaryCellValue, decodeCellValue, type BinaryCellValue } from "../../lib/binaryValue";
 
 export type MysqlFilterOperator =
   | "eq"
@@ -79,14 +96,33 @@ export interface MysqlOpenedTable {
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
   visibleColumns?: string[];
+  page?: number;
+  pageSize?: number;
 }
 
 export function getMysqlOpenedTableKey(database: string, table: string) {
   return `${database}::${table}`;
 }
 
+export function getMysqlOpenedTableTabKey(database: string, table: string, view: string) {
+  return `${database}::${table}::${view}`;
+}
+
+export interface MysqlTableDataCacheEntry {
+  columns: string[];
+  rows: Array<Array<unknown>>;
+  total: number;
+  page: number;
+  pageSize: number;
+  columnMeta: ColumnMeta[];
+  tableInfo: { columns: ColumnMeta[]; rowCount: number; info: unknown } | null;
+  dataColumns: string[];
+  cachedAt: number;
+}
+
 export interface MysqlQueryResult {
   columns: string[];
+  columnTypes?: string[];
   rows: Array<Array<unknown>>;
   affectedRows: number;
   isResultSet: boolean;

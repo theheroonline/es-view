@@ -1,9 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMysqlContext } from "../../../state/MysqlContext";
-import type { MysqlFilterOperator } from "../types";
-import { getMysqlOpenedTableKey } from "../types";
+import { getMysqlOpenedTableTabKey } from "../types";
 import { AddRowModal } from "../features/table-manager/components/AddRowModal";
 import { BatchEditModal } from "../features/table-manager/components/BatchEditModal";
 import { ColumnEditModal } from "../features/table-manager/components/ColumnEditModal";
@@ -37,14 +36,14 @@ import { useTableSelectionActions } from "../features/table-manager/hooks/useTab
 import { useTableSqlExecution } from "../features/table-manager/hooks/useTableSqlExecution";
 import { useTableTreeMenuActions } from "../features/table-manager/hooks/useTableTreeMenuActions";
 import { useTableManagerState } from "../features/table-manager/state/useTableManagerState";
+import { getDbTypeCategory } from "../lib/detectValueType";
+import type { ColumnType } from "../types/columnTypes";
 import {
+  buildFilterOperators,
   defaultDataState,
   escapeSqlIdentifier,
   mysqlColumnTypeOptions,
 } from "../features/table-manager/utils";
-import {
-  type RightPanelTab,
-} from "../features/table-manager/types";
 
 export default function MysqlTableManager() {
   const MAX_SHIFT_SELECTION_CELLS = 5000;
@@ -65,7 +64,9 @@ export default function MysqlTableManager() {
     openedTables,
     setOpenedTables,
     activeOpenedTableKey,
-    setActiveOpenedTableKey
+    setActiveOpenedTableKey,
+    saveTableDataCache,
+    getTableDataCache,
   } = useMysqlContext();
   const {
     selectedTableInfo,
@@ -89,6 +90,7 @@ export default function MysqlTableManager() {
     selectedOverviewTablesRef,
     latestDataRequestRef,
     activeDataRequestKeyRef,
+    currentLoadingTableKeyRef,
     dataState,
     setDataState,
     dataColumnMeta,
@@ -183,7 +185,6 @@ export default function MysqlTableManager() {
     createTableModal,
     setCreateTableModal,
     createTableError,
-    setCreateTableError,
     createTableLoading,
     createTableSuccess,
     setCreateTableSuccess,
@@ -193,6 +194,7 @@ export default function MysqlTableManager() {
     setEditingRows,
     handleAddColumn,
     handleDeleteColumn,
+    openCreateTable,
     handleCreateTable
   } = useCreateTable({
     connectionId,
@@ -201,26 +203,15 @@ export default function MysqlTableManager() {
     onError: (err) => setError(err instanceof Error ? err.message : String(err))
   });
 
-  const activeOpenedTable = activeOpenedTableKey
-    ? openedTables.find((item) => getMysqlOpenedTableKey(item.database, item.table) === activeOpenedTableKey) ?? null
-    : null;
+  const activeOpenedTable = useMemo(() => {
+    return activeOpenedTableKey
+      ? openedTables.find((item) => getMysqlOpenedTableTabKey(item.database, item.table, item.view) === activeOpenedTableKey) ?? null
+      : null;
+  }, [activeOpenedTableKey, openedTables]);
 
-  const filterOperators: Array<{ value: MysqlFilterOperator; label: string }> = [
-    { value: "eq", label: t("mysql.tableManager.operatorEq") },
-    { value: "ne", label: t("mysql.tableManager.operatorNe") },
-    { value: "gt", label: t("mysql.tableManager.operatorGt") },
-    { value: "gte", label: t("mysql.tableManager.operatorGte") },
-    { value: "lt", label: t("mysql.tableManager.operatorLt") },
-    { value: "lte", label: t("mysql.tableManager.operatorLte") },
-    { value: "between", label: t("mysql.tableManager.operatorBetween") },
-    { value: "contains", label: t("mysql.tableManager.operatorContains") },
-    { value: "startsWith", label: t("mysql.tableManager.operatorStartsWith") },
-    { value: "endsWith", label: t("mysql.tableManager.operatorEndsWith") },
-    { value: "isNull", label: t("mysql.tableManager.operatorIsNull") },
-    { value: "isNotNull", label: t("mysql.tableManager.operatorIsNotNull") },
-    { value: "emptyString", label: t("mysql.tableManager.operatorEmptyString") },
-    { value: "notEmptyString", label: t("mysql.tableManager.operatorNotEmptyString") }
-  ];
+  const displayPanelTab = activeOpenedTable?.view ?? rightPanelTab;
+
+  const filterOperators = buildFilterOperators(t);
 
   const activeFilterTree = activeOpenedTable?.filterTree ?? null;
   const overviewTables = tablesByDb[expandedDatabase ?? ""] ?? [];
@@ -305,6 +296,8 @@ export default function MysqlTableManager() {
     setSortDraft,
     filterDraftTree,
     setError,
+    saveTableDataCache,
+    dataColumnMeta,
   });
 
   const {
@@ -328,7 +321,6 @@ export default function MysqlTableManager() {
     refreshDatabases,
     refreshTablesForDb,
     handleOpenTable,
-    setOpenedTableView,
   } = useTableLifecycleActions({
     connectionId,
     expandedDatabase,
@@ -357,6 +349,8 @@ export default function MysqlTableManager() {
     fetchData,
     latestDataRequestRef,
     activeDataRequestKeyRef,
+    saveTableDataCache,
+    currentLoadingTableKeyRef,
   });
 
   useTableLifecycleEffects({
@@ -371,7 +365,7 @@ export default function MysqlTableManager() {
     latestDataRequestRef,
     activeDataRequestKeyRef,
     setSelectedTableInfo,
-    setDataState: (next) => setDataState(next),
+    setDataState,
     setDataColumnMeta,
     clearOverviewTableSelection,
     expandedDatabase,
@@ -382,6 +376,8 @@ export default function MysqlTableManager() {
     setSelectedTable,
     setRightPanelTab,
     defaultDataState,
+    getTableDataCache,
+    setOpenedTables,
   });
 
 
@@ -416,6 +412,7 @@ export default function MysqlTableManager() {
     setAddRowModalOpen,
     setAddRowFormData,
     setAddRowError,
+    saveTableDataCache,
   });
 
   const {
@@ -525,9 +522,30 @@ export default function MysqlTableManager() {
 
 
   // 仅在表切换时清除选中状态，避免分页/其他状态变化触发闪烁
+  // Also reset transient UI state (modals, drafts, selection) when switching tables
+  // to prevent state from one table leaking into another.
   useEffect(() => {
     setSelectedCells([]);
     setSelectionAnchor(null);
+    setSelectedRowIndex(null);
+    setFilterPanelOpen(false);
+    setSortModalOpen(false);
+    setColumnMenuOpen(false);
+    setSqlModalOpen(false);
+    setColumnEditOpen(false);
+    setBatchEditModalOpen(false);
+    setAddRowModalOpen(false);
+    setFilterDraftTree(null);
+    setSortDraft({ column: "", direction: "asc" });
+    setBatchEditValue("");
+    setBatchEditError("");
+    setSqlModalValue("");
+    setSqlModalResult("");
+    setSqlModalLoading(false);
+    setAddRowFormData({});
+    setAddRowError("");
+    setColumnHeaderContextMenu(null);
+    setError("");
   }, [activeOpenedTableKey]);
 
   useTableMenuDismiss({
@@ -576,6 +594,66 @@ export default function MysqlTableManager() {
     t,
   });
 
+  // 列类型信息，传递给 ExcelLikeTable 用于类型着色
+  const columnTypes = useMemo<ColumnType[]>(() => {
+    return dataColumnMeta.map((col) => getDbTypeCategory(col.type));
+  }, [dataColumnMeta]);
+
+  const columnTypeLabels = useMemo<string[]>(() => {
+    return dataColumnMeta.map((col) => col.type);
+  }, [dataColumnMeta]);
+
+  const toolbarActions = useMemo(() => {
+    if (displayPanelTab !== "data") return null;
+
+    return (
+      <div className="tm-toolbar-actions">
+        <button className="btn btn-sm btn-ghost" onClick={handleAddNewRow}>
+          {t("mysql.tableManager.addNewRow")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={handleToggleFilterPanel}>
+          {t("mysql.tableManager.filterData")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={handleOpenSortModal}>
+          {t("mysql.tableManager.sortData")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={() => setColumnMenuOpen((prev) => !prev)}>
+          {t("mysql.tableManager.displayColumns")}
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={() => { void fetchData(); }} disabled={dataState.loading}>
+          {dataState.loading ? t("common.loading") : t("common.refresh")}
+        </button>
+        {columnMenuOpen && dataState.columns.length > 0 && (
+          <div className="tm-column-menu-dropdown">
+            <div className="tm-column-menu-body">
+              <div className="tm-column-menu-tools">
+                <button className="btn btn-sm btn-ghost" onClick={handleSelectAllVisibleColumns}>
+                  {t("common.selectAll")}
+                </button>
+                <button className="btn btn-sm btn-ghost" onClick={() => setColumnMenuOpen(false)}>
+                  {t("common.close")}
+                </button>
+              </div>
+              {dataState.columns.map((column) => {
+                const checked = visibleDataColumns.includes(column);
+                return (
+                  <label key={column} className={`tm-column-option ${checked ? "is-checked" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => handleVisibleColumnToggle(column, event.target.checked)}
+                    />
+                    {column}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [displayPanelTab, columnMenuOpen, dataState.loading, dataState.columns, visibleDataColumns, t, handleAddNewRow, handleToggleFilterPanel, handleOpenSortModal, fetchData, handleSelectAllVisibleColumns, handleVisibleColumnToggle, setColumnMenuOpen]);
+
   // ─── Render ───
   if (!activeMysqlConnection) {
     return (
@@ -587,106 +665,62 @@ export default function MysqlTableManager() {
     );
   }
 
-  const handleOpenCreateTable = () => {
-    setCreateTableModal({
-      database: expandedDatabase ?? "",
-      tableName: "",
-      columns: [],
-      charset: "utf8mb4",
-      engine: "InnoDB"
-    });
-    setCreateTableError("");
-    setSelectedEditingRowId(null);
-    setEditingRows([
-      {
-        id: Date.now().toString(),
-        name: "",
-        type: "varchar",
-        length: "255",
-        scale: "",
-        nullable: true,
-        defaultValue: "",
-        isPrimary: false,
-        autoIncrement: false,
-        comment: "",
-        timestampDefault: "none",
-        timestampOnUpdate: false,
-        extraAttributes: ""
-      }
-    ]);
-  };
-
-  const handleSelectWorkspaceTab = (nextTab: RightPanelTab) => {
-    if (!activeOpenedTable) return;
-    setRightPanelTab(nextTab);
-    setOpenedTableView(activeOpenedTable.database, activeOpenedTable.table, nextTab);
-  };
-
   return (
     <div className="page">
-      <div className="tm-shell">
-        <div className="card tm-main-card">
-          <TableManagerWorkspace
-            isTableWorkspace={isTableWorkspace}
-            activeOpenedTable={activeOpenedTable}
-            rightPanelTab={rightPanelTab}
-            onSelectTab={handleSelectWorkspaceTab}
-            overviewPaneProps={{
-              expandedDatabase: expandedDatabase ?? null,
-              tables: overviewTables,
-              selectedTable,
-              selectedOverviewTables,
-              loading,
-              onTableClick: handleOverviewTableClick,
-              onClearSelection: clearOverviewTableSelection,
-              onBrowseTable: handleBrowseData,
-              onTableDragStart: handleOverviewTableDragStart,
-              onTableContextMenu: handleTableContextMenu,
-              onRefreshTables: refreshTablesForDb,
-              onOpenCreateTable: handleOpenCreateTable,
-            }}
-            dataPaneProps={{
-              selectedTableInfo,
-              dataState,
-              visibleDataColumns,
-              selectedCellKeySet,
-              selectedRowIndex,
-              filterPanelOpen,
-              filterDraftTree,
-              totalPages,
-              filterOperators,
-              columnMenuOpen,
-              onSetColumnMenuOpen: setColumnMenuOpen,
-              onVisibleColumnToggle: handleVisibleColumnToggle,
-              onSelectAllVisibleColumns: handleSelectAllVisibleColumns,
-              onAddNewRow: handleAddNewRow,
-              onToggleFilterPanel: handleToggleFilterPanel,
-              onOpenSortModal: handleOpenSortModal,
-              onRefreshData: fetchData,
-              onSetFilterPanelOpen: setFilterPanelOpen,
-              onSetFilterDraftTree: setFilterDraftTree,
-              onPageChange: handlePageChange,
-              onPageSizeChange: handlePageSizeChange,
-              onCellClick: handleCellClick,
-              onRowContextMenu: handleRowContextMenu,
-              onSaveCell: handleSaveCell,
-              onClearFilter: clearFilter,
-              onApplyFilter: applyFilter,
-            }}
-            structurePaneProps={{
-              selectedTableInfo,
-              onAddColumn: openAddColumnModal,
-              onManageIndexes: openIndexModal,
-              onMoveColumn: handleMoveColumn,
-              onEditColumn: openEditColumnModal,
-              onDropColumn: handleDropColumn,
-            }}
-            infoPaneProps={{
-              selectedTableInfo,
-            }}
-          />
-        </div>
-      </div>
+      <TableManagerWorkspace
+        isTableWorkspace={isTableWorkspace}
+        activeOpenedTable={activeOpenedTable}
+        rightPanelTab={displayPanelTab}
+        toolbarActions={toolbarActions}
+        overviewPaneProps={{
+          connectionId,
+          expandedDatabase: expandedDatabase ?? null,
+          tables: overviewTables,
+          selectedTable,
+          selectedOverviewTables,
+          loading,
+          onTableClick: handleOverviewTableClick,
+          onBrowseTable: handleBrowseData,
+          onTableDragStart: handleOverviewTableDragStart,
+          onTableContextMenu: handleTableContextMenu,
+          onRefreshTables: refreshTablesForDb,
+          onOpenCreateTable: () => openCreateTable(expandedDatabase ?? ""),
+        }}
+        dataPaneProps={{
+          connectionId,
+          selectedTableInfo,
+          dataState,
+          visibleDataColumns,
+          selectedCellKeySet,
+          selectedRowIndex,
+          filterPanelOpen,
+          filterDraftTree,
+          totalPages,
+          filterOperators,
+          columnTypes,
+          columnTypeLabels,
+          onSetFilterPanelOpen: setFilterPanelOpen,
+          onSetFilterDraftTree: setFilterDraftTree,
+          onPageChange: handlePageChange,
+          onPageSizeChange: handlePageSizeChange,
+          onCellClick: handleCellClick,
+          onRowContextMenu: handleRowContextMenu,
+          onSaveCell: handleSaveCell,
+          onClearFilter: clearFilter,
+          onApplyFilter: applyFilter,
+        }}
+        structurePaneProps={{
+          selectedTableInfo,
+          onAddColumn: openAddColumnModal,
+          onManageIndexes: openIndexModal,
+          onMoveColumn: handleMoveColumn,
+          onEditColumn: openEditColumnModal,
+          onDropColumn: handleDropColumn,
+        }}
+        infoPaneProps={{
+          selectedTableInfo,
+        }}
+      />
 
       {/* Error */}
       {error && (

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { useConnectionWorkspace } from "../../hooks/useConnectionWorkspace";
 import type { ConnectionProfile, EngineType } from "../../lib/types";
+import { useElasticsearchContext } from "../../state/ElasticsearchContext";
 import EsSidebarSection from "../../modules/es/components/EsSidebarSection";
 import MysqlSidebarSection from "../../modules/mysql/components/MysqlSidebarSection";
 import type { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
@@ -19,6 +20,7 @@ interface AppSidebarContentProps {
   onToggleMysql: () => void;
   onToggleRedis: () => void;
   openConnectionDialog: (engine: EngineType, mode: "add" | "edit" | "copy", profileId?: string) => void;
+  onNavigateToEngineDefaultRoute: (engine: string) => void;
 }
 
 export function AppSidebarContent({
@@ -31,8 +33,10 @@ export function AppSidebarContent({
   onToggleMysql,
   onToggleRedis,
   openConnectionDialog,
+  onNavigateToEngineDefaultRoute,
 }: AppSidebarContentProps) {
   const { t } = useTranslation();
+  const { esVersion } = useElasticsearchContext();
 
   const isConnectionFocused = (profile: ConnectionProfile) =>
     connection.focusedConnectionIdByEngine[profile.engine ?? "elasticsearch"] === profile.id;
@@ -43,13 +47,32 @@ export function AppSidebarContent({
   const renderConnectionItem = (profile: ConnectionProfile) => {
     const status = connection.connectionStatusById[profile.id] ?? "idle";
 
-    const handleActivateConnection = () => {
+    const handleActivateConnection = async () => {
+      const engine = profile.engine ?? "elasticsearch";
+      const wasAlreadyFocused = connection.focusedConnectionIdByEngine[engine] === profile.id;
+
+      // 使用 pendingConnectionRef 做实时检查，避免 React 状态更新异步导致的去重失效
+      if (connection.pendingConnectionRef.current.has(profile.id)) {
+        return;
+      }
+
       connection.setFocusedConnectionId(profile.id);
+
+      // If status is "failed", treat as a reconnect attempt
+      if (status === "failed") {
+        void connection.handleConnectionChange(profile.id, { forceValidate: true });
+        return;
+      }
+
       if (isConnectionActive(profile)) {
-        // Already connected -- just focus (backend stays alive)
-        if (connection.isWorkspaceSuspended) {
-          void connection.handleConnectionChange(profile.id, { forceValidate: false });
+        if (wasAlreadyFocused) {
+          // Scenario A early-returns without navigating -- switch to the engine's default route here
+          onNavigateToEngineDefaultRoute(engine);
+          return;
         }
+
+        // Scenario B: handleConnectionChange will handle the navigation
+        void connection.handleConnectionChange(profile.id, { forceValidate: false });
         return;
       }
 
@@ -78,12 +101,31 @@ export function AppSidebarContent({
         <span className="mdb-connection-main">
           <span className={`mdb-status-dot status-${status}`} />
           <span className="mdb-connection-name">{profile.name}</span>
+          {esVersion && profile.engine === "elasticsearch" && (
+            <span className="mdb-connection-version">v{esVersion.number}</span>
+          )}
+          {profile.connectionType === "production" && (
+            <span className="mdb-connection-type mdb-connection-type-prod" title="Production">PROD</span>
+          )}
+          {profile.connectionType === "test" && (
+            <span className="mdb-connection-type mdb-connection-type-test" title="Test">TEST</span>
+          )}
+          {profile.connectionType === "development" && (
+            <span className="mdb-connection-type mdb-connection-type-dev" title="Development">DEV</span>
+          )}
         </span>
-        {isConnectionFocused(profile) ? (
-          <span className="mdb-connection-badge">{t("connections.currentInUse")}</span>
-        ) : isConnectionActive(profile) ? (
-          <span className="mdb-connection-badge mdb-connection-badge-active">{t("connections.connected")}</span>
-        ) : null}
+        {status === "failed" && (
+          <span className="mdb-connection-badge mdb-connection-badge-failed" style={{ cursor: "pointer" }} title={t("connections.reconnect")}>
+            {t("connections.reconnectHint")}
+          </span>
+        )}
+        {status !== "failed" && (
+          isConnectionFocused(profile) ? (
+            <span className="mdb-connection-badge">{t("connections.currentInUse")}</span>
+          ) : isConnectionActive(profile) ? (
+            <span className="mdb-connection-badge mdb-connection-badge-active">{t("connections.connected")}</span>
+          ) : null
+        )}
       </div>
     );
   };

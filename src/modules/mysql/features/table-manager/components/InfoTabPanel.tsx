@@ -39,7 +39,7 @@ export function InfoTabPanel({ selectedTableInfo }: InfoTabPanelProps) {
     { label: t("mysql.tableManager.tableType"), value: t("mysql.tableManager.baseTable") },
     { label: t("mysql.tableManager.engine"), value: info.engine },
     { label: t("mysql.tableManager.databaseLabel"), value: selectedTableInfo.database },
-    { label: t("mysql.tableManager.rowCountLabel"), value: info.tableRows.toLocaleString() },
+    { label: t("mysql.tableManager.rowCountLabel"), value: info.tableRows?.toLocaleString() ?? "0" },
     { label: t("mysql.tableManager.autoIncrement"), value: info.autoIncrement },
     { label: t("mysql.tableManager.rowFormat"), value: info.rowFormat },
     { label: t("mysql.tableManager.createTime"), value: info.createTime },
@@ -70,13 +70,6 @@ export function InfoTabPanel({ selectedTableInfo }: InfoTabPanelProps) {
               <div className="tm-info-value">{item.value}</div>
             </Fragment>
           ))}
-        </div>
-
-        <div className="tm-info-section">
-          <div className="muted tm-info-label">{t("mysql.tableManager.createSql")}</div>
-          <pre className="tm-sql-preview">
-            {info.createSql}
-          </pre>
         </div>
       </div>
     </div>

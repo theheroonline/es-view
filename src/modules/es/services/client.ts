@@ -117,6 +117,11 @@ function buildTransportRequest(
     body,
     verifyTls: normalized.verifyTls ?? true,
     auth: buildTransportAuth(normalized),
+    // TLS
+    tlsMode: normalized.tlsMode,
+    tlsCaCertPath: normalized.tlsCaCertPath,
+    tlsClientCertPath: normalized.tlsClientCertPath,
+    tlsClientKeyPath: normalized.tlsClientKeyPath,
   };
 }
 

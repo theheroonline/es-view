@@ -1,13 +1,16 @@
 import { Modal } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { logError } from "../../../lib/errorLog";
 import { useElasticsearchContext } from "../../../state/ElasticsearchContext";
 import { executeEsRawRequest } from "../services/restConsoleService";
+import { MonacoRestEditor } from "../features/rest-console/MonacoRestEditor";
 
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"] as const;
 
 type HttpMethod = typeof METHODS[number];
+
+const formatFinishedAt = (timestamp: number) => new Date(timestamp).toLocaleString("zh-CN");
 
 type ResponseState = {
   status: number | null;
@@ -72,6 +75,19 @@ export default function RestConsole() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [pretty, setPretty] = useState(true);
+  const executeRef = useRef<(() => void) | undefined>(undefined);
+
+  // Listen for Monaco Ctrl+Enter execute event
+  useEffect(() => {
+    const handler = () => executeRef.current?.();
+    window.addEventListener("monaco-rest-execute", handler);
+    return () => window.removeEventListener("monaco-rest-execute", handler);
+  }, []);
+
+  // Keep ref updated so event listener always calls latest handleExecute
+  useEffect(() => {
+    executeRef.current = handleExecute;
+  });
 
   const normalizePath = (input: string) => {
     const trimmed = input.trim();
@@ -84,11 +100,8 @@ export default function RestConsole() {
     return JSON.stringify(parsed, null, 2);
   };
 
-  const formatFinishedAt = (timestamp: number) => new Date(timestamp).toLocaleString("zh-CN");
-
   const parseBatchCommands = (text: string) => {
     const lines = text.split(/\r?\n/);
-    const methodSet = new Set(METHODS);
     const commands: Array<{ method: HttpMethod; path: string; bodyText: string }> = [];
     let current: { method: HttpMethod; path: string; bodyLines: string[] } | null = null;
 
@@ -106,9 +119,6 @@ export default function RestConsole() {
       const match = trimmed.match(/^(GET|POST|PUT|DELETE|PATCH|HEAD)\s+(\S+)/i);
       if (match) {
         const methodCandidate = match[1].toUpperCase() as HttpMethod;
-        if (!methodSet.has(methodCandidate)) {
-          continue;
-        }
         if (current) {
           commands.push({
             method: current.method,
@@ -498,7 +508,7 @@ export default function RestConsole() {
 
   return (
     <div className="page">
-      <div className="card">
+      <div className="card" style={{ flex: 1, minHeight: 0 }}>
         <div className="card-header">
           <div>
             <h3 className="card-title">{t("restConsole.title")}</h3>
@@ -510,7 +520,7 @@ export default function RestConsole() {
             </button>
           </div>
         </div>
-        <div className="card-body">
+        <div className="card-body" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <div className="rest-toolbar">
             {!batchMode && (
               <>
@@ -652,12 +662,14 @@ export default function RestConsole() {
                   placeholder={t("restConsole.batchPlaceholder")}
                 />
               ) : (
-                <textarea
-                  className="json-editor rest-editor"
-                  value={requestBody}
-                  onChange={(e) => setRequestBody(e.target.value)}
-                  placeholder={t("restConsole.requestPlaceholder")}
-                />
+                <div className="rest-monaco-wrapper">
+                  <MonacoRestEditor
+                    value={requestBody}
+                    onChange={setRequestBody}
+                    height="100%"
+                    language="json"
+                  />
+                </div>
               )}
             </div>
             <div className="rest-panel">
@@ -774,7 +786,9 @@ export default function RestConsole() {
                   })}
                 </div>
               ) : (
-                <pre className="rest-response">{response.body || t("restConsole.noResponse")}</pre>
+                <div className="rest-response-wrapper">
+                  <pre className="rest-response">{response.body || t("restConsole.noResponse")}</pre>
+                </div>
               )}
             </div>
           </div>

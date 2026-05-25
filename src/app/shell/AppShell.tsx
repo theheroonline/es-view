@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useConnectionWorkspace, type EngineType } from "../../hooks/useConnectionWorkspace";
+import { hasEngineRoute } from "../../lib/routeEngine";
 import { useFloatingMenuDismiss } from "../../hooks/useFloatingMenuDismiss";
 import WorkspaceChrome from "../../layout/WorkspaceChrome";
 import { useMysqlSidebarWorkspace } from "../../modules/mysql/hooks/useMysqlSidebarWorkspace";
 import AppOverlays from "./AppOverlays";
 import { AppSidebarContent, AppSidebarFooter } from "./AppSidebar";
 import AppTopbarStatus from "./AppTopbarStatus";
-import AppWorkspace, { canShowWorkspace } from "./AppWorkspace";
+import AppWorkspace from "./AppWorkspace";
 
 interface ConnectionDialogState {
   mode: "add" | "edit" | "copy";
@@ -19,6 +20,7 @@ interface ConnectionDialogState {
 export default function AppShell() {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const connection = useConnectionWorkspace();
   const mysql = useMysqlSidebarWorkspace({
     activeConnectionId: connection.activeConnectionIdByEngine.mysql,
@@ -58,10 +60,9 @@ export default function AppShell() {
     }
   );
 
-  const workspaceVisible = canShowWorkspace(
-    connection.activeConnectionIdByEngine,
-    connection.isWorkspaceSuspended,
-    location.pathname
+  const workspaceVisible = useMemo(
+    () => hasEngineRoute(location.pathname),
+    [location.pathname]
   );
 
   const emptyState = (
@@ -99,12 +100,18 @@ export default function AppShell() {
             onToggleMysql={() => setMysqlExpanded((prev) => !prev)}
             onToggleRedis={() => setRedisExpanded((prev) => !prev)}
             openConnectionDialog={openConnectionDialog}
+            onNavigateToEngineDefaultRoute={(engine) => {
+              switch (engine) {
+                case "mysql": void navigate("/mysql/tables"); break;
+                case "redis": void navigate("/redis/browser"); break;
+                default: void navigate("/data");
+              }
+            }}
           />
         }
         sidebarFooter={<AppSidebarFooter />}
         workspace={
           <AppWorkspace
-            activeEngine={connection.activeEngine}
             mysql={mysql}
           />
         }

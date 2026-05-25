@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { logError } from "../../../../../lib/errorLog";
 import type { RedisKeyDetail, RedisKeySummary } from "../../../types";
 import { scanRedisKeys } from "../services/queryService";
@@ -35,8 +35,24 @@ export function useRedisScanKeys({
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [scanCount, setScanCount] = useState(100);
 
+  // All scan parameters stored in refs to prevent stale closures when
+  // connection switches. The old callback might fire with outdated props.
+  const connectionIdRef = useRef(connectionId);
+  const currentDatabaseRef = useRef(currentDatabase);
+  const keyPatternRef = useRef(keyPattern);
+  const nextCursorRef = useRef(nextCursor);
+
+  useEffect(() => { connectionIdRef.current = connectionId; }, [connectionId]);
+  useEffect(() => { currentDatabaseRef.current = currentDatabase; }, [currentDatabase]);
+  useEffect(() => { keyPatternRef.current = keyPattern; }, [keyPattern]);
+  useEffect(() => { nextCursorRef.current = nextCursor; }, [nextCursor]);
+
   const refreshKeys = useCallback(async (reset: boolean, preferredKey?: string | null) => {
-    if (!connectionId) {
+    const cid = connectionIdRef.current;
+    const db = currentDatabaseRef.current;
+    const pattern = keyPatternRef.current;
+    const cursor = nextCursorRef.current;
+    if (!cid) {
       return;
     }
 
@@ -44,10 +60,10 @@ export function useRedisScanKeys({
     setError("");
     try {
       const result = await scanRedisKeys(
-        connectionId,
-        currentDatabase,
-        keyPattern,
-        reset ? "0" : nextCursor,
+        cid,
+        db,
+        pattern,
+        reset ? "0" : cursor,
         scanCount,
       );
 
@@ -67,13 +83,13 @@ export function useRedisScanKeys({
     } catch (err) {
       logError(err, {
         source: "redisBrowser.loadKeys",
-        message: `Failed to scan Redis keys in DB ${currentDatabase}`
+        message: `Failed to scan Redis keys in DB ${db}`
       });
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingKeys(false);
     }
-  }, [connectionId, currentDatabase, keyPattern, nextCursor, refreshKeyDetail, scanCount, selectedKey, setError, setHasMoreKeys, setNextCursor, setScannedKeys, setSelectedKey, setSelectedKeyDetail]);
+  }, [refreshKeyDetail, scanCount, selectedKey, setError, setHasMoreKeys, setNextCursor, setScannedKeys, setSelectedKey, setSelectedKeyDetail]);
 
   return {
     loadingKeys,

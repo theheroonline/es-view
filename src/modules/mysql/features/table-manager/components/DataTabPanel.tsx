@@ -1,6 +1,7 @@
 import { type MouseEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MysqlFilterOperator } from "../../../types";
+import type { ColumnType } from "../../../types/columnTypes";
 import {
     type DataState,
     type FilterConditionDraft,
@@ -15,6 +16,7 @@ import {
 import { ExcelLikeTable } from "./ExcelLikeTable";
 
 interface DataTabPanelProps {
+  connectionId: string | null | undefined;
   selectedTableInfo: TableInfo | null;
   dataState: DataState;
   visibleDataColumns: string[];
@@ -24,6 +26,8 @@ interface DataTabPanelProps {
   filterDraftTree: FilterGroupDraft | null;
   totalPages: number;
   filterOperators: Array<{ value: MysqlFilterOperator; label: string }>;
+  columnTypes?: ColumnType[];
+  columnTypeLabels?: string[];
 
   setFilterPanelOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   setFilterDraftTree: (tree: FilterGroupDraft | null | ((prev: FilterGroupDraft | null) => FilterGroupDraft | null)) => void;
@@ -39,6 +43,7 @@ interface DataTabPanelProps {
 }
 
 export function DataTabPanel({
+  connectionId,
   selectedTableInfo,
   dataState,
   visibleDataColumns,
@@ -48,6 +53,8 @@ export function DataTabPanel({
   filterDraftTree,
   totalPages,
   filterOperators,
+  columnTypes,
+  columnTypeLabels,
   setFilterPanelOpen,
   setFilterDraftTree,
   onPageChange,
@@ -63,6 +70,7 @@ export function DataTabPanel({
   // 本地状态用于管理输入框值（避免每次输入都刷新数据）
   const [pageSizeInput, setPageSizeInput] = useState(String(dataState.pageSize));
   const [pageInput, setPageInput] = useState(String(dataState.page));
+  const [filterApplyError, setFilterApplyError] = useState<string | null>(null);
 
   // 当外部数据改变时，同步输入框值
   useEffect(() => {
@@ -107,6 +115,16 @@ export function DataTabPanel({
   const filterConditions = rootFilterTree.children.filter(
     (child): child is FilterConditionDraft => child.kind === "condition"
   );
+
+  const handleApplyFilter = () => {
+    setFilterApplyError(null);
+    const hasAnyEmptyColumn = filterConditions.some((c) => !c.column || !c.column.trim());
+    if (hasAnyEmptyColumn) {
+      setFilterApplyError(t("mysql.tableManager.filterEmptyColumn"));
+      return;
+    }
+    onApplyFilter(rootFilterTree);
+  };
 
   const updateCondition = (id: string, updater: (condition: FilterConditionDraft) => FilterConditionDraft) => {
     setFilterDraftTree((prev) => {
@@ -223,9 +241,14 @@ export function DataTabPanel({
               <button className="btn btn-sm btn-ghost" onClick={onClearFilter}>
                 {t("mysql.tableManager.clearFilter")}
               </button>
-              <button className="btn btn-sm btn-primary" onClick={() => onApplyFilter(rootFilterTree)}>
+              <button className="btn btn-sm btn-primary" onClick={handleApplyFilter}>
                 {t("mysql.tableManager.apply")}
               </button>
+              {filterApplyError && (
+                <span className="text-danger" style={{ fontSize: 12, lineHeight: "20px" }}>
+                  {filterApplyError}
+                </span>
+              )}
               <button className="btn btn-sm btn-ghost" onClick={() => setFilterPanelOpen(false)}>
                 {t("common.close")}
               </button>
@@ -281,85 +304,76 @@ export function DataTabPanel({
         </div>
       )}
 
-      {/* Data table - 使用新的 ExcelLikeTable 组件 */}
-      <ExcelLikeTable
-        columns={visibleDataColumns}
-        data={dataState.rows}
-        selectedCellKeySet={selectedCellKeySet}
-        selectedRowIndex={selectedRowIndex}
-        loading={dataState.loading}
-        tableKey={selectedTableInfo ? `${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
-        onCellClick={onCellClick}
-        onRowContextMenu={onRowContextMenu}
-        onSaveCell={onSaveCell}
-      />
+      {/* Data table */}
+      <div className="mysql-table-unified">
+        <ExcelLikeTable
+          columns={visibleDataColumns}
+          data={dataState.rows}
+          selectedCellKeySet={selectedCellKeySet}
+          selectedRowIndex={selectedRowIndex}
+          loading={dataState.loading}
+          tableKey={selectedTableInfo ? `${connectionId ?? ""}:${selectedTableInfo.database}:${selectedTableInfo.table}` : undefined}
+          columnTypes={columnTypes}
+          columnTypeLabels={columnTypeLabels}
+          onCellClick={onCellClick}
+          onRowContextMenu={onRowContextMenu}
+          onSaveCell={onSaveCell}
+        />
 
-      <div className="tm-pagination">
-        <div className="tm-pagination-group">
-          <span>{t("dataBrowser.pageSize")}:</span>
-          <input
-            type="number"
-            className="tm-page-size-input"
-            value={pageSizeInput}
-            onChange={(e) => setPageSizeInput(e.target.value)}
-            onBlur={(e) => {
-              const val = Number(e.target.value);
-              if (val > 0 && val <= 1000) {
-                onPageSizeChange(val);
-              } else {
-                // 无效输入，恢复原值
-                setPageSizeInput(String(dataState.pageSize));
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const val = Number(pageSizeInput);
+        <div className="tm-pagination">
+          <div className="tm-pagination-group">
+            <span>{t("dataBrowser.pageSize")}:</span>
+            <input
+              type="number"
+              className="tm-page-size-input"
+              value={pageSizeInput}
+              onChange={(e) => setPageSizeInput(e.target.value)}
+              onBlur={(e) => {
+                const val = Number(e.target.value);
                 if (val > 0 && val <= 1000) {
                   onPageSizeChange(val);
                 } else {
+                  // 无效输入，恢复原值
                   setPageSizeInput(String(dataState.pageSize));
                 }
-              }
-            }}
-            min="1"
-            max="1000"
-          />
-        </div>
-        <div className="tm-pagination-group">
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page <= 1}
-            onClick={() => onPageChange(1)}
-          >
-            {t("mysql.tableManager.firstPage")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page <= 1}
-            onClick={() => onPageChange(dataState.page - 1)}
-          >
-            {t("dataBrowser.previousPage")}
-          </button>
-          <span className="tm-pagination-info">
-            <input
-              type="number"
-              className="tm-page-input"
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onBlur={(e) => {
-                const val = Number(e.target.value);
-                if (!Number.isFinite(val)) {
-                  setPageInput(String(dataState.page));
-                  return;
-                }
-
-                const clamped = clampPage(val);
-                onPageChange(clamped);
-                setPageInput(String(clamped));
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  const val = Number(pageInput);
+                  const val = Number(pageSizeInput);
+                  if (val > 0 && val <= 1000) {
+                    onPageSizeChange(val);
+                  } else {
+                    setPageSizeInput(String(dataState.pageSize));
+                  }
+                }
+              }}
+              min="1"
+              max="1000"
+            />
+          </div>
+          <div className="tm-pagination-group">
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page <= 1}
+              onClick={() => onPageChange(1)}
+            >
+              {t("mysql.tableManager.firstPage")}
+            </button>
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page <= 1}
+              onClick={() => onPageChange(dataState.page - 1)}
+            >
+              {t("dataBrowser.previousPage")}
+            </button>
+            <span className="tm-pagination-info">
+              <input
+                type="number"
+                className="tm-page-input"
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value)}
+                onBlur={(e) => {
+                  const val = Number(e.target.value);
                   if (!Number.isFinite(val)) {
                     setPageInput(String(dataState.page));
                     return;
@@ -368,36 +382,49 @@ export function DataTabPanel({
                   const clamped = clampPage(val);
                   onPageChange(clamped);
                   setPageInput(String(clamped));
-                }
-              }}
-              min="1"
-              max={totalPages}
-            />
-            <span>/</span>
-            <span>{totalPages}</span>
-          </span>
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page >= totalPages}
-            onClick={() => onPageChange(dataState.page + 1)}
-          >
-            {t("dataBrowser.nextPage")}
-          </button>
-          <button
-            className="btn btn-sm btn-ghost"
-            disabled={dataState.page >= totalPages}
-            onClick={() => onPageChange(totalPages)}
-          >
-            {t("mysql.tableManager.lastPage")}
-          </button>
-        </div>
-        <div className="tm-pagination-group tm-pagination-group-right">
-          {selectedRowDisplay !== null ? (
-            <span className="tm-pagination-info">
-              {selectedRowDisplay}/{Math.max(currentPageCount, 1)}
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const val = Number(pageInput);
+                    if (!Number.isFinite(val)) {
+                      setPageInput(String(dataState.page));
+                      return;
+                    }
+
+                    const clamped = clampPage(val);
+                    onPageChange(clamped);
+                    setPageInput(String(clamped));
+                  }
+                }}
+                min="1"
+                max={totalPages}
+              />
+              <span>/</span>
+              <span>{totalPages}</span>
             </span>
-          ) : null}
-          <span className="tm-pagination-info">{t("mysql.tableManager.currentPageRows", { count: currentPageCount })}</span>
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page >= totalPages}
+              onClick={() => onPageChange(dataState.page + 1)}
+            >
+              {t("dataBrowser.nextPage")}
+            </button>
+            <button
+              className="btn btn-sm btn-ghost"
+              disabled={dataState.page >= totalPages}
+              onClick={() => onPageChange(totalPages)}
+            >
+              {t("mysql.tableManager.lastPage")}
+            </button>
+          </div>
+          <div className="tm-pagination-group tm-pagination-group-right">
+            {selectedRowDisplay !== null ? (
+              <span className="tm-pagination-info">
+                {selectedRowDisplay}/{Math.max(currentPageCount, 1)}
+              </span>
+            ) : null}
+            <span className="tm-pagination-info">{t("mysql.tableManager.currentPageRows", { count: currentPageCount })}</span>
+          </div>
         </div>
       </div>
     </div>

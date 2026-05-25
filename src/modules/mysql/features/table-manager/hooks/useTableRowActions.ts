@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { logError } from "../../../../../lib/errorLog";
-import type { MysqlOpenedTable } from "../../../types";
+import { getMysqlOpenedTableKey, type MysqlOpenedTable, type MysqlTableDataCacheEntry } from "../../../types";
 import type { ColumnMeta } from "../../../types";
 import { executeTableDataQuery } from "../services/tableDataService";
 import type { DataState, SelectedCell, TableInfo } from "../utils";
@@ -35,6 +35,7 @@ interface UseTableRowActionsProps {
   setAddRowModalOpen: (open: boolean) => void;
   setAddRowFormData: (data: Record<string, string>) => void;
   setAddRowError: (error: string) => void;
+  saveTableDataCache: (tableKey: string, entry: MysqlTableDataCacheEntry | null) => void;
 }
 
 export function useTableRowActions({
@@ -59,6 +60,7 @@ export function useTableRowActions({
   setAddRowModalOpen,
   setAddRowFormData,
   setAddRowError,
+  saveTableDataCache,
 }: UseTableRowActionsProps) {
   const updateRowByIndex = useCallback(async (rowIndex: number, updates: Record<string, unknown>, options?: { refresh?: boolean }) => {
     if (!connectionId || !selectedTableInfo) return;
@@ -116,14 +118,30 @@ export function useTableRowActions({
           updatedRow[colIndex] = value;
         }
       });
+      const nextRows = dataState.rows.map((row, index) => (index === rowIndex ? updatedRow : row));
       setDataState((prev) => ({
         ...prev,
-        rows: prev.rows.map((row, index) => (index === rowIndex ? updatedRow : row))
+        rows: nextRows
       }));
+
+      const tableKey = getMysqlOpenedTableKey(db, table);
+      saveTableDataCache(tableKey, {
+        columns: dataState.columns,
+        rows: nextRows,
+        total: dataState.total,
+        page: dataState.page,
+        pageSize: dataState.pageSize,
+        columnMeta: dataColumnMeta,
+        tableInfo: selectedTableInfo
+          ? { columns: selectedTableInfo.columns ?? [], rowCount: selectedTableInfo.rowCount ?? 0, info: selectedTableInfo.info ?? {} }
+          : null,
+        dataColumns: dataState.columns,
+        cachedAt: Date.now(),
+      });
     } else {
       await fetchData();
     }
-  }, [connectionId, dataColumnMeta, dataState.columns, dataState.rows, fetchData, selectedTableInfo, setDataState]);
+  }, [connectionId, dataColumnMeta, dataState.columns, dataState.rows, dataState.total, dataState.page, dataState.pageSize, fetchData, saveTableDataCache, selectedTableInfo, setDataState]);
 
   const handleSaveCell = useCallback(async (
     rowIndex: number,

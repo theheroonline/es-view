@@ -18,6 +18,102 @@ interface UseEsSearchExecutionParams {
   t: TFunction;
 }
 
+interface SearchAfterParams {
+  activeConnection: any;
+  selectedIndex: string;
+  from: number;
+  size: number;
+  query: Record<string, unknown>;
+  sortParams: unknown[];
+  batchSize?: number;
+  setLoadingMessage?: (msg: string) => void;
+  page?: number;
+  t?: TFunction;
+}
+
+/**
+ * 使用 search_after 进行深度分页查询。当 from > 10000 时 ES 不支持传统 from+size 分页。
+ * 通过批量跳过文档（每批 1000 条）到达目标位置，最后获取实际数据。
+ */
+async function executeSearchAfter({
+  activeConnection,
+  selectedIndex,
+  from,
+  size,
+  query,
+  sortParams,
+  batchSize = 1000,
+  setLoadingMessage,
+  page,
+  t,
+}: SearchAfterParams) {
+  let currentPosition = 0;
+  let searchAfter: unknown[] | undefined;
+
+  while (currentPosition + batchSize < from) {
+    const skipBody: Record<string, unknown> = {
+      size: batchSize,
+      query,
+      sort: sortParams,
+      track_total_hits: true,
+      _source: false,
+    };
+    if (searchAfter) {
+      skipBody.search_after = searchAfter;
+    }
+
+    if (setLoadingMessage) {
+      setLoadingMessage(t?.("dataBrowser.skippingData", { count: currentPosition + batchSize }) ?? "");
+    }
+    const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
+    const hits = skipResult?.hits?.hits ?? [];
+
+    if (hits.length === 0) break;
+
+    searchAfter = hits[hits.length - 1]?.sort;
+    currentPosition += hits.length;
+
+    if (hits.length < batchSize) break;
+  }
+
+  const remaining = from - currentPosition;
+  if (remaining > 0 && searchAfter) {
+    const skipBody: Record<string, unknown> = {
+      size: remaining,
+      query,
+      sort: sortParams,
+      track_total_hits: true,
+      _source: false,
+    };
+    skipBody.search_after = searchAfter;
+
+    if (setLoadingMessage) {
+      setLoadingMessage(t?.("dataBrowser.locatingData", { position: from }) ?? "");
+    }
+    const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
+    const hits = skipResult?.hits?.hits ?? [];
+
+    if (hits.length > 0) {
+      searchAfter = hits[hits.length - 1]?.sort;
+    }
+  }
+
+  if (setLoadingMessage && page) {
+    setLoadingMessage(t?.("dataBrowser.fetchingPage", { page }) ?? "");
+  }
+  const finalBody: Record<string, unknown> = {
+    size,
+    query,
+    sort: sortParams,
+    track_total_hits: true,
+  };
+  if (searchAfter) {
+    finalBody.search_after = searchAfter;
+  }
+
+  return await searchDocuments(activeConnection, selectedIndex, finalBody);
+}
+
 export function useEsSearchExecution({
   activeConnection,
   conditions,
@@ -64,8 +160,27 @@ export function useEsSearchExecution({
         boolBuckets[item.boolType]?.push({ term: { [item.field]: item.value } });
       } else if (item.operator === "match") {
         boolBuckets[item.boolType]?.push({ match: { [item.field]: item.value } });
-      } else if (item.operator === "range" && parsed) {
+      } else if (item.operator === "range" && parsed != null) {
         boolBuckets[item.boolType]?.push({ range: { [item.field]: parsed } });
+      } else if (item.operator === "exists") {
+        boolBuckets[item.boolType]?.push({ exists: { field: item.field } });
+      } else if (item.operator === "missing") {
+        boolBuckets[item.boolType]?.push({ bool: { must_not: { exists: { field: item.field } } } });
+      } else if (item.operator === "terms") {
+        const terms = item.value.split(",").map((v) => {
+          const trimmed = v.trim();
+          if (!trimmed) return null;
+          const num = Number(trimmed);
+          if (!isNaN(num) && String(num) === trimmed) return num;
+          if (trimmed === "true") return true;
+          if (trimmed === "false") return false;
+          return trimmed;
+        }).filter((v): v is string | number | boolean => v !== null);
+        if (terms.length > 0) {
+          boolBuckets[item.boolType]?.push({ terms: { [item.field]: terms } });
+        }
+      } else if (item.operator === "wildcard") {
+        boolBuckets[item.boolType]?.push({ wildcard: { [item.field]: { value: item.value } } });
       }
     }
 
@@ -83,7 +198,7 @@ export function useEsSearchExecution({
     const from = (page - 1) * size;
     let sortParams = activeSorts.map((item) => ({ [item.field]: { order: item.sortDirection || "asc" } }));
 
-    // search_after requires at least one unique sort field to work correctly
+    // search_after 要求至少一个排序字段以确保结果唯一性
     if (sortParams.length === 0) {
       sortParams = [{ _doc: { order: "asc" } }];
     }
@@ -116,69 +231,14 @@ export function useEsSearchExecution({
       return await searchDocuments(activeConnection, selectedIndex, body);
     }
 
-    // Deep pagination using search_after
-    const batchSize = 1000;
-    const targetFrom = from;
-    let currentPosition = 0;
-    let searchAfter: any[] | undefined;
-
-    while (currentPosition + batchSize < targetFrom) {
-      const skipBody: Record<string, unknown> = {
-        size: batchSize,
-        query,
-        sort: sortParams,
-        track_total_hits: true,
-        _source: false,
-      };
-      if (searchAfter) {
-        skipBody.search_after = searchAfter;
-      }
-
-      const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
-      const hits = skipResult?.hits?.hits ?? [];
-
-      if (hits.length === 0) {
-        break;
-      }
-
-      searchAfter = hits[hits.length - 1]?.sort;
-      currentPosition += hits.length;
-
-      if (hits.length < batchSize) {
-        break;
-      }
-    }
-
-    const remaining = targetFrom - currentPosition;
-    if (remaining > 0 && searchAfter) {
-      const skipBody: Record<string, unknown> = {
-        size: remaining,
-        query,
-        sort: sortParams,
-        track_total_hits: true,
-        _source: false,
-      };
-      skipBody.search_after = searchAfter;
-
-      const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
-      const hits = skipResult?.hits?.hits ?? [];
-
-      if (hits.length > 0) {
-        searchAfter = hits[hits.length - 1]?.sort;
-      }
-    }
-
-    const finalBody: Record<string, unknown> = {
+    return executeSearchAfter({
+      activeConnection,
+      selectedIndex,
+      from,
       size,
       query,
-      sort: sortParams,
-      track_total_hits: true,
-    };
-    if (searchAfter) {
-      finalBody.search_after = searchAfter;
-    }
-
-    return await searchDocuments(activeConnection, selectedIndex, finalBody);
+      sortParams,
+    });
   }, [activeConnection, buildSearchContext, selectedIndex, size, t]);
 
   const execute = useCallback(async () => {
@@ -216,71 +276,17 @@ export function useEsSearchExecution({
 
       setLoadingMessage(t("dataBrowser.queryingPage", { page }));
 
-      const batchSize = 1000;
-      const targetFrom = from;
-      let currentPosition = 0;
-      let searchAfter: any[] | undefined;
-
-      while (currentPosition + batchSize < targetFrom) {
-        const skipBody: Record<string, unknown> = {
-          size: batchSize,
-          query,
-          sort: sortParams,
-          track_total_hits: true,
-          _source: false,
-        };
-        if (searchAfter) {
-          skipBody.search_after = searchAfter;
-        }
-
-        setLoadingMessage(t("dataBrowser.skippingData", { count: currentPosition + batchSize }));
-        const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
-        const hits = skipResult?.hits?.hits ?? [];
-
-        if (hits.length === 0) {
-          break;
-        }
-
-        searchAfter = hits[hits.length - 1]?.sort;
-        currentPosition += hits.length;
-
-        if (hits.length < batchSize) {
-          break;
-        }
-      }
-
-      const remaining = targetFrom - currentPosition;
-      if (remaining > 0 && searchAfter) {
-        const skipBody: Record<string, unknown> = {
-          size: remaining,
-          query,
-          sort: sortParams,
-          track_total_hits: true,
-          _source: false,
-        };
-        skipBody.search_after = searchAfter;
-
-        setLoadingMessage(t("dataBrowser.locatingData", { position: targetFrom }));
-        const skipResult = await searchDocuments(activeConnection, selectedIndex, skipBody);
-        const hits = skipResult?.hits?.hits ?? [];
-
-        if (hits.length > 0) {
-          searchAfter = hits[hits.length - 1]?.sort;
-        }
-      }
-
-      setLoadingMessage(t("dataBrowser.fetchingPage", { page }));
-      const finalBody: Record<string, unknown> = {
+      const data = await executeSearchAfter({
+        activeConnection,
+        selectedIndex,
+        from,
         size,
         query,
-        sort: sortParams,
-        track_total_hits: true,
-      };
-      if (searchAfter) {
-        finalBody.search_after = searchAfter;
-      }
-
-      const data = await searchDocuments(activeConnection, selectedIndex, finalBody);
+        sortParams,
+        setLoadingMessage,
+        page,
+        t,
+      });
       setResult(data);
     } catch (error) {
       logError(error, {

@@ -8,6 +8,7 @@ export const redisResources = {
       browser: {
         title: "Redis Key Browser",
         noConnection: "Please select a Redis connection first",
+        noKeys: "No keys match the current pattern",
         patternPlaceholder: "Enter a match pattern, e.g. user:*",
         newKey: "New Key",
         createKey: "Create Key",
@@ -39,6 +40,7 @@ export const redisResources = {
         deleteBatchConfirm: "Delete the selected {{count}} keys? This action cannot be undone.",
         moreKeys: "{{count}} more keys not shown",
         editUnsupported: "This key type is not supported in the visual editor yet. Use Redis Console instead.",
+        binaryDataDetected: "This key contains binary data (e.g. Python pickle/protobuf) and cannot be displayed in the UI. Use Redis Console to view the raw value.",
         editorStringHint: "For string keys, enter raw text directly.",
         editorHashHint: "For hash keys, edit field / value rows in the table.",
         editorListHint: "For list keys, edit ordered rows in the table.",
@@ -71,6 +73,7 @@ export const redisResources = {
       browser: {
         title: "Redis Key 浏览",
         noConnection: "请先选择 Redis 连接",
+        noKeys: "没有匹配当前模式的 key",
         patternPlaceholder: "输入匹配模式，例如 user:*",
         newKey: "新增 Key",
         createKey: "新增 Key",
@@ -101,6 +104,7 @@ export const redisResources = {
         deleteBatchConfirm: "确认删除选中的 {{count}} 个 Key？此操作不可恢复。",
         moreKeys: "还有 {{count}} 个 Key 未展示",
         editUnsupported: "当前 key 类型暂不支持图形化编辑，可改用 Redis Console。",
+        binaryDataDetected: "此 key 包含二进制数据（如 Python pickle/protobuf），无法在图形界面中显示，请使用 Redis Console 查看原始值。",
         fieldColumn: "Field",
         valueColumn: "Value",
         memberColumn: "Member",
